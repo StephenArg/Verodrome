@@ -169,6 +169,8 @@ public final class Album {
     public var rating: Int
     public var genreName: String?
     public var artworkToken: String?
+    /// Denormalized artist name so list rows avoid faulting `artist`.
+    public var artistName: String? = nil
     public var updatedAt: Date
     /// Rank from server `getAlbumList2 type=newest` (1-based). 0 = not in newest set.
     /// Default is required for lightweight migration of existing stores.

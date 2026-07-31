@@ -3,7 +3,6 @@ import VerodromeKit
 
 /// Queue + lyrics inspector shown beside content on regular-width / Catalyst layouts.
 struct PlayerInspectorView: View {
-    @EnvironmentObject private var player: PlayerViewModel
     @State private var tab = 0
 
     var body: some View {

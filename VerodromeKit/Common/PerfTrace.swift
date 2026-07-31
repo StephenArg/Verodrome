@@ -27,8 +27,15 @@ public enum PerfTrace {
     /// Hard budget for work that should stay off the critical path.
     public static let criticalThresholdMs = 200
 
+    #if DEBUG
+    public static let isEnabled = true
+    #else
+    public static let isEnabled = false
+    #endif
+
     @discardableResult
     public static func begin(_ name: String, details: String = "") -> Int {
+        guard isEnabled else { return 0 }
         lock.lock()
         counter += 1
         let id = counter
@@ -40,6 +47,7 @@ public enum PerfTrace {
     }
 
     public static func end(_ token: Int, details: String = "") {
+        guard isEnabled else { return }
         lock.lock()
         guard let entry = open.removeValue(forKey: token) else {
             lock.unlock()
@@ -53,6 +61,7 @@ public enum PerfTrace {
 
     /// Instant point-in-time event (no duration).
     public static func event(_ name: String, details: String = "") {
+        guard isEnabled else { return }
         let extra = details.isEmpty ? "" : " | \(details)"
         log.notice("📌 \(name, privacy: .public)\(extra, privacy: .public)")
     }
@@ -64,6 +73,7 @@ public enum PerfTrace {
         details: String = "",
         body: () throws -> T
     ) rethrows -> T {
+        guard isEnabled else { return try body() }
         let start = CFAbsoluteTimeGetCurrent()
         let value = try body()
         let ms = Int(((CFAbsoluteTimeGetCurrent() - start) * 1000).rounded())
@@ -78,6 +88,7 @@ public enum PerfTrace {
         details: String = "",
         body: () async throws -> T
     ) async rethrows -> T {
+        guard isEnabled else { return try await body() }
         let start = CFAbsoluteTimeGetCurrent()
         let value = try await body()
         let ms = Int(((CFAbsoluteTimeGetCurrent() - start) * 1000).rounded())
@@ -141,6 +152,7 @@ public enum ArtworkPerf {
         context: String = "",
         details: String = ""
     ) {
+        guard PerfTrace.isEnabled else { return }
         lock.lock()
         switch source {
         case .mem: mem += 1

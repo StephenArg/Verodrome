@@ -26,7 +26,7 @@ enum RootTab: String, CaseIterable, Identifiable {
 }
 
 struct RootTabView: View {
-    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @State private var selection: RootTab = .home
 
     var body: some View {
@@ -51,7 +51,7 @@ struct RootTabView: View {
         if #available(iOS 26.1, *) {
             tabs
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory(isEnabled: player.currentItem != nil) {
+                .tabViewBottomAccessory(isEnabled: nowPlaying.currentItem != nil) {
                     MiniPlayerBar(drawsChrome: false)
                 }
         } else {

@@ -47,4 +47,4 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-amplify/**/*
+amperfy/

@@ -6,16 +6,100 @@ public enum LibraryRepositoryError: Error, Sendable {
     case entityNotFound
 }
 
-@MainActor
+/// Deliberately not `@MainActor`: the repository is bound to whatever `ModelContext` it
+/// was given, and must run wherever that context lives — the main actor for UI callers,
+/// the ingest actor for sync. Instances must not cross isolation domains.
 public final class LibraryRepository {
     public let context: ModelContext
+
+    /// Opt-in batch mode: preloads compound-id -> model dictionaries so `getOrCreate*`
+    /// calls become O(1) lookups instead of per-item fetches, and `save()` is deferred
+    /// until `endBatch()`. Nested `beginBatch`/`endBatch` calls are supported; the
+    /// dictionaries are only torn down by the outermost `endBatch`.
+    struct Batch {
+        var artists: [String: Artist] = [:]
+        var albums: [String: Album] = [:]
+        var songs: [String: Song] = [:]
+        var genres: [String: Genre] = [:]
+        var playlists: [String: Playlist] = [:]
+        var podcasts: [String: Podcast] = [:]
+        var episodes: [String: PodcastEpisode] = [:]
+        var radios: [String: Radio] = [:]
+    }
+
+    var batch: Batch?
+    var batchDepth = 0
 
     public init(context: ModelContext) {
         self.context = context
     }
 
+    @MainActor
     public convenience init(storage: PersistentStorage = .shared) {
         self.init(context: storage.mainContext)
+    }
+
+    // MARK: - Batch
+
+    /// Begin a batch. Preloads one fetch per entity type into in-memory dictionaries.
+    /// Nested calls reuse the already-loaded dictionaries without re-fetching.
+    public func beginBatch() throws {
+        if batchDepth == 0 {
+            batch = try loadBatch()
+        }
+        batchDepth += 1
+    }
+
+    /// End a batch. Saves pending changes and clears the dictionaries on the
+    /// outermost exit. Safe to call without a matching `beginBatch` (no-op).
+    public func endBatch() throws {
+        guard batchDepth > 0 else { return }
+        batchDepth -= 1
+        if batchDepth == 0 {
+            try save()
+            batch = nil
+        }
+    }
+
+    func loadBatch() throws -> Batch {
+        var batch = Batch()
+        for artist in try context.fetch(FetchDescriptor<Artist>()) {
+            batch.artists[artist.compoundRemoteId] = artist
+        }
+        for album in try context.fetch(FetchDescriptor<Album>()) {
+            // One-shot backfill: albums synced before `artistName` was denormalized.
+            if album.artistName == nil, let artist = album.artist {
+                album.artistName = artist.name
+            }
+            batch.albums[album.compoundRemoteId] = album
+        }
+        for song in try context.fetch(FetchDescriptor<Song>()) {
+            batch.songs[song.compoundRemoteId] = song
+        }
+        for genre in try context.fetch(FetchDescriptor<Genre>()) {
+            batch.genres[genre.compoundRemoteId] = genre
+        }
+        for playlist in try context.fetch(FetchDescriptor<Playlist>()) {
+            batch.playlists[playlist.compoundRemoteId] = playlist
+        }
+        for podcast in try context.fetch(FetchDescriptor<Podcast>()) {
+            batch.podcasts[podcast.compoundRemoteId] = podcast
+        }
+        for episode in try context.fetch(FetchDescriptor<PodcastEpisode>()) {
+            batch.episodes[episode.compoundRemoteId] = episode
+        }
+        for radio in try context.fetch(FetchDescriptor<Radio>()) {
+            batch.radios[radio.compoundRemoteId] = radio
+        }
+        return batch
+    }
+
+    /// Saves only when no batch is active. Inside a batch, the caller is responsible
+    /// for saving at the end (via `endBatch` or explicitly).
+    @inline(__always)
+    func saveIfNotBatching() throws {
+        guard batchDepth == 0 else { return }
+        try save()
     }
 
     // MARK: - Account
@@ -66,16 +150,18 @@ public final class LibraryRepository {
     @discardableResult
     public func getOrCreateArtist(remoteId: String, name: String, account: Account) throws -> Artist {
         let compoundRemoteId = Artist.makeCompoundRemoteId(account: account, remoteId: remoteId)
-        if let existing = try fetchArtist(compoundRemoteId: compoundRemoteId) {
+        if let existing = try batch?.artists[compoundRemoteId] ?? fetchArtist(compoundRemoteId: compoundRemoteId) {
             existing.name = name
             existing.sortName = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             existing.updatedAt = .now
-            try save()
+            batch?.artists[compoundRemoteId] = existing
+            try saveIfNotBatching()
             return existing
         }
         let artist = Artist(remoteId: remoteId, name: name, account: account)
         context.insert(artist)
-        try save()
+        batch?.artists[compoundRemoteId] = artist
+        try saveIfNotBatching()
         return artist
     }
 
@@ -149,19 +235,23 @@ public final class LibraryRepository {
         year: Int? = nil
     ) throws -> Album {
         let compoundRemoteId = Album.makeCompoundRemoteId(account: account, remoteId: remoteId)
-        if let existing = try fetchAlbum(compoundRemoteId: compoundRemoteId) {
+        if let existing = try batch?.albums[compoundRemoteId] ?? fetchAlbum(compoundRemoteId: compoundRemoteId) {
             existing.title = title
             existing.sortTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             existing.artist = artist ?? existing.artist
+            if let artist { existing.artistName = artist.name }
             existing.year = year ?? existing.year
             existing.updatedAt = .now
-            try save()
+            batch?.albums[compoundRemoteId] = existing
+            try saveIfNotBatching()
             return existing
         }
         let album = Album(remoteId: remoteId, title: title, account: account, artist: artist)
         album.year = year
+        if let artist { album.artistName = artist.name }
         context.insert(album)
-        try save()
+        batch?.albums[compoundRemoteId] = album
+        try saveIfNotBatching()
         return album
     }
 
@@ -214,14 +304,15 @@ public final class LibraryRepository {
         track: Int? = nil
     ) throws -> Song {
         let compoundRemoteId = Song.makeCompoundRemoteId(account: account, remoteId: remoteId)
-        if let existing = try fetchSong(compoundRemoteId: compoundRemoteId) {
+        if let existing = try batch?.songs[compoundRemoteId] ?? fetchSong(compoundRemoteId: compoundRemoteId) {
             existing.title = title
             existing.sortTitle = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             existing.album = album ?? existing.album
             existing.artist = artist ?? existing.artist
             existing.track = track ?? existing.track
             existing.updatedAt = .now
-            try save()
+            batch?.songs[compoundRemoteId] = existing
+            try saveIfNotBatching()
             return existing
         }
         let song = Song(remoteId: remoteId, title: title, account: account)
@@ -229,7 +320,8 @@ public final class LibraryRepository {
         song.artist = artist
         song.track = track
         context.insert(song)
-        try save()
+        batch?.songs[compoundRemoteId] = song
+        try saveIfNotBatching()
         return song
     }
 
@@ -257,16 +349,18 @@ public final class LibraryRepository {
     @discardableResult
     public func getOrCreatePlaylist(remoteId: String, name: String, account: Account) throws -> Playlist {
         let compoundRemoteId = Playlist.makeCompoundRemoteId(account: account, remoteId: remoteId)
-        if let existing = try fetchPlaylist(compoundRemoteId: compoundRemoteId) {
+        if let existing = try batch?.playlists[compoundRemoteId] ?? fetchPlaylist(compoundRemoteId: compoundRemoteId) {
             existing.name = name
             existing.sortName = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             existing.updatedAt = .now
-            try save()
+            batch?.playlists[compoundRemoteId] = existing
+            try saveIfNotBatching()
             return existing
         }
         let playlist = Playlist(remoteId: remoteId, name: name, account: account)
         context.insert(playlist)
-        try save()
+        batch?.playlists[compoundRemoteId] = playlist
+        try saveIfNotBatching()
         return playlist
     }
 

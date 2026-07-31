@@ -194,9 +194,7 @@ public final class VerodromeKit: ObservableObject {
 
         do {
             try await syncer.syncAllSongs(progress: progress)
-            if let account = try? activeAccount() {
-                _ = try? DuplicateMaintenance.resolveAll(account: account, context: storage.mainContext)
-            }
+            await resolveDuplicatesInBackground()
             observableSettings.updateApp { $0.tracksBackfillVersion = 1 }
         } catch {
             // Keep tracksBackfillVersion at 0 so the next cold launch / online period resumes.
@@ -219,11 +217,9 @@ public final class VerodromeKit: ObservableObject {
 
         try await syncer.syncInitial(progress: progress)
 
-        if let account = try? activeAccount() {
-            syncProgressMessage = "Resolving duplicates…"
-            librarySync.updateProgress("Resolving duplicates…")
-            _ = try? DuplicateMaintenance.resolveAll(account: account, context: storage.mainContext)
-        }
+        syncProgressMessage = "Resolving duplicates…"
+        librarySync.updateProgress("Resolving duplicates…")
+        await resolveDuplicatesInBackground()
 
         settings.isLibrarySynced = true
         settings.save()
@@ -237,6 +233,17 @@ public final class VerodromeKit: ObservableObject {
     public func resolveDuplicates() throws -> Int {
         guard let storage, let account = try activeAccount() else { return 0 }
         return try DuplicateMaintenance.resolveAll(account: account, context: storage.mainContext)
+    }
+
+    /// Duplicate resolution scans the whole library, so the sync flows run it on the
+    /// background actor with the account re-resolved in that context.
+    private func resolveDuplicatesInBackground() async {
+        guard let storage, let key = accountStore.activeAccountKey() else { return }
+        _ = try? await storage.backgroundActor.perform { context in
+            let repository = LibraryRepository(context: context)
+            guard let account = try repository.fetchAccount(key: key) else { return 0 }
+            return try DuplicateMaintenance.resolveAll(account: account, context: context)
+        }
     }
 
     public func logout() {
@@ -335,15 +342,19 @@ public final class VerodromeKit: ObservableObject {
             }
             _ = try await backendProxy.login(credentials: login)
         }
-        let repo = LibraryRepository(storage: storage)
-        let account = try repo.getOrCreateAccount(info: stored.info, apiType: ApiType(backendProxy.apiType))
-        let ingester = SwiftDataLibraryIngester(repository: repo, account: account)
-        ingester.onProgress = { [weak self] message in
-            Task { @MainActor in
-                self?.syncProgressMessage = message
-                self?.librarySync.updateProgress(message)
+        // The ingester runs on its own ModelActor so sync writes never touch the main
+        // thread; the account row is resolved lazily inside that actor's context.
+        let ingester = SwiftDataLibraryIngester(
+            modelContainer: storage.container,
+            accountInfo: stored.info,
+            apiType: ApiType(backendProxy.apiType),
+            onProgress: { [weak self] message in
+                Task { @MainActor in
+                    self?.syncProgressMessage = message
+                    self?.librarySync.updateProgress(message)
+                }
             }
-        }
+        )
         let syncer = backendProxy.createLibrarySyncer(ingestor: ingester)
         activeLibrarySyncer = syncer
         let scrobble = ScrobbleSyncer(uploader: LibrarySyncerScrobbleUploader(syncer: syncer))

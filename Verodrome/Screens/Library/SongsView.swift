@@ -3,21 +3,23 @@ import SwiftData
 import VerodromeKit
 
 struct SongsView: View {
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
     @Environment(\.modelContext) private var modelContext
 
     @State private var searchText = ""
-    @State private var sections: [SongLetterSection] = []
+    @State private var debouncedSearch = ""
+    @State private var sections: [LibraryRowSection<LibrarySongRowSnapshot>] = []
     @State private var rowCount = 0
     @State private var actionsSong: Song?
     @State private var showActions = false
     @State private var loadGeneration = 0
 
     var body: some View {
-        IndexedSongTableView(
+        IndexedEntityTableView(
             sections: sections,
-            playingRemoteId: player.currentItem?.playableId,
+            playingId: nowPlaying.currentItem?.playableId,
             onSelect: play,
             onPlayNext: { item in
                 player.playNext([item.queueItem])
@@ -29,8 +31,14 @@ struct SongsView: View {
         )
         .navigationTitle("Songs")
         .searchable(text: $searchText, prompt: "Filter songs")
+        .debouncedSearch(text: $searchText) { newValue in
+            debouncedSearch = newValue
+        }
         .perfAppear("Songs", details: "rows=\(rowCount) search=\(searchText.isEmpty ? "off" : "on")")
-        .task(id: searchText) {
+        .task {
+            await reload(reason: "appear")
+        }
+        .task(id: debouncedSearch) {
             await reload(reason: "search")
         }
         .task(id: librarySync.isSyncing) {
@@ -85,7 +93,7 @@ struct SongsView: View {
     private func reload(reason: String) async {
         loadGeneration += 1
         let generation = loadGeneration
-        let search = searchText
+        let search = debouncedSearch
         let token = PerfTrace.begin("Songs.reload", details: reason)
 
         let built = await PerfTrace.measureAsync(
@@ -106,7 +114,7 @@ struct SongsView: View {
     }
 
     /// Fetch + map + section off the main actor so opening Songs stays responsive.
-    private static func fetchSections(searchText: String) async -> (sections: [SongLetterSection], count: Int) {
+    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibrarySongRowSnapshot>], count: Int) {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 let t0 = CFAbsoluteTimeGetCurrent()
@@ -131,8 +139,8 @@ struct SongsView: View {
                 let mapMs = Int(((CFAbsoluteTimeGetCurrent() - t1) * 1000).rounded())
 
                 let t2 = CFAbsoluteTimeGetCurrent()
-                let grouped = AlphabetSectioning.group(snapshots) { $0.sortTitle.sectionInitial }
-                let sections = grouped.map { SongLetterSection(letter: $0.letter, items: $0.items) }
+                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
+                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
                 let sectionMs = Int(((CFAbsoluteTimeGetCurrent() - t2) * 1000).rounded())
 
                 PerfTrace.event(

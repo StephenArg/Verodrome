@@ -4,9 +4,10 @@ import VerodromeKit
 /// Compact now-playing bar. On iOS 26+ this is hosted in `tabViewBottomAccessory`
 /// so the system provides Liquid Glass and the Amperfy/Music-style morph animation.
 struct MiniPlayerBar: View {
-    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var progress: PlayerProgressModel
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var player: PlayerViewModel
 
     /// When true, draw our own glass chrome (overlay / iPad). When false, the
     /// system tab accessory supplies Liquid Glass — only content is rendered.
@@ -14,7 +15,7 @@ struct MiniPlayerBar: View {
 
     var body: some View {
         Group {
-            if let item = player.currentItem {
+            if let item = nowPlaying.currentItem {
                 content(for: item)
             }
         }
@@ -57,7 +58,7 @@ struct MiniPlayerBar: View {
             Button {
                 player.playPause()
             } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
                     .font(.body.weight(.semibold))
                     .frame(width: 36, height: 36)
                     .contentTransition(.symbolEffect(.replace))
@@ -119,13 +120,13 @@ struct MiniPlayerBar: View {
 
 /// Overlay host used on iPad / pre-iOS 26 fallback. Animates appear/disappear smoothly.
 struct MiniPlayerContainerView: View {
-    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
 
     var body: some View {
         MiniPlayerBar(drawsChrome: true)
             .animation(
                 .spring(response: 0.42, dampingFraction: 0.84),
-                value: player.currentItem?.id
+                value: nowPlaying.currentItem?.id
             )
     }
 }

@@ -5,7 +5,10 @@ import VerodromeKit
 struct PlaylistDetailView: View {
     let playlistID: String
     @Query private var playlists: [Playlist]
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+
+    @State private var songs: [Song] = []
 
     init(playlistID: String) {
         self.playlistID = playlistID
@@ -19,7 +22,7 @@ struct PlaylistDetailView: View {
                     DetailHeader(
                         title: playlist.name,
                         subtitle: "\(playlist.songCount) songs",
-                        artworkURL: playlist.displayArtworkToken,
+                        artworkURL: playlist.artworkToken,
                         symbol: "music.note.house.fill",
                         onPlay: { play(shuffle: false) },
                         onShuffle: { play(shuffle: true) }
@@ -29,18 +32,17 @@ struct PlaylistDetailView: View {
                 }
 
                 Section("Songs") {
-                    let songs = displaySongs(for: playlist)
                     if songs.isEmpty {
                         Text("Loading songs…")
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(songs, id: \.compoundRemoteId) { song in
-                            Button { playSong(song, playlist: playlist) } label: {
+                            Button { playSong(song) } label: {
                                 EntityRow(
                                     title: song.title,
                                     subtitle: song.displayArtist,
-                                    artworkURL: song.artworkToken ?? song.album?.artworkToken,
-                                    isPlaying: player.currentItem?.playableId == song.remoteId
+                                    artworkURL: song.artworkToken,
+                                    isPlaying: nowPlaying.currentItem?.playableId == song.remoteId
                                 )
                             }
                             .buttonStyle(.plain)
@@ -59,38 +61,29 @@ struct PlaylistDetailView: View {
             }
         }
         .task(id: playlists.first?.remoteId) {
+            guard let playlist = playlists.first else { return }
+            loadSongs(for: playlist)
             guard let remoteId = playlists.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(playlistId: remoteId)
+            if let playlist = playlists.first {
+                loadSongs(for: playlist)
+            }
         }
     }
 
-    private func displaySongs(for playlist: Playlist) -> [Song] {
-        playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+    private func loadSongs(for playlist: Playlist) {
+        songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
     }
 
     private func play(shuffle: Bool) {
-        guard let playlist = playlists.first else { return }
-        PlayTrace.begin(
-            shuffle ? "PlaylistDetail Shuffle" : "PlaylistDetail Play",
-            details: "playlist=\(playlist.name)"
-        )
-        PlayTrace.mark("resolving playlist songs…")
-        var items = displaySongs(for: playlist).map(QueueItem.from)
-        PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
-        if shuffle {
-            items.shuffle()
-            PlayTrace.mark("items.shuffle() done")
-        }
-        PlayTrace.mark("calling player.play")
+        var items = songs.map(QueueItem.from)
+        if shuffle { items.shuffle() }
         player.play(items: items)
     }
 
-    private func playSong(_ song: Song, playlist: Playlist) {
-        PlayTrace.begin("PlaylistDetail track tap", details: "song=\(song.title)")
-        let songs = displaySongs(for: playlist)
+    private func playSong(_ song: Song) {
         let items = songs.map(QueueItem.from)
         let index = songs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
-        PlayTrace.mark("calling player.play", details: "count=\(items.count) startAt=\(index)")
         player.play(items: items, startAt: index)
     }
 }

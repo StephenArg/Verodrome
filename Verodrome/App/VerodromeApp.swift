@@ -21,6 +21,7 @@ struct VerodromeApp: App {
                 .environmentObject(kit.librarySync)
                 .environmentObject(player)
                 .environmentObject(player.progress)
+                .environmentObject(player.nowPlaying)
                 .environmentObject(themeManager)
                 .preferredColorScheme(colorScheme)
                 .tint(themeManager.accentColor)

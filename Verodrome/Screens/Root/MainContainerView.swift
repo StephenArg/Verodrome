@@ -4,7 +4,6 @@ import VerodromeKit
 struct MainContainerView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var player: PlayerViewModel
 
     var body: some View {
         ZStack(alignment: .bottom) {

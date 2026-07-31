@@ -1,29 +1,65 @@
 import Foundation
 import SwiftData
 
-@MainActor
-public final class SwiftDataLibraryIngester: LibraryIngesting {
-    private let repository: LibraryRepository
-    private let account: Account
-    public var onProgress: (@Sendable (String) -> Void)?
+/// Writes server library data into SwiftData on its own background context.
+///
+/// This is a `ModelActor` on purpose: ingest work is heavy (a `beginBatch` alone fetches
+/// every entity in the library into lookup dictionaries), and when it ran on the main
+/// actor every "background" sync blocked the UI in multi-second stretches — the app's
+/// long-standing scroll lag. All reads and writes here happen on this actor's serial
+/// executor against a dedicated `ModelContext`; the main context sees the results once
+/// each batch saves.
+public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
+    public nonisolated let modelContainer: ModelContainer
+    public nonisolated let modelExecutor: any ModelExecutor
+
+    private let accountInfo: AccountInfo
+    private let apiType: ApiType
+    private let onProgress: (@Sendable (String) -> Void)?
 
     /// When true (set by `beginSync`), finishSync prunes albums/playlists not seen during this sync.
     private var isFullSync = false
     private var seenAlbumIds = Set<String>()
     private var seenPlaylistIds = Set<String>()
 
-    public init(repository: LibraryRepository, account: Account) {
-        self.repository = repository
-        self.account = account
+    /// Repository and account resolved lazily on the actor: the init runs on the caller's
+    /// executor, so no context work is allowed there.
+    private var session: (repository: LibraryRepository, account: Account)?
+
+    public init(
+        modelContainer: ModelContainer,
+        accountInfo: AccountInfo,
+        apiType: ApiType,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) {
+        self.modelContainer = modelContainer
+        let context = ModelContext(modelContainer)
+        context.autosaveEnabled = false
+        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
+        self.accountInfo = accountInfo
+        self.apiType = apiType
+        self.onProgress = onProgress
+    }
+
+    private func makeSession() throws -> (repository: LibraryRepository, account: Account) {
+        if let session { return session }
+        let repository = LibraryRepository(context: modelContext)
+        let account = try repository.getOrCreateAccount(info: accountInfo, apiType: apiType)
+        let made = (repository, account)
+        session = made
+        return made
     }
 
     public func beginSync() async throws {
+        let (repository, _) = try makeSession()
         isFullSync = true
         seenAlbumIds.removeAll()
         seenPlaylistIds.removeAll()
+        try repository.beginBatch()
     }
 
     public func finishSync() async throws {
+        let (repository, account) = try makeSession()
         if isFullSync {
             let context = repository.context
             let prunedAlbums = try LibraryPruner.pruneAlbums(
@@ -40,12 +76,15 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 onProgress?("Pruned \(prunedAlbums) albums, \(prunedPlaylists) playlists")
             }
         }
-        try backfillGenreArtwork()
+        try backfillGenreArtwork(repository: repository, account: account)
         isFullSync = false
-        try repository.save()
+        try repository.endBatch()
     }
 
     public func ingest(genres: [IngestGenre]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         for item in genres {
             _ = try repository.getOrCreateGenre(remoteId: item.id, name: item.name, account: account)
         }
@@ -53,25 +92,26 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
     }
 
     public func ingest(artists: [IngestArtist]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         var processed = 0
         for item in artists {
             let artist = try repository.getOrCreateArtist(remoteId: item.id, name: item.name, account: account)
             if let albumCount = item.albumCount { artist.albumCount = albumCount }
             if let artId = item.artId { artist.artworkToken = artId }
             processed += 1
-            if processed % 100 == 0 {
+            if processed % 200 == 0 {
                 await Task.yield()
             }
-            if processed % 500 == 0 {
-                try repository.save()
-                try? await Task.sleep(nanoseconds: 10_000_000)
-            }
         }
-        try repository.save()
         onProgress?("Artists: \(artists.count)")
     }
 
     public func ingest(albums: [IngestAlbum]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         var processed = 0
         for item in albums {
             seenAlbumIds.insert(item.id)
@@ -88,6 +128,9 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
             )
             if let songCount = item.songCount { album.trackCount = songCount }
             if let artId = item.artId { album.artworkToken = artId }
+            if let artistName = item.artistName, !artistName.isEmpty {
+                album.artistName = artistName
+            }
             if let genreId = item.genreIds.first {
                 let existingName = (try? repository.fetchGenres(account: account)
                     .first(where: { $0.remoteId == genreId })?.name) ?? genreId
@@ -101,20 +144,17 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 assignGenreArtwork(genre, from: item.artId)
             }
             processed += 1
-            if processed % 50 == 0 {
+            if processed % 200 == 0 {
                 await Task.yield()
             }
-            if processed % 500 == 0 {
-                try repository.save()
-                onProgress?("Albums: \(processed)/\(albums.count)")
-                try? await Task.sleep(nanoseconds: 10_000_000)
-            }
         }
-        try repository.save()
         onProgress?("Albums: \(albums.count)")
     }
 
     public func ingest(songs: [IngestSong]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         var processed = 0
         for item in songs {
             var album: Album?
@@ -133,6 +173,9 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 )
                 if let artId = item.artId, album?.artworkToken == nil {
                     album?.artworkToken = artId
+                }
+                if let albumName = item.albumName, !albumName.isEmpty {
+                    album?.artistName = item.artistName
                 }
             }
             let song = try repository.getOrCreateSong(
@@ -156,23 +199,17 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
             if let disc = item.discNumber { song.disc = disc }
 
             processed += 1
-            // Keep the main actor responsive so the player clock/gestures stay alive
-            // during large backfills. Save infrequently — each save checkpoints WAL
-            // and refreshes observers.
-            if processed % 50 == 0 {
+            if processed % 200 == 0 {
                 await Task.yield()
             }
-            if processed % 1000 == 0 {
-                try repository.save()
-                onProgress?("Songs: \(processed)/\(songs.count)")
-                try? await Task.sleep(nanoseconds: 20_000_000)
-            }
         }
-        try repository.save()
         onProgress?("Songs: \(songs.count)")
     }
 
     public func ingest(playlists: [IngestPlaylist]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         for item in playlists {
             seenPlaylistIds.insert(item.id)
             let playlist = try repository.getOrCreatePlaylist(remoteId: item.id, name: item.name, account: account)
@@ -192,11 +229,13 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 }
             }
         }
-        try repository.save()
         onProgress?("Playlists: \(playlists.count)")
     }
 
     public func ingest(podcasts: [IngestPodcast]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         for item in podcasts {
             let podcast = try repository.getOrCreatePodcast(remoteId: item.id, title: item.title, account: account)
             if let artId = item.artId { podcast.artworkToken = artId }
@@ -206,6 +245,9 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
     }
 
     public func ingest(episodes: [IngestPodcastEpisode]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         for item in episodes {
             let podcast = try repository.getOrCreatePodcast(remoteId: item.podcastId, title: "Podcast", account: account)
             let episode = try repository.getOrCreatePodcastEpisode(
@@ -219,10 +261,12 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 podcast.artworkToken = artId
             }
         }
-        try repository.save()
     }
 
     public func ingest(radios: [IngestRadio]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         for item in radios {
             let radio = try repository.getOrCreateRadio(
                 remoteId: item.id,
@@ -233,11 +277,13 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
             radio.homepageURL = item.homepageURL
             if let artId = item.artId { radio.artworkToken = artId }
         }
-        try repository.save()
         onProgress?("Radios: \(radios.count)")
     }
 
     public func applyNewestAlbumRanks(_ orderedRemoteIds: [String]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         // Only touch previously ranked + newly ranked rows (not the entire library).
         let previouslyRanked = try repository.fetchAlbums(newestIndexPositive: true)
         for album in previouslyRanked {
@@ -248,10 +294,12 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 album.newestIndex = offset + 1
             }
         }
-        try repository.save()
     }
 
     public func applyRecentAlbumRanks(_ orderedRemoteIds: [String]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         let previouslyRanked = try repository.fetchAlbums(recentIndexPositive: true)
         for album in previouslyRanked {
             album.recentIndex = 0
@@ -261,10 +309,12 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 album.recentIndex = offset + 1
             }
         }
-        try repository.save()
     }
 
     public func applyFavoriteAlbums(_ remoteIds: [String]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
         let favored = Set(remoteIds)
         let currentlyFavorite = try repository.fetchAlbums(favoritesOnly: true)
         for album in currentlyFavorite where !favored.contains(album.remoteId) {
@@ -275,7 +325,6 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
                 album.isFavorite = true
             }
         }
-        try repository.save()
     }
 
     private func assignGenreArtwork(_ genre: Genre, from artId: String?) {
@@ -285,7 +334,7 @@ public final class SwiftDataLibraryIngester: LibraryIngesting {
     }
 
     /// Fill missing genre art from any album already tagged with that genre name.
-    private func backfillGenreArtwork() throws {
+    private func backfillGenreArtwork(repository: LibraryRepository, account: Account) throws {
         let genres = try repository.fetchGenres(account: account)
         let context = repository.context
         for genre in genres where genre.artworkToken == nil || genre.artworkToken?.isEmpty == true {

@@ -10,6 +10,15 @@ final class PlayerProgressModel: ObservableObject {
     @Published var duration: TimeInterval = 0
 }
 
+/// Narrow now-playing identity. Kept separate from `PlayerViewModel` so library lists
+/// and tab chrome that only need to know *what* is playing are not redrawn on every
+/// queue / EQ / lyrics change.
+@MainActor
+final class NowPlayingModel: ObservableObject {
+    @Published var currentItem: QueueItem?
+    @Published var isPlaying = false
+}
+
 @MainActor
 final class PlayerViewModel: ObservableObject {
     @Published private(set) var isPlaying = false
@@ -23,6 +32,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isOfflineMode = false
 
     let progress = PlayerProgressModel()
+    let nowPlaying = NowPlayingModel()
 
     private var facade: PlayerFacadeImpl?
     private var cancellables = Set<AnyCancellable>()
@@ -32,8 +42,12 @@ final class PlayerViewModel: ObservableObject {
         guard let impl = facade as? PlayerFacadeImpl else { return }
         self.facade = impl
         impl.$isPlaying.receive(on: DispatchQueue.main).assign(to: &$isPlaying)
+        impl.$isPlaying.receive(on: DispatchQueue.main).sink { [weak self] value in
+            self?.nowPlaying.isPlaying = value
+        }.store(in: &cancellables)
         impl.$currentItem.receive(on: DispatchQueue.main).sink { [weak self] item in
             self?.currentItem = item
+            self?.nowPlaying.currentItem = item
             self?.progress.duration = impl.duration
             self?.queue = impl.queue
             self?.repeatMode = impl.repeatMode

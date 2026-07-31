@@ -5,8 +5,10 @@ import VerodromeKit
 struct PodcastDetailView: View {
     let podcastID: String
     @Query private var podcasts: [Podcast]
-    @Query(sort: \PodcastEpisode.title) private var allEpisodes: [PodcastEpisode]
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+
+    @State private var episodes: [PodcastEpisode] = []
 
     init(podcastID: String) {
         self.podcastID = podcastID
@@ -19,26 +21,26 @@ struct PodcastDetailView: View {
                 Section {
                     DetailHeader(
                         title: podcast.title,
-                        subtitle: "\(podcast.author ?? "") · \(episodes(for: podcast).count) episodes",
+                        subtitle: "\(podcast.author ?? "") · \(episodes.count) episodes",
                         artworkURL: podcast.artworkToken,
                         symbol: "mic.fill",
-                        onPlay: { play(from: 0, podcast: podcast) },
-                        onShuffle: { play(shuffle: true, podcast: podcast) }
+                        onPlay: { play(from: 0) },
+                        onShuffle: { play(shuffle: true) }
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 }
 
                 Section("Episodes") {
-                    ForEach(episodes(for: podcast), id: \.compoundRemoteId) { episode in
+                    ForEach(episodes, id: \.compoundRemoteId) { episode in
                         Button {
-                            playEpisode(episode, podcast: podcast)
+                            playEpisode(episode)
                         } label: {
                             EntityRow(
                                 title: episode.title,
                                 subtitle: podcast.title,
                                 symbol: "mic.fill",
-                                isPlaying: player.currentItem?.playableId == episode.remoteId,
+                                isPlaying: nowPlaying.currentItem?.playableId == episode.remoteId,
                                 trailing: formatDuration(episode.playDuration)
                             )
                         }
@@ -49,27 +51,29 @@ struct PodcastDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task(id: podcasts.first?.remoteId) {
+            guard let podcast = podcasts.first else { return }
+            loadEpisodes(for: podcast)
             guard let remoteId = podcasts.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(podcastId: remoteId)
+            if let podcast = podcasts.first {
+                loadEpisodes(for: podcast)
+            }
         }
     }
 
-    private func episodes(for podcast: Podcast) -> [PodcastEpisode] {
-        let linked = allEpisodes.filter { $0.podcast?.compoundRemoteId == podcast.compoundRemoteId }
-        if !linked.isEmpty { return linked.sorted { ($0.track ?? 0) > ($1.track ?? 0) } }
-        return podcast.episodes.sorted { ($0.track ?? 0) > ($1.track ?? 0) }
+    private func loadEpisodes(for podcast: Podcast) {
+        episodes = podcast.episodes.sorted { ($0.track ?? 0) > ($1.track ?? 0) }
     }
 
-    private func play(from index: Int = 0, shuffle: Bool = false, podcast: Podcast) {
-        var items = episodes(for: podcast).map(QueueItem.from)
+    private func play(from index: Int = 0, shuffle: Bool = false) {
+        var items = episodes.map(QueueItem.from)
         if shuffle { items.shuffle() }
         player.play(items: items, startAt: shuffle ? 0 : index)
     }
 
-    private func playEpisode(_ episode: PodcastEpisode, podcast: Podcast) {
-        let podcastEpisodes = episodes(for: podcast)
-        let items = podcastEpisodes.map(QueueItem.from)
-        let index = podcastEpisodes.firstIndex(where: { $0.compoundRemoteId == episode.compoundRemoteId }) ?? 0
+    private func playEpisode(_ episode: PodcastEpisode) {
+        let items = episodes.map(QueueItem.from)
+        let index = episodes.firstIndex(where: { $0.compoundRemoteId == episode.compoundRemoteId }) ?? 0
         player.play(items: items, startAt: index)
     }
 

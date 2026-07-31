@@ -17,17 +17,42 @@ struct ArtworkView: View {
 
     private var isThumbnail: Bool { size <= ArtworkPixelSize.thumbnail }
 
+    init(
+        token: String?,
+        kind: ArtworkKind = .album,
+        cornerRadius: CGFloat = VerodromeTheme.artworkCornerRadius,
+        symbol: String = "music.note",
+        size: Int = ArtworkPixelSize.grid,
+        showsProgress: Bool = true
+    ) {
+        self.token = token
+        self.kind = kind
+        self.cornerRadius = cornerRadius
+        self.symbol = symbol
+        self.size = size
+        self.showsProgress = showsProgress
+        // Synchronous cache probe so cache hits render in the first pass — no async
+        // hop, no state write, no second render.
+        let seeded = token.flatMap {
+            ArtworkImageCache.shared.image(for: $0, size: size)
+        }
+        _image = State(initialValue: seeded)
+    }
+
     var body: some View {
         // Fixed square container — image is cropped/filled inside and never drives layout size.
+        // A single `clipShape` does the cropping; adding `clipped()` on top costs a second
+        // offscreen pass per cell on every scrolled frame.
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 artworkContent
             }
-            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .task(id: "\(token ?? "")|\(size)") {
+            .task(id: ArtworkRequestID(token: token, size: size)) {
+                // Only start work on a miss — `image` is already seeded for cache hits.
+                guard image == nil, !loadFailed else { return }
                 await loadArtwork()
             }
     }
@@ -53,21 +78,10 @@ struct ArtworkView: View {
         let t0 = CFAbsoluteTimeGetCurrent()
         let ctx = isThumbnail ? "thumb" : (size == ArtworkPixelSize.homeTile ? "home" : "art")
         guard let token, !token.isEmpty else {
-            image = nil
             loadFailed = false
             return
         }
-        // Instant memory hit — set directly without a nil flash (avoids re-render on
-        // every scroll-in when the tile recycles back into view).
-        if let cached = ArtworkImageCache.shared.image(for: token, size: size) {
-            image = cached
-            loadFailed = false
-            let ms = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
-            ArtworkPerf.record(source: .mem, size: size, ms: ms, context: ctx)
-            return
-        }
-        // Starting a (possibly slow) load: show placeholder while we wait.
-        image = nil
+        // Cache hit was handled in init; we're here only on a miss.
         loadFailed = false
 
         // Thumbnails: briefly yield so rapid scroll can cancel before network.
@@ -86,7 +100,6 @@ struct ArtworkView: View {
             }
             ArtworkImageCache.shared.store(loaded, for: token, size: size)
             image = loaded
-            // disk/network already recorded inside ArtworkDownloadManager; this marks UI apply.
             let ms = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
             if ms >= PerfTrace.warnThresholdMs {
                 PerfTrace.event("Art.uiApply.slow", details: "\(ms)ms size=\(size) ctx=\(ctx)")
@@ -97,6 +110,13 @@ struct ArtworkView: View {
             ArtworkPerf.record(source: .cancel, size: size, ms: 0, context: ctx)
         }
     }
+}
+
+/// Value-typed `.task(id:)` key, so a scrolled cell doesn't allocate an interpolated
+/// String on every body evaluation just to decide whether to reload.
+private struct ArtworkRequestID: Equatable {
+    let token: String?
+    let size: Int
 }
 
 /// In-memory decoded images so list cells do not re-decode JPEG/PNG while scrolling.

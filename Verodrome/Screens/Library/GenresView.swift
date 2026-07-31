@@ -3,68 +3,85 @@ import SwiftData
 import VerodromeKit
 
 struct GenresView: View {
-    @Query(sort: \Genre.name) private var genres: [Genre]
-    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
+    @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+
+    @State private var searchText = ""
+    @State private var debouncedSearch = ""
+    @State private var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
+    @State private var rowCount = 0
+    @State private var loadGeneration = 0
+    @State private var selectedId: String?
 
     var body: some View {
-        AlphabetIndexedList(
-            items: genres.map(GenreRowItem.init),
-            sectionTitle: \.name,
-            perfLabel: "Genres"
-        ) { item in
-            NavigationLink {
-                GenreDetailView(genreID: item.id)
-            } label: {
-                EntityRow(
-                    title: item.name,
-                    subtitle: "\(item.albumCount) albums · \(item.songCount) songs",
-                    artworkURL: item.artworkToken,
-                    symbol: "guitars.fill"
-                )
-            }
-        }
+        IndexedEntityTableView(
+            sections: sections,
+            playingId: nowPlaying.currentItem?.playableId,
+            onSelect: { item, _ in selectedId = item.id }
+        )
         .navigationTitle("Genres")
-        .perfAppear("Genres", details: "count=\(genres.count)")
-        .task {
-            backfillMissingGenreArtwork()
+        .searchable(text: $searchText, prompt: "Filter genres")
+        .debouncedSearch(text: $searchText) { newValue in
+            debouncedSearch = newValue
         }
-    }
-
-    /// One-shot fill for genres synced before artwork was denormalized onto the model.
-    private func backfillMissingGenreArtwork() {
-        var didChange = false
-        for genre in genres where genre.artworkToken == nil || genre.artworkToken?.isEmpty == true {
-            let name = genre.name
-            var descriptor = FetchDescriptor<Album>(
-                predicate: #Predicate<Album> { album in
-                    album.genreName == name
-                }
-            )
-            descriptor.fetchLimit = 24
-            let albums = (try? modelContext.fetch(descriptor)) ?? []
-            if let token = albums.compactMap(\.artworkToken).first(where: { !$0.isEmpty }) {
-                genre.artworkToken = token
-                didChange = true
+        .navigationDestination(item: $selectedId) { id in
+            GenreDetailView(genreID: id)
+        }
+        .perfAppear("Genres", details: "count=\(rowCount)")
+        .task {
+            await reload(reason: "appear")
+        }
+        .task(id: debouncedSearch) {
+            await reload(reason: "search")
+        }
+        .task(id: librarySync.isSyncing) {
+            if !librarySync.isSyncing {
+                await reload(reason: "syncFinished")
             }
         }
-        if didChange {
-            try? modelContext.save()
+        .refreshable {
+            await reload(reason: "pullToRefresh")
         }
     }
-}
 
-private struct GenreRowItem: Identifiable {
-    let id: String
-    let name: String
-    let albumCount: Int
-    let songCount: Int
-    let artworkToken: String?
+    private func reload(reason: String) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let search = debouncedSearch
+        let built = await Self.fetchSections(searchText: search)
+        guard generation == loadGeneration else { return }
+        sections = built.sections
+        rowCount = built.count
+    }
 
-    init(_ genre: Genre) {
-        id = genre.compoundRemoteId
-        name = genre.name
-        albumCount = genre.albumCount
-        songCount = genre.songCount
-        artworkToken = genre.artworkToken
+    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibraryRowSnapshot>], count: Int) {
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let genres = try context.fetch(
+                    FetchDescriptor<Genre>(sortBy: [SortDescriptor(\Genre.name)])
+                )
+                let filtered: [Genre]
+                if searchText.isEmpty {
+                    filtered = genres
+                } else {
+                    filtered = genres.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+                }
+                let snapshots = filtered.map { genre in
+                    LibraryRowSnapshot(
+                        id: genre.compoundRemoteId,
+                        sectionKey: genre.name.sectionInitial,
+                        title: genre.name,
+                        subtitle: "\(genre.albumCount) albums · \(genre.songCount) songs",
+                        artworkToken: genre.artworkToken,
+                        symbol: "guitars.fill"
+                    )
+                }
+                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
+                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
+                return (sections, snapshots.count)
+            }
+        } catch {
+            return ([], 0)
+        }
     }
 }

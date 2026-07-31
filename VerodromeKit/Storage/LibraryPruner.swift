@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// Best-effort pruning of local entities that no longer appear in a remote id set.
-@MainActor
+/// Isolation-agnostic: operates on the caller's context, on the caller's executor.
 public enum LibraryPruner {
     /// Removes albums (and their uncached songs) whose remote ids are absent from `remoteAlbumIds`.
     /// Skips songs that are downloaded or user-pinned.

@@ -10,8 +10,6 @@ struct AlbumGridCell: View {
         VStack(alignment: .leading, spacing: 8) {
             ArtworkView.grid(artworkURL, symbol: symbol)
                 .frame(maxWidth: .infinity)
-                // Soft shadow — radius 8 forces expensive offscreen passes per tile while scrolling.
-                .shadow(color: .black.opacity(0.10), radius: 3, y: 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)

@@ -9,22 +9,25 @@ struct PerfAppearModifier: ViewModifier {
     @State private var loggedAppear = false
 
     func body(content: Content) -> some View {
-        content
-            .onAppear {
-                guard !loggedAppear else { return }
-                loggedAppear = true
-                token = PerfTrace.begin("\(name).appear", details: details)
-                // End after the next run-loop turn so first layout work is included.
-                DispatchQueue.main.async {
-                    if let token {
-                        PerfTrace.end(token, details: details)
-                        self.token = nil
+        if PerfTrace.isEnabled {
+            content
+                .onAppear {
+                    guard !loggedAppear else { return }
+                    loggedAppear = true
+                    token = PerfTrace.begin("\(name).appear", details: details)
+                    DispatchQueue.main.async {
+                        if let token {
+                            PerfTrace.end(token, details: details)
+                            self.token = nil
+                        }
                     }
                 }
-            }
-            .onDisappear {
-                PerfTrace.event("\(name).disappear")
-            }
+                .onDisappear {
+                    PerfTrace.event("\(name).disappear")
+                }
+        } else {
+            content
+        }
     }
 }
 

@@ -4,13 +4,21 @@ import VerodromeKit
 
 struct SearchView: View {
     @StateObject private var history = SearchHistoryStore()
-    @Query(sort: \Artist.name) private var artists: [Artist]
-    @Query(sort: \Album.title) private var albums: [Album]
-    @Query(sort: \Song.title) private var songs: [Song]
-    @Query(sort: \Playlist.name) private var playlists: [Playlist]
+    @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+
     @State private var searchText = ""
+    @State private var debouncedSearch = ""
     @State private var remoteTask: Task<Void, Never>?
     @State private var isRemoteSearching = false
+
+    @State private var artistRows: [LibraryRowSnapshot] = []
+    @State private var albumRows: [LibraryRowSnapshot] = []
+    @State private var songRows: [LibraryRowSnapshot] = []
+    @State private var playlistRows: [LibraryRowSnapshot] = []
+    @State private var loadGeneration = 0
+    @State private var selectedArtistId: String?
+    @State private var selectedAlbumId: String?
+    @State private var selectedPlaylistId: String?
 
     var body: some View {
         List {
@@ -31,106 +39,133 @@ struct SearchView: View {
                         }
                     }
                 }
-                if !filteredArtists.isEmpty {
+                if !artistRows.isEmpty {
                     Section("Artists") {
-                        ForEach(filteredArtists, id: \.compoundRemoteId) { artist in
-                            NavigationLink {
-                                ArtistDetailView(artistID: artist.compoundRemoteId)
-                            } label: {
-                                EntityRow(title: artist.name, subtitle: "Artist", artworkURL: artist.artworkToken, symbol: "person.fill")
+                        ForEach(artistRows) { row in
+                            Button { selectedArtistId = row.id } label: {
+                                EntityRow(title: row.title, subtitle: "Artist", artworkURL: row.artworkToken, symbol: "person.fill")
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
-                if !filteredAlbums.isEmpty {
+                if !albumRows.isEmpty {
                     Section("Albums") {
-                        ForEach(filteredAlbums, id: \.compoundRemoteId) { album in
-                            NavigationLink {
-                                AlbumDetailView(albumID: album.compoundRemoteId)
-                            } label: {
-                                EntityRow(title: album.title, subtitle: album.displayArtist, artworkURL: album.artworkToken)
+                        ForEach(albumRows) { row in
+                            Button { selectedAlbumId = row.id } label: {
+                                EntityRow(title: row.title, subtitle: row.subtitle, artworkURL: row.artworkToken)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
-                if !filteredSongs.isEmpty {
+                if !songRows.isEmpty {
                     Section("Songs") {
-                        ForEach(filteredSongs, id: \.compoundRemoteId) { song in
-                            EntityRow(title: song.title, subtitle: song.displayArtist, artworkURL: song.album?.artworkToken)
-                                .songActions(song)
+                        ForEach(songRows) { row in
+                            EntityRow(title: row.title, subtitle: row.subtitle, artworkURL: row.artworkToken)
                         }
                     }
                 }
-                if !filteredPlaylists.isEmpty {
+                if !playlistRows.isEmpty {
                     Section("Playlists") {
-                        ForEach(filteredPlaylists, id: \.compoundRemoteId) { playlist in
-                            NavigationLink {
-                                PlaylistDetailView(playlistID: playlist.compoundRemoteId)
-                            } label: {
+                        ForEach(playlistRows) { row in
+                            Button { selectedPlaylistId = row.id } label: {
                                 EntityRow(
-                                    title: playlist.name,
+                                    title: row.title,
                                     subtitle: "Playlist",
-                                    artworkURL: playlist.displayArtworkToken,
+                                    artworkURL: row.artworkToken,
                                     symbol: "music.note.house.fill"
                                 )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
                 if !isRemoteSearching,
-                   filteredArtists.isEmpty && filteredAlbums.isEmpty && filteredSongs.isEmpty && filteredPlaylists.isEmpty {
+                   artistRows.isEmpty && albumRows.isEmpty && songRows.isEmpty && playlistRows.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
         }
         .navigationTitle("Search")
         .searchable(text: $searchText, prompt: "Artists, albums, songs…")
+        .debouncedSearch(text: $searchText, delay: .milliseconds(300)) { newValue in
+            debouncedSearch = newValue
+        }
+        .navigationDestination(item: $selectedArtistId) { ArtistDetailView(artistID: $0) }
+        .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+        .navigationDestination(item: $selectedPlaylistId) { PlaylistDetailView(playlistID: $0) }
         .onSubmit(of: .search) {
             history.add(searchText)
             Task { await runRemoteSearch(for: searchText) }
         }
-        .onChange(of: searchText) { _, newValue in
-            remoteTask?.cancel()
-            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.count >= 2 else {
-                isRemoteSearching = false
-                return
-            }
-            remoteTask = Task {
-                try? await Task.sleep(nanoseconds: 450_000_000)
-                guard !Task.isCancelled else { return }
-                await runRemoteSearch(for: trimmed)
+        .task(id: debouncedSearch) {
+            await reload()
+        }
+        .task(id: librarySync.isSyncing) {
+            if !librarySync.isSyncing {
+                await reload()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .verodromePerformSearch)) { note in
             if let query = note.userInfo?["query"] as? String {
                 searchText = query
+                debouncedSearch = query
                 history.add(query)
                 Task { await runRemoteSearch(for: query) }
             }
         }
     }
 
-    private var filteredArtists: [Artist] {
-        artists.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredAlbums: [Album] {
-        albums.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText)
-                || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
+    private func reload() async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let search = debouncedSearch
+        guard !search.isEmpty else {
+            artistRows = []
+            albumRows = []
+            songRows = []
+            playlistRows = []
+            return
         }
+        let built = await Self.fetch(searchText: search)
+        guard generation == loadGeneration else { return }
+        artistRows = built.artists
+        albumRows = built.albums
+        songRows = built.songs
+        playlistRows = built.playlists
     }
 
-    private var filteredSongs: [Song] {
-        songs.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText)
-                || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
+    private static func fetch(searchText: String) async -> (artists: [LibraryRowSnapshot], albums: [LibraryRowSnapshot], songs: [LibraryRowSnapshot], playlists: [LibraryRowSnapshot]) {
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let artists = try context.fetch(FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.name)]))
+                    .filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+                    .map { LibraryRowSnapshot(id: $0.compoundRemoteId, sectionKey: $0.name.sectionInitial, title: $0.name, subtitle: "Artist", artworkToken: $0.artworkToken, symbol: "person.fill") }
+
+                let albums = try context.fetch(FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.title)]))
+                    .filter {
+                        $0.title.localizedCaseInsensitiveContains(searchText)
+                            || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
+                    }
+                    .map { LibraryRowSnapshot(id: $0.compoundRemoteId, sectionKey: $0.title.sectionInitial, title: $0.title, subtitle: $0.displayArtist, artworkToken: $0.artworkToken) }
+
+                let songs = try context.fetch(FetchDescriptor<Song>(sortBy: [SortDescriptor(\Song.title)]))
+                    .filter {
+                        $0.title.localizedCaseInsensitiveContains(searchText)
+                            || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
+                    }
+                    .map { LibraryRowSnapshot(id: $0.compoundRemoteId, sectionKey: $0.title.sectionInitial, title: $0.title, subtitle: $0.displayArtist, artworkToken: $0.artworkToken) }
+
+                let playlists = try context.fetch(FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.name)]))
+                    .filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+                    .map { LibraryRowSnapshot(id: $0.compoundRemoteId, sectionKey: $0.name.sectionInitial, title: $0.name, subtitle: "Playlist", artworkToken: $0.artworkToken, symbol: "music.note.house.fill") }
+
+                return (artists, albums, songs, playlists)
+            }
+        } catch {
+            return ([], [], [], [])
         }
-    }
-
-    private var filteredPlaylists: [Playlist] {
-        playlists.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
 
     @MainActor
@@ -174,5 +209,6 @@ struct SearchView: View {
         let total = artistsResult.count + albumsResult.count + songsResult.count
         _ = try? repository.recordSearchHistory(account: account, query: trimmed, resultCount: total)
         history.add(trimmed)
+        await reload()
     }
 }

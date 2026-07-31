@@ -5,13 +5,7 @@ struct PlaceholderArtwork: View {
 
     var body: some View {
         Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [Color.secondary.opacity(0.35), Color.secondary.opacity(0.15)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(Color.secondary.opacity(0.18))
             .overlay {
                 Image(systemName: symbol)
                     .font(.title2)

@@ -47,7 +47,8 @@ public final class LibrarySyncCoordinator: ObservableObject {
             syncProgressText = ""
             defer { isSyncing = false }
             do {
-                // Let first paint / Home queries settle before MainActor ingest work.
+                // Ingest runs on its own background ModelActor now; this pause just keeps
+                // its disk and SQLite traffic away from first paint and artwork loads.
                 try? await Task.sleep(nanoseconds: 750_000_000)
                 try await VerodromeKit.shared.startBackgroundLibrarySync()
             } catch {

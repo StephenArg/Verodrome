@@ -3,25 +3,16 @@ import SwiftData
 import VerodromeKit
 
 struct DownloadsView: View {
-    @Query(sort: \Song.title) private var allSongs: [Song]
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @ObservedObject private var downloadCenter = DownloadCenter.shared
 
-    private var downloads: [Song] {
-        allSongs.filter(\.isDownloadedLocally)
-    }
-
-    private var activeSongs: [(song: Song, progress: Double)] {
-        downloadCenter.activeDownloads.compactMap { id, progress in
-            guard let song = allSongs.first(where: { $0.remoteId == id }) else { return nil }
-            return (song, progress)
-        }
-        .sorted { $0.song.title < $1.song.title }
-    }
+    @State private var downloadedRows: [DownloadedSongRow] = []
+    @State private var loadGeneration = 0
 
     var body: some View {
         Group {
-            if downloads.isEmpty && activeSongs.isEmpty && downloadCenter.failedIds.isEmpty {
+            if downloadedRows.isEmpty && activeEntries.isEmpty && downloadCenter.failedIds.isEmpty {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
@@ -29,14 +20,14 @@ struct DownloadsView: View {
                 )
             } else {
                 List {
-                    if !activeSongs.isEmpty {
+                    if !activeEntries.isEmpty {
                         Section("In Progress") {
-                            ForEach(activeSongs, id: \.song.compoundRemoteId) { entry in
+                            ForEach(activeEntries, id: \.row.id) { entry in
                                 VStack(alignment: .leading, spacing: 6) {
                                     EntityRow(
-                                        title: entry.song.title,
-                                        subtitle: entry.song.displayArtist,
-                                        artworkURL: entry.song.album?.artworkToken,
+                                        title: entry.row.title,
+                                        subtitle: entry.row.subtitle,
+                                        artworkURL: entry.row.artworkToken,
                                         trailing: "\(Int(entry.progress * 100))%"
                                     )
                                     ProgressView(value: entry.progress)
@@ -48,7 +39,7 @@ struct DownloadsView: View {
                     if !downloadCenter.failedIds.isEmpty {
                         Section("Failed") {
                             ForEach(Array(downloadCenter.failedIds).sorted(), id: \.self) { id in
-                                let title = allSongs.first(where: { $0.remoteId == id })?.title ?? id
+                                let title = downloadedRows.first(where: { $0.remoteId == id })?.title ?? id
                                 HStack {
                                     Text(title)
                                     Spacer()
@@ -61,22 +52,21 @@ struct DownloadsView: View {
                         }
                     }
 
-                    if !downloads.isEmpty {
+                    if !downloadedRows.isEmpty {
                         Section("Downloaded") {
-                            ForEach(downloads, id: \.compoundRemoteId) { song in
+                            ForEach(downloadedRows) { row in
                                 Button {
-                                    play(song)
+                                    play(row)
                                 } label: {
                                     EntityRow(
-                                        title: song.title,
-                                        subtitle: song.displayArtist,
-                                        artworkURL: song.album?.artworkToken,
-                                        isPlaying: player.currentItem?.playableId == song.remoteId,
-                                        trailing: formatDuration(song.displayDuration)
+                                        title: row.title,
+                                        subtitle: row.subtitle,
+                                        artworkURL: row.artworkToken,
+                                        isPlaying: nowPlaying.currentItem?.playableId == row.remoteId,
+                                        trailing: row.durationText
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                .songActions(song)
                             }
                         }
                     }
@@ -84,17 +74,84 @@ struct DownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
+        .task {
+            await reload()
+        }
+        .task(id: downloadCenter.completedIds.count) {
+            await reload()
+        }
     }
 
-    private func play(_ song: Song) {
-        let items = downloads.map(QueueItem.from)
-        let index = downloads.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
+    /// Active download entries joined with song titles from the loaded rows.
+    private var activeEntries: [(row: DownloadedSongRow, progress: Double)] {
+        downloadCenter.activeDownloads.compactMap { id, progress in
+            guard let row = downloadedRows.first(where: { $0.remoteId == id }) else { return nil }
+            return (row, progress)
+        }
+        .sorted { $0.row.title < $1.row.title }
+    }
+
+    private func reload() async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let rows = await Self.fetchDownloaded()
+        guard generation == loadGeneration else { return }
+        downloadedRows = rows
+    }
+
+    private static func fetchDownloaded() async -> [DownloadedSongRow] {
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let songs = try context.fetch(
+                    FetchDescriptor<Song>(
+                        predicate: #Predicate<Song> { $0.isDownloadedLocally == true },
+                        sortBy: [SortDescriptor(\Song.title)]
+                    )
+                )
+                return songs.map(DownloadedSongRow.init)
+            }
+        } catch {
+            return []
+        }
+    }
+
+    private func play(_ row: DownloadedSongRow) {
+        let items = downloadedRows.map(\.queueItem)
+        let index = downloadedRows.firstIndex(where: { $0.id == row.id }) ?? 0
         player.play(items: items, startAt: index)
     }
+}
 
-    private func formatDuration(_ duration: TimeInterval) -> String {
+struct DownloadedSongRow: Identifiable, Hashable, Sendable {
+    let id: String
+    let remoteId: String
+    let title: String
+    let subtitle: String
+    let artworkToken: String?
+    let duration: TimeInterval
+    let durationText: String
+
+    init(song: Song) {
+        id = song.compoundRemoteId
+        remoteId = song.remoteId
+        title = song.title
+        subtitle = song.displayArtist
+        artworkToken = song.artworkToken
+        duration = song.playDuration
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        durationText = String(format: "%d:%02d", minutes, seconds)
+    }
+
+    var queueItem: QueueItem {
+        QueueItem(
+            playableId: remoteId,
+            kind: .song,
+            title: title,
+            artistName: subtitle,
+            albumName: nil,
+            duration: duration,
+            artworkId: artworkToken
+        )
     }
 }

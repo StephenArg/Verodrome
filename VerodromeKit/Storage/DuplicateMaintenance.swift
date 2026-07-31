@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// Merges duplicate library entities that share the same compoundRemoteId.
-@MainActor
+/// Isolation-agnostic: operates on the caller's context, on the caller's executor.
 public enum DuplicateMaintenance {
     @discardableResult
     public static func resolveAll(account: Account, context: ModelContext) throws -> Int {

@@ -6,6 +6,7 @@ struct GenreDetailView: View {
     let genreID: String
     @Query private var genres: [Genre]
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @State private var genreAlbums: [Album] = []
     @State private var genreSongs: [Song] = []
@@ -51,7 +52,7 @@ struct GenreDetailView: View {
                                     title: song.title,
                                     subtitle: song.displayArtist,
                                     artworkURL: song.artworkToken,
-                                    isPlaying: player.currentItem?.playableId == song.remoteId,
+                                    isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
                                     trailing: formatDuration(song.displayDuration)
                                 )
                             }

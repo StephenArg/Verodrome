@@ -5,7 +5,10 @@ import VerodromeKit
 struct AlbumDetailView: View {
     let albumID: String
     @Query private var albums: [Album]
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+
+    @State private var tracks: [Song] = []
 
     init(albumID: String) {
         self.albumID = albumID
@@ -15,7 +18,6 @@ struct AlbumDetailView: View {
     var body: some View {
         List {
             if let album = albums.first {
-                let tracks = tracks(for: album)
                 Section {
                     DetailHeader(
                         title: album.title,
@@ -34,7 +36,7 @@ struct AlbumDetailView: View {
                             EntityRow(
                                 title: song.title,
                                 subtitle: song.displayArtist,
-                                isPlaying: player.currentItem?.playableId == song.remoteId,
+                                isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
                                 trailing: formatDuration(song.displayDuration),
                                 trackNumber: song.track ?? (index + 1)
                             )
@@ -47,63 +49,50 @@ struct AlbumDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task(id: albums.first?.remoteId) {
+            guard let album = albums.first else { return }
+            loadTracks(for: album)
             guard let remoteId = albums.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(albumId: remoteId)
+            if let album = albums.first {
+                loadTracks(for: album)
+            }
         }
     }
 
-    /// Album relationship only — never scan the full song library.
-    private func tracks(for album: Album) -> [Song] {
-        album.songs.sorted {
+    private func loadTracks(for album: Album) {
+        tracks = album.songs.sorted {
             ($0.disc ?? 0, $0.track ?? 0) < ($1.disc ?? 0, $1.track ?? 0)
         }
     }
 
     private func play(shuffle: Bool) {
         guard let album = albums.first else { return }
-        PlayTrace.begin(
-            shuffle ? "AlbumDetail Shuffle" : "AlbumDetail Play",
-            details: "album=\(album.title) remoteId=\(album.remoteId)"
-        )
-        PlayTrace.mark("reading album.songs…")
-        var items = tracks(for: album).map(QueueItem.from)
-        PlayTrace.mark("mapped QueueItems", details: "count=\(items.count)")
+        var items = tracks.map(QueueItem.from)
 
         if items.isEmpty {
-            // Only hop async when we must wait on network sync.
             Task {
-                PlayTrace.mark("empty tracks — syncing album…")
                 try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(albumId: album.remoteId)
-                items = tracks(for: album).map(QueueItem.from)
-                PlayTrace.mark("remapped QueueItems", details: "count=\(items.count)")
+                if let album = albums.first {
+                    loadTracks(for: album)
+                }
+                items = tracks.map(QueueItem.from)
                 guard !items.isEmpty else {
                     PlayTrace.error("no tracks after sync")
                     return
                 }
-                if shuffle {
-                    items.shuffle()
-                    PlayTrace.mark("items.shuffle() done")
-                }
-                PlayTrace.mark("calling player.play")
+                if shuffle { items.shuffle() }
                 player.play(items: items)
             }
             return
         }
 
-        if shuffle {
-            items.shuffle()
-            PlayTrace.mark("items.shuffle() done")
-        }
-        PlayTrace.mark("calling player.play")
+        if shuffle { items.shuffle() }
         player.play(items: items)
     }
 
     private func playSong(_ song: Song, tracks: [Song]) {
-        PlayTrace.begin("AlbumDetail track tap", details: "song=\(song.title)")
-        PlayTrace.mark("mapping QueueItems", details: "count=\(tracks.count)")
         let items = tracks.map(QueueItem.from)
         let index = tracks.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
-        PlayTrace.mark("calling player.play", details: "startAt=\(index)")
         player.play(items: items, startAt: index)
     }
 

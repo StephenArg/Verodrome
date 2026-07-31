@@ -14,79 +14,85 @@ struct HomeTileItem: Identifiable, Hashable {
     var albumRemoteId: String? = nil
 }
 
+/// Everything that should cause a tile reload, collapsed into one `.task(id:)` key so
+/// opening Home runs a single background load instead of one per trigger.
+///
+/// Deliberately excludes `isSyncing`: including it fired a full reload when a sync started
+/// *and* again when it ended, and the mid-sync one contends with the ingest writes. Sync
+/// completion is handled by a one-shot `onChange` instead.
+private struct HomeLoadTrigger: Equatable {
+    let sections: [HomeSection]
+    let seed: Int
+}
+
+/// Populates `Album.artistName` for albums synced before it was denormalized.
+///
+/// Without this the tile mapper's fallback to `artist?.name` faults the relationship once
+/// per album. Runs at most once per launch, and the predicate means it costs a single empty
+/// fetch once every album has a value.
+@MainActor
+private enum HomeArtistNameBackfill {
+    /// Persisted, not just per-launch: albums with no artist relationship at all can never
+    /// get a name, so an in-memory flag would refetch and refault them on every launch.
+    private static let defaultsKey = "home.artistNameBackfillDone"
+
+    static func runIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: defaultsKey) else { return }
+
+        let token = PerfTrace.begin("Home.artistNameBackfill")
+        let filled = (try? await PersistentStorage.shared.backgroundActor.perform { context in
+            var desc = FetchDescriptor<Album>(predicate: #Predicate<Album> { $0.artistName == nil })
+            desc.fetchLimit = 2000
+            let albums = try context.fetch(desc)
+            var filled = 0
+            for album in albums {
+                guard let name = album.artist?.name else { continue }
+                album.artistName = name
+                filled += 1
+            }
+            return filled
+        }) ?? 0
+
+        UserDefaults.standard.set(true, forKey: defaultsKey)
+        PerfTrace.end(token, details: "filled=\(filled)")
+    }
+}
+
 struct HomeView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
     @Environment(\.modelContext) private var modelContext
 
-    @Query private var recentAlbums: [Album]
-    @Query private var newestAlbums: [Album]
-    @Query private var favoriteAlbums: [Album]
-    @Query private var playlists: [Playlist]
-    @Query private var podcasts: [Podcast]
-    @Query private var radios: [Radio]
-    @Query private var genres: [Genre]
-
     @State private var showEditor = false
     @State private var randomSeed = Int.random(in: Int.min...Int.max)
-    @State private var randomTiles: [HomeTileItem] = []
     @State private var sectionTiles: [HomeSection: [HomeTileItem]] = [:]
+    @State private var didRequestInitialRefresh = false
+    @State private var selectedAlbumId: String?
+    @State private var selectedPlaylistId: String?
+    @State private var selectedPodcastId: String?
+    @State private var selectedGenreId: String?
+    @State private var selectedSectionList: HomeSection?
 
-    init() {
-        var recent = FetchDescriptor<Album>(
-            predicate: #Predicate<Album> { $0.recentIndex > 0 },
-            sortBy: [SortDescriptor(\Album.recentIndex)]
+    private var loadTrigger: HomeLoadTrigger {
+        HomeLoadTrigger(
+            sections: settings.enabledHomeSections,
+            seed: randomSeed
         )
-        recent.fetchLimit = 20
-        _recentAlbums = Query(recent)
-
-        var newest = FetchDescriptor<Album>(
-            predicate: #Predicate<Album> { $0.newestIndex > 0 },
-            sortBy: [SortDescriptor(\Album.newestIndex)]
-        )
-        newest.fetchLimit = 20
-        _newestAlbums = Query(newest)
-
-        var favorites = FetchDescriptor<Album>(
-            predicate: #Predicate<Album> { $0.isFavorite == true },
-            sortBy: [SortDescriptor(\Album.sortTitle)]
-        )
-        favorites.fetchLimit = 20
-        _favoriteAlbums = Query(favorites)
-
-        var playlistDesc = FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.name)])
-        playlistDesc.fetchLimit = 20
-        _playlists = Query(playlistDesc)
-
-        var podcastDesc = FetchDescriptor<Podcast>(sortBy: [SortDescriptor(\Podcast.title)])
-        podcastDesc.fetchLimit = 20
-        _podcasts = Query(podcastDesc)
-
-        var radioDesc = FetchDescriptor<Radio>(sortBy: [SortDescriptor(\Radio.title)])
-        radioDesc.fetchLimit = 20
-        _radios = Query(radioDesc)
-
-        var genreDesc = FetchDescriptor<Genre>(sortBy: [SortDescriptor(\Genre.name)])
-        genreDesc.fetchLimit = 20
-        _genres = Query(genreDesc)
     }
 
     var body: some View {
-        ScrollView {
-            // Eager VStack: Home only has ~8 sections. LazyVStack was destroying and
-            // rebuilding entire carousels on every scroll pass (see Home.section.appear/
-            // disappear spam), which hitch the main thread even when art is cached.
-            VStack(alignment: .leading, spacing: 28) {
-                ForEach(settings.enabledHomeSections) { section in
-                    HomeSectionView(
-                        section: section,
-                        tiles: sectionTiles[section] ?? [],
-                        onAlbumPlay: playAlbum
-                    )
-                }
+        HomeCollectionView(
+            sections: settings.enabledHomeSections,
+            tiles: sectionTiles,
+            onSelectTile: select,
+            onPlayAlbum: playAlbum,
+            onSeeAll: { selectedSectionList = $0 },
+            onRefresh: {
+                await refreshHomeLists()
+                randomSeed = Int.random(in: Int.min...Int.max)
             }
-            .padding(.vertical)
-        }
+        )
+        .ignoresSafeArea(edges: .bottom)
         .navigationTitle("Home")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -103,160 +109,250 @@ struct HomeView: View {
         .sheet(isPresented: $showEditor) {
             HomeEditorView()
         }
-        .refreshable {
-            randomSeed = Int.random(in: Int.min...Int.max)
+        .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+        .navigationDestination(item: $selectedPlaylistId) { PlaylistDetailView(playlistID: $0) }
+        .navigationDestination(item: $selectedPodcastId) { PodcastDetailView(podcastID: $0) }
+        .navigationDestination(item: $selectedGenreId) { GenreDetailView(genreID: $0) }
+        .navigationDestination(item: $selectedSectionList) { sectionList(for: $0) }
+        .task(id: loadTrigger) {
+            await HomeArtistNameBackfill.runIfNeeded()
+            await loadTiles()
+            // Server top-up runs once per view lifetime, after local tiles are on screen.
+            guard !didRequestInitialRefresh, !librarySync.isSyncing else { return }
+            didRequestInitialRefresh = true
+            // Let the visible carousels finish decoding their artwork first. The ingest
+            // writes this kicks off contend with artwork reads for the same disk, and
+            // launch-time tiles are already on screen from the local store by now.
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
             await refreshHomeLists()
-            reloadRandomAlbums()
-            rebuildSectionTiles()
+            await loadTiles()
         }
-        .task(id: randomSeed) {
-            reloadRandomAlbums()
-            rebuildSectionTiles()
+        .onChange(of: librarySync.isSyncing) { wasSyncing, isSyncing in
+            // Only once the writes have stopped — reloading mid-sync competes with ingest
+            // for the store and produced the slowest loads by far.
+            guard wasSyncing, !isSyncing else { return }
+            Task { await loadTiles() }
         }
-        .task {
-            guard !librarySync.isSyncing else {
-                PerfTrace.event("Home.skipRefresh", details: "backgroundSync=true")
-                return
-            }
-            if newestAlbums.isEmpty || recentAlbums.isEmpty {
-                await refreshHomeLists()
-            }
-        }
-        .task(id: homeDataFingerprint) {
-            rebuildSectionTiles()
-        }
-        .perfAppear("Home", details: homeSnapshotDetails())
     }
 
-    private var homeDataFingerprint: String {
-        "\(recentAlbums.count)|\(newestAlbums.count)|\(favoriteAlbums.count)|\(playlists.count)|\(podcasts.count)|\(radios.count)|\(genres.count)|\(randomTiles.count)|\(settings.enabledHomeSections.count)"
+    private func select(section: HomeSection, tile: HomeTileItem) {
+        switch section {
+        case .recentlyPlayed, .recentlyAdded, .favorites, .randomAlbums:
+            selectedAlbumId = tile.id
+        case .playlists:
+            selectedPlaylistId = tile.id
+        case .podcasts:
+            selectedPodcastId = tile.id
+        case .genres:
+            selectedGenreId = tile.id
+        case .radios:
+            break
+        }
     }
 
-    private func homeSnapshotDetails() -> String {
-        "sections=\(settings.enabledHomeSections.count) recent=\(recentAlbums.count) newest=\(newestAlbums.count) fav=\(favoriteAlbums.count) playlists=\(playlists.count) podcasts=\(podcasts.count) radios=\(radios.count) genres=\(genres.count) random=\(randomTiles.count)"
+    @ViewBuilder
+    private func sectionList(for section: HomeSection) -> some View {
+        switch section {
+        case .favorites: FavoritesView()
+        case .playlists: PlaylistsView()
+        case .podcasts: PodcastsView()
+        case .radios: RadiosView()
+        case .genres: GenresView()
+        case .recentlyPlayed, .recentlyAdded, .randomAlbums:
+            AlbumsView()
+        }
     }
 
-    private func rebuildSectionTiles() {
-        PerfTrace.measure("Home.rebuildTiles", details: homeSnapshotDetails()) {
-            var next: [HomeSection: [HomeTileItem]] = [:]
-            for section in settings.enabledHomeSections {
-                switch section {
-                case .recentlyPlayed:
-                    next[section] = recentAlbums.map(Self.albumTile)
-                case .recentlyAdded:
-                    next[section] = newestAlbums.map(Self.albumTile)
-                case .favorites:
-                    next[section] = favoriteAlbums.map(Self.albumTile)
-                case .randomAlbums:
-                    next[section] = randomTiles
-                case .playlists:
-                    next[section] = playlists.map {
-                        HomeTileItem(
-                            id: $0.compoundRemoteId,
-                            title: $0.name,
-                            subtitle: "\($0.songCount) songs",
-                            artworkToken: $0.artworkToken,
-                            symbol: "music.note.house.fill"
-                        )
-                    }
-                case .podcasts:
-                    next[section] = podcasts.map {
-                        HomeTileItem(
-                            id: $0.compoundRemoteId,
-                            title: $0.title,
-                            subtitle: "\($0.episodeCount) episodes",
-                            artworkToken: $0.artworkToken,
-                            symbol: "mic.fill"
-                        )
-                    }
-                case .radios:
-                    next[section] = radios.map {
-                        HomeTileItem(
-                            id: $0.compoundRemoteId,
-                            title: $0.title,
-                            subtitle: "Radio",
-                            artworkToken: $0.artworkToken,
-                            symbol: "dot.radiowaves.left.and.right"
-                        )
-                    }
-                case .genres:
-                    next[section] = genres.map {
-                        HomeTileItem(
-                            id: $0.compoundRemoteId,
-                            title: $0.name,
-                            subtitle: "\($0.albumCount) albums",
-                            artworkToken: $0.artworkToken,
-                            symbol: "guitars.fill"
-                        )
-                    }
+    /// Fetches every section in one hop onto the storage actor, then publishes once.
+    ///
+    /// Publishing per-section was tried and was dramatically worse (33.6s versus 1.9s for
+    /// the same work): each mutation drives a synchronous diffable apply, and with eight
+    /// orthogonally-scrolling sections that reruns the compositional layout every time.
+    /// One publish means one layout pass.
+    private func loadTiles() async {
+        let token = PerfTrace.begin("Home.loadTiles")
+        let result = await Self.fetchTiles(
+            sections: settings.enabledHomeSections,
+            randomSeed: randomSeed
+        )
+        // `.task(id:)` already cancels the superseded load; bailing here also avoids
+        // publishing tiles for a trigger the user has already scrolled past.
+        guard !Task.isCancelled else {
+            PerfTrace.end(token, details: "cancelled")
+            return
+        }
+        guard result.tiles != sectionTiles else {
+            PerfTrace.end(token, details: "unchanged, no re-render | \(result.breakdown)")
+            return
+        }
+        sectionTiles = result.tiles
+        PerfTrace.end(
+            token,
+            details: "sections=\(result.tiles.count) "
+                + "tiles=\(result.tiles.values.reduce(0) { $0 + $1.count }) | \(result.breakdown)"
+        )
+    }
+
+    /// Fetch + map all home sections in one background pass.
+    ///
+    /// `breakdown` reports how long each section's fetch-and-map took, plus how much of
+    /// that was spent waiting to get onto the storage actor, so a slow load can be
+    /// attributed to a specific section rather than guessed at.
+    private static func fetchTiles(
+        sections: [HomeSection],
+        randomSeed: Int
+    ) async -> (tiles: [HomeSection: [HomeTileItem]], breakdown: String) {
+        let tQueued = CFAbsoluteTimeGetCurrent()
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let waitMs = Int(((CFAbsoluteTimeGetCurrent() - tQueued) * 1000).rounded())
+                var result: [HomeSection: [HomeTileItem]] = [:]
+                var timings: [String] = ["actorWait=\(waitMs)ms"]
+
+                for section in sections {
+                    let t0 = CFAbsoluteTimeGetCurrent()
+                    let tiles = try Self.fetchSection(section, randomSeed: randomSeed, context: context)
+                    let ms = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
+                    result[section] = tiles
+                    timings.append("\(section.title)=\(ms)ms/\(tiles.count)")
                 }
+
+                return (result, timings.joined(separator: " "))
             }
-            let changed = next != sectionTiles
-            sectionTiles = next
-            if changed {
-                PerfTrace.event(
-                    "Home.tilesChanged",
-                    details: "sections=\(next.count) totalTiles=\(next.values.reduce(0) { $0 + $1.count })"
+        } catch {
+            return ([:], "failed")
+        }
+    }
+
+    /// Runs inside `backgroundActor.perform`, so it must not be main-actor isolated.
+    private nonisolated static func fetchSection(
+        _ section: HomeSection,
+        randomSeed: Int,
+        context: ModelContext
+    ) throws -> [HomeTileItem] {
+        switch section {
+        case .recentlyPlayed:
+            var desc = FetchDescriptor<Album>(
+                predicate: #Predicate<Album> { $0.recentIndex > 0 },
+                sortBy: [SortDescriptor(\Album.recentIndex)]
+            )
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map(Self.albumTile)
+
+        case .recentlyAdded:
+            var desc = FetchDescriptor<Album>(
+                predicate: #Predicate<Album> { $0.newestIndex > 0 },
+                sortBy: [SortDescriptor(\Album.newestIndex)]
+            )
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map(Self.albumTile)
+
+        case .favorites:
+            var desc = FetchDescriptor<Album>(
+                predicate: #Predicate<Album> { $0.isFavorite == true },
+                sortBy: [SortDescriptor(\Album.sortTitle)]
+            )
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map(Self.albumTile)
+
+        case .randomAlbums:
+            var desc = FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.sortTitle)])
+            desc.fetchLimit = 40
+            let sample = try context.fetch(desc)
+            return Array(
+                sample
+                    .sorted {
+                        stableHash($0.remoteId, seed: randomSeed)
+                            < stableHash($1.remoteId, seed: randomSeed)
+                    }
+                    .prefix(20)
+                    .map(Self.albumTile)
+            )
+
+        case .playlists:
+            var desc = FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.name)])
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map {
+                HomeTileItem(
+                    id: $0.compoundRemoteId,
+                    title: $0.name,
+                    subtitle: "\($0.songCount) songs",
+                    artworkToken: $0.artworkToken,
+                    symbol: "music.note.house.fill"
+                )
+            }
+
+        case .podcasts:
+            var desc = FetchDescriptor<Podcast>(sortBy: [SortDescriptor(\Podcast.title)])
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map {
+                HomeTileItem(
+                    id: $0.compoundRemoteId,
+                    title: $0.title,
+                    subtitle: "\($0.episodeCount) episodes",
+                    artworkToken: $0.artworkToken,
+                    symbol: "mic.fill"
+                )
+            }
+
+        case .radios:
+            var desc = FetchDescriptor<Radio>(sortBy: [SortDescriptor(\Radio.title)])
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map {
+                HomeTileItem(
+                    id: $0.compoundRemoteId,
+                    title: $0.title,
+                    subtitle: "Radio",
+                    artworkToken: $0.artworkToken,
+                    symbol: "dot.radiowaves.left.and.right"
+                )
+            }
+
+        case .genres:
+            var desc = FetchDescriptor<Genre>(sortBy: [SortDescriptor(\Genre.name)])
+            desc.fetchLimit = 20
+            return (try context.fetch(desc)).map {
+                HomeTileItem(
+                    id: $0.compoundRemoteId,
+                    title: $0.name,
+                    subtitle: "\($0.albumCount) albums",
+                    artworkToken: $0.artworkToken,
+                    symbol: "guitars.fill"
                 )
             }
         }
     }
 
-    private static func albumTile(_ album: Album) -> HomeTileItem {
+    /// Runs inside `backgroundActor.perform`, so it must not be main-actor isolated.
+    ///
+    /// Reads `artistName` directly rather than `displayArtist`: the latter falls back to
+    /// `artist?.name`, which faults the relationship once per album and turns a single
+    /// fetch into dozens of round trips. `HomeArtistNameBackfill` keeps the denormalized
+    /// column populated so the fallback isn't needed.
+    private nonisolated static func albumTile(_ album: Album) -> HomeTileItem {
         HomeTileItem(
             id: album.compoundRemoteId,
             title: album.title,
-            subtitle: album.displayArtist,
+            subtitle: album.artistName ?? "Unknown Artist",
             artworkToken: album.artworkToken,
             albumCompoundId: album.compoundRemoteId,
             albumRemoteId: album.remoteId
         )
     }
 
-    private func reloadRandomAlbums() {
-        guard settings.enabledHomeSections.contains(.randomAlbums) else {
-            randomTiles = []
-            return
-        }
-        PerfTrace.measure("Home.reloadRandomAlbums") {
-            var descriptor = FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.sortTitle)])
-            descriptor.fetchLimit = 40
-            let sample = (try? modelContext.fetch(descriptor)) ?? []
-            randomTiles = Array(
-                sample.sorted {
-                    stableHash($0.remoteId) < stableHash($1.remoteId)
-                }
-                .prefix(20)
-                .map(Self.albumTile)
-            )
-        }
-        PerfTrace.event("Home.randomReady", details: "count=\(randomTiles.count)")
-    }
-
-    private func stableHash(_ value: String) -> Int {
+    private nonisolated static func stableHash(_ value: String, seed: Int) -> Int {
         var hasher = Hasher()
-        hasher.combine(randomSeed)
+        hasher.combine(seed)
         hasher.combine(value)
         return hasher.finalize()
     }
 
     private func refreshHomeLists() async {
-        let token = PerfTrace.begin("Home.refreshLists")
-        defer { PerfTrace.end(token, details: homeSnapshotDetails()) }
-
-        guard let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() else {
-            PerfTrace.event("Home.refreshLists.noSyncer")
-            return
-        }
-        _ = await PerfTrace.measureAsync("Home.syncNewest") {
-            try? await syncer.syncNewestAlbums(limit: 40)
-        }
-        _ = await PerfTrace.measureAsync("Home.syncRecent") {
-            try? await syncer.syncRecentAlbums(limit: 40)
-        }
-        await PerfTrace.measureAsync("Home.syncFavorites") {
-            try? await syncer.syncFavoriteAlbums()
-        }
+        guard let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() else { return }
+        _ = try? await syncer.syncNewestAlbums(limit: 40)
+        _ = try? await syncer.syncRecentAlbums(limit: 40)
+        try? await syncer.syncFavoriteAlbums()
     }
 
     private func playAlbum(compoundId: String, remoteId: String) {
@@ -271,22 +367,16 @@ struct HomeView: View {
                 PlayTrace.error("album not found")
                 return
             }
-            PlayTrace.mark("reading album.songs…")
             var songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-            PlayTrace.mark("songs loaded", details: "count=\(songs.count)")
             if songs.isEmpty {
-                PlayTrace.mark("empty — syncing album…")
                 try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(albumId: remoteId)
                 songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-                PlayTrace.mark("after sync", details: "count=\(songs.count)")
             }
             guard !songs.isEmpty else {
                 PlayTrace.error("no songs to play")
                 return
             }
             let items = songs.map(QueueItem.from)
-            PlayTrace.mark("calling kit.player.play", details: "count=\(items.count)")
-            // Avoid @EnvironmentObject player so Home does not redraw on every track change.
             await VerodromeKit.shared.player?.play(items: items, startAt: 0)
         }
     }

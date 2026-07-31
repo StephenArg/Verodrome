@@ -88,5 +88,5 @@ extension Song {
 }
 
 extension Album {
-    var displayArtist: String { artist?.name ?? "Unknown Artist" }
+    var displayArtist: String { artistName ?? artist?.name ?? "Unknown Artist" }
 }

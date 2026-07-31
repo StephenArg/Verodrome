@@ -5,6 +5,7 @@ import VerodromeKit
 struct ArtistDetailView: View {
     let artistID: String
     @Query private var artists: [Artist]
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @State private var artistAlbums: [Album] = []
     @State private var artistSongs: [Song] = []
@@ -49,7 +50,7 @@ struct ArtistDetailView: View {
                                     title: song.title,
                                     subtitle: song.displayAlbum,
                                     artworkURL: song.artworkToken,
-                                    isPlaying: player.currentItem?.playableId == song.remoteId,
+                                    isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
                                     trailing: formatDuration(song.displayDuration)
                                 )
                             }

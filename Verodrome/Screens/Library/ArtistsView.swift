@@ -3,71 +3,86 @@ import SwiftData
 import VerodromeKit
 
 struct ArtistsView: View {
-    @Query(sort: \Artist.sortName) private var artists: [Artist]
-    @State private var searchText = ""
-    @State private var rowItems: [ArtistRowItem] = []
+    @EnvironmentObject private var nowPlaying: NowPlayingModel
+    @EnvironmentObject private var librarySync: LibrarySyncCoordinator
 
-    private var rowsFingerprint: String {
-        guard let first = artists.first, let last = artists.last else {
-            return "0|\(searchText)"
-        }
-        return "\(artists.count)|\(first.compoundRemoteId)|\(last.compoundRemoteId)|\(searchText)"
-    }
+    @State private var searchText = ""
+    @State private var debouncedSearch = ""
+    @State private var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
+    @State private var rowCount = 0
+    @State private var loadGeneration = 0
+    @State private var selectedId: String?
 
     var body: some View {
-        AlphabetIndexedList(
-            items: rowItems,
-            sectionTitle: \.sortName,
-            perfLabel: "Artists"
-        ) { item in
-            NavigationLink {
-                ArtistDetailView(artistID: item.id)
-            } label: {
-                EntityRow(
-                    title: item.name,
-                    subtitle: item.subtitle,
-                    artworkURL: item.artworkToken,
-                    symbol: "person.fill"
-                )
-            }
-        }
+        IndexedEntityTableView(
+            sections: sections,
+            playingId: nowPlaying.currentItem?.playableId,
+            onSelect: { item, _ in selectedId = item.id }
+        )
         .navigationTitle("Artists")
         .searchable(text: $searchText, prompt: "Filter artists")
-        .perfAppear("Artists", details: "queryCount=\(artists.count) rows=\(rowItems.count)")
-        .task(id: rowsFingerprint) {
-            rowItems = PerfTrace.measure(
-                "Artists.makeRows",
-                details: "query=\(artists.count) search=\(searchText.isEmpty ? "off" : "on")"
-            ) {
-                Self.makeRows(from: artists, searchText: searchText)
+        .debouncedSearch(text: $searchText) { newValue in
+            debouncedSearch = newValue
+        }
+        .navigationDestination(item: $selectedId) { id in
+            ArtistDetailView(artistID: id)
+        }
+        .perfAppear("Artists", details: "rows=\(rowCount) search=\(searchText.isEmpty ? "off" : "on")")
+        .task {
+            await reload(reason: "appear")
+        }
+        .task(id: debouncedSearch) {
+            await reload(reason: "search")
+        }
+        .task(id: librarySync.isSyncing) {
+            if !librarySync.isSyncing {
+                await reload(reason: "syncFinished")
             }
         }
-    }
-
-    private static func makeRows(from artists: [Artist], searchText: String) -> [ArtistRowItem] {
-        let source: [Artist]
-        if searchText.isEmpty {
-            source = artists
-        } else {
-            source = artists.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        .refreshable {
+            await reload(reason: "pullToRefresh")
         }
-        return source.map(ArtistRowItem.init)
     }
-}
 
-/// Lightweight row model so list identity is stable without SwiftData faulting during section rebuilds.
-private struct ArtistRowItem: Identifiable {
-    let id: String
-    let name: String
-    let sortName: String
-    let subtitle: String
-    let artworkToken: String?
+    private func reload(reason: String) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let search = debouncedSearch
+        let built = await Self.fetchSections(searchText: search)
+        guard generation == loadGeneration else { return }
+        sections = built.sections
+        rowCount = built.count
+    }
 
-    init(_ artist: Artist) {
-        id = artist.compoundRemoteId
-        name = artist.name
-        sortName = artist.sortName.isEmpty ? artist.name : artist.sortName
-        subtitle = "\(artist.albumCount) albums · \(artist.songCount) songs"
-        artworkToken = artist.artworkToken
+    /// Fetch + map + section off the main actor so opening Artists stays responsive.
+    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibraryRowSnapshot>], count: Int) {
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let artists = try context.fetch(
+                    FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.sortName)])
+                )
+                let filtered: [Artist]
+                if searchText.isEmpty {
+                    filtered = artists
+                } else {
+                    filtered = artists.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+                }
+                let snapshots = filtered.map { artist in
+                    LibraryRowSnapshot(
+                        id: artist.compoundRemoteId,
+                        sectionKey: (artist.sortName.isEmpty ? artist.name : artist.sortName).sectionInitial,
+                        title: artist.name,
+                        subtitle: "\(artist.albumCount) albums · \(artist.songCount) songs",
+                        artworkToken: artist.artworkToken,
+                        symbol: "person.fill"
+                    )
+                }
+                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
+                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
+                return (sections, snapshots.count)
+            }
+        } catch {
+            return ([], 0)
+        }
     }
 }
