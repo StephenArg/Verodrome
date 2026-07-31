@@ -57,9 +57,8 @@ struct PopupPlayerView: View {
                         .padding(.top, 8)
                     }
                 }
-                // Lock title/artist to artwork width (not the wider seek bar).
-                .frame(width: LargeArtworkView.side)
-                .frame(maxWidth: .infinity)
+                // Match artwork / seek bar width.
+                .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
                 .padding(.vertical, 12)
                 .clipped()
 

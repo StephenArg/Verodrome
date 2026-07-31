@@ -83,7 +83,7 @@ enum VerodromeTheme {
     static let gridSpacing: CGFloat = 16
     static let miniPlayerHeight: CGFloat = 64
     static let artworkCornerRadius: CGFloat = 8
-    /// Shared inset for player title + seek bar so their widths match.
+    /// Shared inset for player artwork, title, and seek bar so their widths match.
     static let playerContentHorizontalPadding: CGFloat = 20
 
     static var glassBackground: some ShapeStyle {

@@ -37,6 +37,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     private var currentPlayURL: String = ""
     /// Set while intentionally replacing/stopping audio so finish callbacks don't advance.
     private var ignoreFinishCallbacks = false
+    /// When set, `play` loads the entry but keeps playback paused (and re-asserts pause
+    /// if the engine reports `.playing` before our pause sticks).
+    private var preferPaused = false
     /// Offset to seek to once the engine reports the entry as playing. `seek(to:)` is a
     /// no-op until AudioStreaming has an `audioPlayingEntry`, so it cannot run inline.
     private var pendingSeek: TimeInterval?
@@ -112,15 +115,25 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         setEqualizerEnabled(equalizerEnabled)
     }
 
-    /// Engine-level single-track loop. Prefer this over gapless-next when repeating one.
+    /// Prepare the engine for app-level repeat-one.
+    ///
+    /// Repeat-one is handled in `AudioPlayer.handleTrackFinished` (replay current),
+    /// not via AudioStreaming's `.single` loop — a preloaded next entry bypasses that
+    /// loop and would advance the queue. Manual next/previous still call `playNext` /
+    /// `playPrevious` and are unaffected.
     public func setRepeatOne(_ enabled: Bool) {
-        streamingPlayer.loopMode = enabled ? .single(times: nil) : .off
+        streamingPlayer.loopMode = .off
         if enabled {
+            gaplessEnabled = false
+            crossfadeSeconds = 0
             clearPendingNext()
         }
     }
 
     public func clearPendingNext() {
+        if let url = pendingNextURL {
+            streamingPlayer.removeFromQueue(url: url)
+        }
         pendingNextURL = nil
         isCrossfading = false
     }
@@ -157,8 +170,14 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         applyGlobalGain()
     }
 
-    public func play(item: QueueItem, maxBitrate: Int, format: StreamFormat, startAt: TimeInterval = 0) async throws {
-        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate) format=\(format) startAt=\(Int(startAt))")
+    public func play(
+        item: QueueItem,
+        maxBitrate: Int,
+        format: StreamFormat,
+        startAt: TimeInterval = 0,
+        startPaused: Bool = false
+    ) async throws {
+        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate) format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
         let url: URL
         var source = "stream"
         var cachedPlayable: (id: String, kind: PlayableRef.Kind)?
@@ -179,6 +198,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         }
         pendingNextURL = nil
         isCrossfading = false
+        preferPaused = startPaused
         streamingPlayer.volume = 1
         // Live streams have no meaningful position to restore.
         pendingSeek = (startAt > 1 && !item.isLiveStream) ? startAt : nil
@@ -191,9 +211,15 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         ignoreFinishCallbacks = false
         duration = item.isLiveStream ? 0 : item.duration
         currentTime = pendingSeek ?? 0
-        isPlaying = true
         stallDetector.reset()
-        startProgressTimer()
+        if startPaused {
+            streamingPlayer.pause()
+            isPlaying = false
+            stopProgressTimer()
+        } else {
+            isPlaying = true
+            startProgressTimer()
+        }
         PlayTrace.mark("streamingPlayer.play returned (buffering may still be in progress)")
         // Touch cache after play starts so disk meta writes don't delay first audio.
         if let cachedPlayable {
@@ -226,6 +252,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     }
 
     public func resume() {
+        preferPaused = false
         streamingPlayer.resume()
         isPlaying = true
         // Give the stream a fresh window to deliver audio before we call it dead.
@@ -235,6 +262,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
 
     public func stop() {
         ignoreFinishCallbacks = true
+        preferPaused = false
         currentPlayURL = ""
         streamingPlayer.stop()
         ignoreFinishCallbacks = false
@@ -405,13 +433,19 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
             // clear `currentPlayURL`) must not resurrect the playing state.
             guard entryId.id == self.currentPlayURL
                     || entryId.id == self.pendingNextURL?.absoluteString else { return }
-            self.isPlaying = true
-            self.startProgressTimer()
             if let offset = self.pendingSeek, entryId.id == self.currentPlayURL {
                 self.pendingSeek = nil
                 PlayTrace.mark("applying resume offset", details: "\(Int(offset))s")
                 self.seek(to: offset)
             }
+            if self.preferPaused {
+                self.streamingPlayer.pause()
+                self.isPlaying = false
+                self.stopProgressTimer()
+                return
+            }
+            self.isPlaying = true
+            self.startProgressTimer()
             // Gapless / crossfade hand-offs never report `.eof`, so this is the only
             // signal that the engine moved on to the pre-queued entry on its own.
             // `play(item:)` clears `pendingNextURL` and sets `currentPlayURL` before
@@ -438,6 +472,11 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")
                 // No intended entry means we already abandoned this stream.
                 guard !self.currentPlayURL.isEmpty else { return }
+                if self.preferPaused {
+                    self.streamingPlayer.pause()
+                    self.isPlaying = false
+                    return
+                }
                 self.isPlaying = true
             case .paused, .stopped, .disposed:
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")

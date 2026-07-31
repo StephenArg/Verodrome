@@ -5,6 +5,10 @@ struct PlayerControlView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var progress: PlayerProgressModel
 
+    /// Thumb position while the user drags, so the time labels follow the scrub
+    /// instead of the (still advancing) playback clock.
+    @State private var scrubTime: TimeInterval?
+
     /// Match Spotify-style control row proportions from the reference.
     private let playDiameter: CGFloat = 72
     private let skipIconSize: CGFloat = 28
@@ -23,14 +27,18 @@ struct PlayerControlView: View {
                 SeekableTimeSlider(
                     currentTime: progress.currentTime,
                     duration: progress.duration,
-                    onSeek: { player.seek(to: $0) }
+                    onScrub: { scrubTime = $0 },
+                    onSeek: { time in
+                        scrubTime = nil
+                        player.seek(to: time)
+                    }
                 )
                 .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
 
                 HStack {
-                    Text(formatTime(progress.currentTime))
+                    Text(formatTime(displayedTime))
                     Spacer()
-                    Text("-\(formatTime(max(0, progress.duration - progress.currentTime)))")
+                    Text("-\(formatTime(max(0, progress.duration - displayedTime)))")
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -50,6 +58,10 @@ struct PlayerControlView: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 24)
         }
+    }
+
+    private var displayedTime: TimeInterval {
+        scrubTime ?? progress.currentTime
     }
 
     // MARK: - Controls

@@ -89,8 +89,9 @@ public final class PlayQueueHandler: ObservableObject {
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
-    /// Moves to the next queue item. Used for skip / auto-advance after a track ends.
-    /// Repeat-one is handled by replaying in `AudioPlayer` — skip still advances.
+    /// Moves to the next queue item. Used for manual skip and for auto-advance when
+    /// repeat is off/all. Repeat-one never calls this on natural finish — it replays
+    /// in `AudioPlayer` — but next/previous still use this and always advance.
     public func advance() -> QueueItem? {
         let q = activeQueue
         guard !q.isEmpty else { return nil }
@@ -106,7 +107,14 @@ public final class PlayQueueHandler: ObservableObject {
     }
 
     public func retreat() -> QueueItem? {
-        if currentIndex > 0 { currentIndex -= 1 }
+        let q = activeQueue
+        guard !q.isEmpty else { return nil }
+        switch repeatMode {
+        case .all:
+            currentIndex = (currentIndex - 1 + q.count) % q.count
+        case .off, .one:
+            if currentIndex > 0 { currentIndex -= 1 } else { return currentItem }
+        }
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
         return currentItem

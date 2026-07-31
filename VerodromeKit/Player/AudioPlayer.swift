@@ -74,12 +74,12 @@ public final class AudioPlayer: ObservableObject {
         scrobbleSyncer = syncer
     }
 
-    public func playCurrent(startAt: TimeInterval = 0) async {
+    public func playCurrent(startAt: TimeInterval = 0, paused: Bool = false) async {
         guard let item = queueHandler.currentItem else {
             PlayTrace.error("playCurrent — no current item")
             return
         }
-        PlayTrace.mark("AudioPlayer.playCurrent enter", details: "\(item.title) id=\(item.playableId) startAt=\(Int(startAt))")
+        PlayTrace.mark("AudioPlayer.playCurrent enter", details: "\(item.title) id=\(item.playableId) startAt=\(Int(startAt)) paused=\(paused)")
         nowPlaying = item
         lyrics = ""
         let user = settings()
@@ -93,14 +93,14 @@ public final class AudioPlayer: ObservableObject {
             equalizerEnabled: user.equalizerEnabled,
             replayGainEnabled: user.replayGainEnabled,
             equalizerBands: user.equalizerBands,
-            gaplessEnabled: user.gaplessPlaybackEnabled && !repeatOne,
-            crossfadeSeconds: (user.crossfadeEnabled && !repeatOne) ? user.crossfadeDurationSeconds : 0
+            gaplessEnabled: user.gaplessPlaybackEnabled && !repeatOne && !paused,
+            crossfadeSeconds: (user.crossfadeEnabled && !repeatOne && !paused) ? user.crossfadeDurationSeconds : 0
         )
         backend.setRepeatOne(repeatOne)
         backend.isOfflineMode = user.isOfflineMode
         PlayTrace.mark("backend.configure done")
         do {
-            try await backend.play(item: item, maxBitrate: bitrate, format: format, startAt: startAt)
+            try await backend.play(item: item, maxBitrate: bitrate, format: format, startAt: startAt, startPaused: paused)
             consecutivePlayFailures = 0
             stalled = nil
             statusMessage = ""
@@ -111,6 +111,14 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         // Don't hold first-audio behind lyrics / scrobble / gapless preload.
+        // Parked (paused) loads skip scrobble/preload — user hasn't started playback.
+        guard !paused else {
+            deferredWorkTask?.cancel()
+            if user.showLyricsWhenAvailable {
+                Task { await fetchLyrics(for: item) }
+            }
+            return
+        }
         let showLyrics = user.showLyricsWhenAvailable
         scheduleDeferredWork(for: item, showLyrics: showLyrics, bitrate: bitrate, format: format)
     }
@@ -278,14 +286,30 @@ public final class AudioPlayer: ObservableObject {
         Task { await EventLogger.shared.log(level, category: "player", message) }
     }
 
-    /// Natural end-of-track. Repeat-one replays in place (Amperfy-style); otherwise advance.
+    /// Natural end-of-track only. Manual next/previous go through `playNext` /
+    /// `playPrevious` and always move in the queue, even when repeat-one is on.
     private func handleTrackFinished() {
         if queueHandler.repeatMode == .one {
             PlayTrace.mark("repeat one — replaying current")
             Task { await playCurrent() }
             return
         }
-        playNext()
+        guard !isAdvancing else { return }
+        isAdvancing = true
+        defer { isAdvancing = false }
+        stalled = nil
+        if queueHandler.advance() != nil {
+            Task { await playCurrent() }
+            return
+        }
+        // End of queue without repeat-all — load the first track, paused.
+        guard !queueHandler.activeQueue.isEmpty else {
+            backend.stop()
+            return
+        }
+        PlayTrace.mark("end of queue — parking on first track paused")
+        queueHandler.jump(to: 0)
+        Task { await playCurrent(paused: true) }
     }
 
     /// The engine already started the pre-queued track (gapless / crossfade). Move the
@@ -293,6 +317,13 @@ public final class AudioPlayer: ObservableObject {
     /// would restart the already-playing audio from zero and destroy the gapless join.
     private func handleEngineAdvance() {
         guard !isAdvancing else { return }
+        // Stale gapless preload must not steal a repeat-one finish — queue index stays,
+        // restart the current item. Manual skips never enter this path.
+        if queueHandler.repeatMode == .one {
+            PlayTrace.mark("repeat one — rejecting gapless advance, replaying current")
+            Task { await playCurrent() }
+            return
+        }
         isAdvancing = true
         defer { isAdvancing = false }
         guard let item = queueHandler.advance() else {
@@ -309,11 +340,16 @@ public final class AudioPlayer: ObservableObject {
 
     /// Keep engine-level loop / gapless in sync when the user toggles repeat mid-track.
     public func applyRepeatMode(_ mode: RepeatMode) {
+        let user = settings()
         let repeatOne = mode == .one
+        backend.configure(
+            equalizerEnabled: user.equalizerEnabled,
+            replayGainEnabled: user.replayGainEnabled,
+            equalizerBands: user.equalizerBands,
+            gaplessEnabled: user.gaplessPlaybackEnabled && !repeatOne,
+            crossfadeSeconds: (user.crossfadeEnabled && !repeatOne) ? user.crossfadeDurationSeconds : 0
+        )
         backend.setRepeatOne(repeatOne)
-        if repeatOne {
-            backend.clearPendingNext()
-        }
     }
 
     public func play(items: [QueueItem], startAt index: Int = 0) async {
