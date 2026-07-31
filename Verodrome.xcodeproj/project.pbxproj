@@ -33,6 +33,7 @@
 		29865CED55105FDE5D48FCFC /* subsonic_music_directory.xml in Resources */ = {isa = PBXBuildFile; fileRef = 5E0C9D68A8442BB052CE19E7 /* subsonic_music_directory.xml */; };
 		29CEF9A9C857D40EE7449116 /* ObservableSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B35A788E75F930ED731A782 /* ObservableSettings.swift */; };
 		2BB930B19845DF4BE7C39D36 /* HoldableButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783FDE6DE5719CB832273B8C /* HoldableButton.swift */; };
+		2CFC4821889FFF30C5EA3CB4 /* ArtworkTintedBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 039394D745F5B9FB4533C1BC /* ArtworkTintedBackground.swift */; };
 		2D259710910CD1458C8512C2 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8447CB4A5A6EEF870FD4FCC /* HomeView.swift */; };
 		2FB0FC885CF7F11F91298046 /* VerodromeKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6348E7D5AAAF8EFDD430ED /* VerodromeKit.swift */; };
 		3218EA339EF9C3B05C3AD635 /* MiniPlayerHostingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821EB5119FB482B485B84F47 /* MiniPlayerHostingView.swift */; };
@@ -235,6 +236,7 @@
 		0135B6E030209CE0D321C09D /* SubsonicLibrarySyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicLibrarySyncer.swift; sourceTree = "<group>"; };
 		01CA414BD026E5C92FF22DFB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		0208F8E2AA5891E4E21D306E /* LibraryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
+		039394D745F5B9FB4533C1BC /* ArtworkTintedBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkTintedBackground.swift; sourceTree = "<group>"; };
 		03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyTests.swift; sourceTree = "<group>"; };
 		04057A21F240E44C6F6AF9BE /* BackendApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendApi.swift; sourceTree = "<group>"; };
 		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -801,6 +803,7 @@
 			children = (
 				D960598679D4E86CE3C240A1 /* AlbumGridCell.swift */,
 				3EE4D481F08A2BD0222C1BC6 /* AlphabetIndex.swift */,
+				039394D745F5B9FB4533C1BC /* ArtworkTintedBackground.swift */,
 				6C9F92F61CBFCE323E2330B8 /* ArtworkView.swift */,
 				A70D97F807C231B5EE392AEC /* DebouncedSearch.swift */,
 				B792C548AD29B10F81A0746D /* DetailHeader.swift */,
@@ -1215,6 +1218,7 @@
 				04B7F7A2E3D599042E3E014B /* ArtistDetailView.swift in Sources */,
 				7B9F6257EF06241C3ADF3896 /* ArtistsView.swift in Sources */,
 				3A1B8F93F712DB9573EE68B5 /* ArtworkSettingsView.swift in Sources */,
+				2CFC4821889FFF30C5EA3CB4 /* ArtworkTintedBackground.swift in Sources */,
 				D8A0894D655FD8AF86DAD379 /* ArtworkView.swift in Sources */,
 				DF4AA3F96DAC2F3BE5A95F09 /* CarPlaySceneDelegate.swift in Sources */,
 				5D3AC0D836C03FF4652A7FE5 /* DebouncedSearch.swift in Sources */,

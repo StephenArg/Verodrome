@@ -39,6 +39,8 @@ struct ArtistDetailView: View {
                         } label: {
                             EntityRow(title: album.title, subtitle: "\(album.year ?? 0)", artworkURL: album.artworkToken)
                         }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     }
                 }
 
@@ -56,11 +58,14 @@ struct ArtistDetailView: View {
                             }
                             .buttonStyle(.plain)
                             .songActions(song)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
                     }
                 }
             }
         }
+        .artworkTintedBackground(token: backgroundArtworkToken)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: artists.first?.compoundRemoteId) {
             reloadArtistContent()
@@ -68,6 +73,13 @@ struct ArtistDetailView: View {
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(artistId: remoteId)
             reloadArtistContent()
         }
+    }
+
+    /// Servers frequently ship no artist image, so fall back to the newest album's
+    /// cover rather than leaving the screen on a flat untinted background.
+    private var backgroundArtworkToken: String? {
+        if let token = artists.first?.artworkToken, !token.isEmpty { return token }
+        return artistAlbums.first?.artworkToken
     }
 
     private func reloadArtistContent() {

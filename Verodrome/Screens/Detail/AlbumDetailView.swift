@@ -43,10 +43,13 @@ struct AlbumDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .songActions(song)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     }
                 }
             }
         }
+        .artworkTintedBackground(token: albums.first?.artworkToken)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: albums.first?.remoteId) {
             guard let album = albums.first else { return }
