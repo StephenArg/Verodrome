@@ -123,6 +123,20 @@ final class PlayerViewModel: ObservableObject {
         currentItem = facade?.currentItem
     }
 
+    /// Hold skip-forward = 2×, hold previous = 0.5×. Starts playback if paused.
+    func beginHoldSpeed(_ rate: Float) {
+        guard currentItem?.isLiveStream != true else { return }
+        if !isPlaying {
+            facade?.play()
+            isPlaying = facade?.isPlaying ?? isPlaying
+        }
+        facade?.setPlaybackRate(rate)
+    }
+
+    func endHoldSpeed() {
+        facade?.setPlaybackRate(1)
+    }
+
     func seek(to time: TimeInterval) {
         let clamped = min(max(0, time), max(progress.duration, 1))
         facade?.seek(to: clamped)

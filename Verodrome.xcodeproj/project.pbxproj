@@ -32,6 +32,7 @@
 		28F264562F05327B1E07C46C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01CA414BD026E5C92FF22DFB /* Models.swift */; };
 		29865CED55105FDE5D48FCFC /* subsonic_music_directory.xml in Resources */ = {isa = PBXBuildFile; fileRef = 5E0C9D68A8442BB052CE19E7 /* subsonic_music_directory.xml */; };
 		29CEF9A9C857D40EE7449116 /* ObservableSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B35A788E75F930ED731A782 /* ObservableSettings.swift */; };
+		2BB930B19845DF4BE7C39D36 /* HoldableButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783FDE6DE5719CB832273B8C /* HoldableButton.swift */; };
 		2D259710910CD1458C8512C2 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8447CB4A5A6EEF870FD4FCC /* HomeView.swift */; };
 		2FB0FC885CF7F11F91298046 /* VerodromeKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6348E7D5AAAF8EFDD430ED /* VerodromeKit.swift */; };
 		3218EA339EF9C3B05C3AD635 /* MiniPlayerHostingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821EB5119FB482B485B84F47 /* MiniPlayerHostingView.swift */; };
@@ -314,6 +315,7 @@
 		73F26A44B4C1FC940C85D7B7 /* LibraryHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryHubView.swift; sourceTree = "<group>"; };
 		7598C5E5C5681F5679CD3287 /* LibraryPruner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPruner.swift; sourceTree = "<group>"; };
 		75F057916C4439CFA0188162 /* EventLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLogView.swift; sourceTree = "<group>"; };
+		783FDE6DE5719CB832273B8C /* HoldableButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldableButton.swift; sourceTree = "<group>"; };
 		7B1A2DF283F636E828B51C1D /* QueueCachePolicyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyManager.swift; sourceTree = "<group>"; };
 		7B4A837E80B2C8370393876A /* VerodromeKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VerodromeKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		821EB5119FB482B485B84F47 /* MiniPlayerHostingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerHostingView.swift; sourceTree = "<group>"; };
@@ -492,6 +494,7 @@
 		447223D82842993CA7279FCF /* PlayerUI */ = {
 			isa = PBXGroup;
 			children = (
+				783FDE6DE5719CB832273B8C /* HoldableButton.swift */,
 				821EB5119FB482B485B84F47 /* MiniPlayerHostingView.swift */,
 				26F881C96006ED7784C237A6 /* PopupPlayerTransitionController.swift */,
 				A02DAC4A14A522E68274FFE1 /* SeekableTimeSlider.swift */,
@@ -1229,6 +1232,7 @@
 				2288598F5E584B00A3EFB509 /* GeneralSettingsView.swift in Sources */,
 				7852ABE5C0E68A3C3F657401 /* GenreDetailView.swift in Sources */,
 				9068E632E9C6F6DAAE3BD4D0 /* GenresView.swift in Sources */,
+				2BB930B19845DF4BE7C39D36 /* HoldableButton.swift in Sources */,
 				E49345E68E19BC5E1407FC79 /* HomeCollectionView.swift in Sources */,
 				7CD3F1470C98E1DFDCA883F9 /* HomeEditorView.swift in Sources */,
 				2D259710910CD1458C8512C2 /* HomeView.swift in Sources */,

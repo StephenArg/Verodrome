@@ -9,6 +9,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     @Published public private(set) var isPlaying = false
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
+    /// Engine playback rate (1 = normal). Used for hold-to-scrub speed changes.
+    @Published public private(set) var playbackRate: Float = 1
     public var isOfflineMode = false
     public var onTrackFinished: (() -> Void)?
     /// Fires when the engine starts an entry it advanced to on its own (gapless or
@@ -209,6 +211,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         PlayTrace.mark("streamingPlayer.play(url:) call", details: "source=\(source)")
         streamingPlayer.play(url: url)
         ignoreFinishCallbacks = false
+        // Fresh track always starts at normal speed (after play — engine may reset it).
+        setRate(1)
         duration = item.isLiveStream ? 0 : item.duration
         currentTime = pendingSeek ?? 0
         stallDetector.reset()
@@ -254,6 +258,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func resume() {
         preferPaused = false
         streamingPlayer.resume()
+        // Re-assert rate: some engine transitions snap back to 1×.
+        streamingPlayer.rate = playbackRate
         isPlaying = true
         // Give the stream a fresh window to deliver audio before we call it dead.
         stallDetector.extendWindow()
@@ -271,6 +277,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         pendingSeek = nil
         stallDetector.reset()
         stopProgressTimer()
+        setRate(1)
     }
 
     public func seek(to seconds: TimeInterval) {
@@ -278,6 +285,13 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         currentTime = seconds
         // The clock jumps (possibly backwards), so rebase rather than reading it as a stall.
         stallDetector.extendWindow()
+    }
+
+    /// Sets engine playback rate. Values outside a sensible range are clamped.
+    public func setRate(_ rate: Float) {
+        let clamped = min(max(rate, 0.5), 2)
+        playbackRate = clamped
+        streamingPlayer.rate = clamped
     }
 
     private func configureEQBands() {
@@ -444,6 +458,8 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 self.stopProgressTimer()
                 return
             }
+            // Engine can reset rate when an entry becomes audible.
+            self.streamingPlayer.rate = self.playbackRate
             self.isPlaying = true
             self.startProgressTimer()
             // Gapless / crossfade hand-offs never report `.eof`, so this is the only

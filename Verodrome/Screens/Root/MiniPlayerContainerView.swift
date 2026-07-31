@@ -32,7 +32,7 @@ struct MiniPlayerBar: View {
                     VStack(alignment: .leading, spacing: 2) {
                         MarqueeText(
                             text: item.title,
-                            font: .subheadline.weight(.semibold),
+                            font: .callout.weight(.semibold),
                             speed: 26,
                             fitAlignment: .leading
                         )
@@ -45,6 +45,7 @@ struct MiniPlayerBar: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                         } else {
                             Label(player.statusMessage, systemImage: "wifi.exclamationmark")
                                 .font(.caption)
@@ -52,17 +53,21 @@ struct MiniPlayerBar: View {
                                 .lineLimit(1)
                         }
                     }
+                    // minWidth 0 lets the column shrink so MarqueeText gets a real
+                    // bounded width instead of expanding past the trailing controls.
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .animation(.easeInOut(duration: 0.2), value: item.id)
-
-                    Spacer(minLength: 8)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .layoutPriority(0)
 
             AirPlayRoutePicker()
                 .frame(width: 28, height: 28)
                 .accessibilityLabel("Audio output")
+                .layoutPriority(1)
 
             Button {
                 player.playPause()
@@ -73,6 +78,7 @@ struct MiniPlayerBar: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
+            .layoutPriority(1)
         }
         .padding(.horizontal, drawsChrome ? 14 : 12)
         .padding(.vertical, drawsChrome ? 10 : 6)

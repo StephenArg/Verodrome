@@ -16,7 +16,7 @@ struct PlayerControlView: View {
     private let controlSpacing: CGFloat = 36
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 12) {
             if player.currentItem?.isLiveStream == true {
                 Text("LIVE")
                     .font(.caption.bold())
@@ -24,39 +24,47 @@ struct PlayerControlView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
             } else {
-                SeekableTimeSlider(
-                    currentTime: progress.currentTime,
-                    duration: progress.duration,
-                    onScrub: { scrubTime = $0 },
-                    onSeek: { time in
-                        scrubTime = nil
-                        player.seek(to: time)
-                    }
-                )
-                .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
+                VStack(spacing: 2) {
+                    SeekableTimeSlider(
+                        currentTime: progress.currentTime,
+                        duration: progress.duration,
+                        onScrub: { scrubTime = $0 },
+                        onSeek: { time in
+                            scrubTime = nil
+                            player.seek(to: time)
+                        }
+                    )
 
-                HStack {
-                    Text(formatTime(displayedTime))
-                    Spacer()
-                    Text("-\(formatTime(max(0, progress.duration - displayedTime)))")
+                    HStack {
+                        Text(formatTime(displayedTime))
+                        Spacer()
+                        Text("-\(formatTime(max(0, progress.duration - displayedTime)))")
+                    }
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.7))
                 }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
                 .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
             }
 
             HStack(spacing: controlSpacing) {
                 shuffleButton
-                skipButton(direction: .backward, action: player.skipBackward)
+                skipButton(
+                    direction: .backward,
+                    onTap: player.skipBackward,
+                    holdRate: 0.5
+                )
                 playButton
-                skipButton(direction: .forward, action: player.skipForward)
+                skipButton(
+                    direction: .forward,
+                    onTap: player.skipForward,
+                    holdRate: 2
+                )
                 repeatButton
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 8)
-            .padding(.bottom, 24)
         }
     }
 
@@ -84,16 +92,29 @@ struct PlayerControlView: View {
         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
     }
 
-    private func skipButton(direction: SkipControlIcon.Direction, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func skipButton(
+        direction: SkipControlIcon.Direction,
+        onTap: @escaping () -> Void,
+        holdRate: Float
+    ) -> some View {
+        let isLive = player.currentItem?.isLiveStream == true
+        return HoldableButton(
+            isEnabled: !isLive,
+            onTap: onTap,
+            onHoldStart: { player.beginHoldSpeed(holdRate) },
+            onHoldEnd: { player.endHoldSpeed() }
+        ) {
             SkipControlIcon(direction: direction)
                 .frame(width: skipIconSize + 4, height: skipIconSize)
                 .frame(width: skipIconSize + 12, height: playDiameter)
-                .contentShape(Rectangle())
         }
+        .opacity(isLive ? 0.35 : 1)
         .accessibilityLabel(direction == .backward ? "Previous" : "Next")
-        .disabled(player.currentItem?.isLiveStream == true)
-        .opacity(player.currentItem?.isLiveStream == true ? 0.35 : 1)
+        .accessibilityHint(
+            direction == .backward
+                ? "Hold to play at half speed"
+                : "Hold to fast forward at double speed"
+        )
     }
 
     private var shuffleButton: some View {

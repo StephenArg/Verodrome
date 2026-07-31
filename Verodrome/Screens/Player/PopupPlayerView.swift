@@ -32,42 +32,52 @@ struct PopupPlayerView: View {
                         }
                 )
 
-                VStack(spacing: 4) {
-                    MarqueeText(
-                        text: player.currentItem?.title ?? "Not Playing",
-                        font: .title2.bold(),
-                        fitAlignment: .center
-                    )
+                // Absorb leftover height above the metadata so title / progress /
+                // transport / options stay packed toward the bottom.
+                Spacer(minLength: 8)
 
-                    artistCreditsRow
-                        .opacity(artistCredits.isEmpty ? 0 : 1)
+                VStack(alignment: .leading, spacing: 6) {
+                    if let song = currentSong {
+                        RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
+                            Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                        }
+                        .frame(height: 16)
+                    }
+
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            MarqueeText(
+                                text: player.currentItem?.title ?? "Not Playing",
+                                font: .title2.bold(),
+                                fitAlignment: .leading
+                            )
+
+                            artistCreditsRow
+                                .opacity(artistCredits.isEmpty ? 0 : 1)
+                        }
+
+                        favoriteButton
+                    }
 
                     if !player.statusMessage.isEmpty {
                         Label(player.statusMessage, systemImage: "wifi.exclamationmark")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 4)
-                    }
-
-                    if let song = currentSong {
-                        RatingStarsView(rating: song.rating) { newRating in
-                            Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
-                        }
-                        .padding(.top, 8)
                     }
                 }
                 // Match artwork / seek bar width.
                 .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
                 .clipped()
 
                 PlayerControlView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
                     .clipped()
 
                 bottomActionBar
                     .padding(.horizontal)
+                    .padding(.top, 20)
                     .padding(.bottom, 16)
             }
             .background(
@@ -170,6 +180,26 @@ struct PopupPlayerView: View {
         .foregroundStyle(.primary)
     }
 
+    // MARK: - Favorite
+
+    @ViewBuilder
+    private var favoriteButton: some View {
+        if let song = currentSong {
+            Button {
+                Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+            } label: {
+                Image(systemName: song.isFavorite ? "heart.fill" : "heart")
+                    .font(.system(size: 24))
+                    .foregroundStyle(song.isFavorite ? Color.accentColor : Color.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(song.isFavorite ? "Remove from Favorites" : "Add to Favorites")
+        }
+    }
+
     // MARK: - Artist credits
 
     @ViewBuilder
@@ -184,7 +214,7 @@ struct PopupPlayerView: View {
                         text: only.name,
                         font: .subheadline,
                         speed: 24,
-                        fitAlignment: .center
+                        fitAlignment: .leading
                     )
                     .foregroundStyle(.secondary)
                 }
@@ -194,7 +224,7 @@ struct PopupPlayerView: View {
                     text: only.name,
                     font: .subheadline,
                     speed: 24,
-                    fitAlignment: .center
+                    fitAlignment: .leading
                 )
                 .foregroundStyle(.secondary)
             }
@@ -225,7 +255,7 @@ struct PopupPlayerView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

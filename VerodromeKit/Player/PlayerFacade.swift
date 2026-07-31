@@ -57,13 +57,27 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
                 // Rate-only update — never rebuild metadata (that flashes empty artwork).
                 self.nowPlayingHandler?.updatePlaybackState(
                     isPlaying: playing,
-                    elapsed: self.currentTime
+                    elapsed: self.currentTime,
+                    rate: self.audioPlayer.backend.playbackRate
                 )
             }
             .store(in: &cancellables)
         audioPlayer.backend.$currentTime
             .receive(on: DispatchQueue.main)
-            .assign(to: &$currentTime)
+            .sink { [weak self] time in
+                guard let self else { return }
+                self.currentTime = time
+                // While rate ≠ 1×, refresh lock-screen elapsed so the scrubber
+                // tracks the engine instead of drifting on extrapolated time.
+                let rate = self.audioPlayer.backend.playbackRate
+                guard rate != 1, self.isPlaying else { return }
+                self.nowPlayingHandler?.updatePlaybackState(
+                    isPlaying: true,
+                    elapsed: time,
+                    rate: rate
+                )
+            }
+            .store(in: &cancellables)
         audioPlayer.backend.$duration
             .receive(on: DispatchQueue.main)
             .assign(to: &$duration)
@@ -153,7 +167,21 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public func seek(to seconds: TimeInterval) {
         audioPlayer.backend.seek(to: seconds)
         currentTime = seconds
-        nowPlayingHandler?.updatePlaybackState(isPlaying: isPlaying, elapsed: currentTime)
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
+    }
+
+    /// Temporarily change engine rate (e.g. hold skip = 2× / hold previous = 0.5×).
+    public func setPlaybackRate(_ rate: Float) {
+        audioPlayer.backend.setRate(rate)
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
     }
 
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }
@@ -199,11 +227,13 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     }
 
     private func pushNowPlaying(reloadArtwork: Bool) {
+        let rate = audioPlayer.backend.playbackRate
         nowPlayingHandler?.update(
             item: currentItem,
             isPlaying: isPlaying,
             elapsed: currentTime,
-            duration: duration
+            duration: duration,
+            rate: rate
         )
         guard reloadArtwork,
               let artworkId = currentItem?.artworkId,
@@ -220,6 +250,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
                 isPlaying: self.isPlaying,
                 elapsed: self.currentTime,
                 duration: self.duration,
+                rate: self.audioPlayer.backend.playbackRate,
                 artwork: image
             )
         }

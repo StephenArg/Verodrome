@@ -14,6 +14,7 @@ public final class NowPlayingInfoCenterHandler {
         isPlaying: Bool,
         elapsed: TimeInterval,
         duration: TimeInterval,
+        rate: Float = 1,
         artwork: UIImage? = nil
     ) {
         guard let item else {
@@ -36,7 +37,7 @@ public final class NowPlayingInfoCenterHandler {
         info[MPMediaItemPropertyAlbumTitle] = item.albumName ?? ""
         info[MPMediaItemPropertyPlaybackDuration] = duration
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? Double(rate) : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         info[MPNowPlayingInfoPropertyMediaType] = NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue)
 
@@ -51,10 +52,10 @@ public final class NowPlayingInfoCenterHandler {
     }
 
     /// Pause/play / scrub: patch rate + elapsed only so artwork never blanks.
-    public func updatePlaybackState(isPlaying: Bool, elapsed: TimeInterval) {
+    public func updatePlaybackState(isPlaying: Bool, elapsed: TimeInterval, rate: Float = 1) {
         let center = MPNowPlayingInfoCenter.default()
         guard var info = center.nowPlayingInfo, !info.isEmpty else { return }
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? Double(rate) : 0.0
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
         // Keep existing artwork key untouched.
         center.nowPlayingInfo = info
