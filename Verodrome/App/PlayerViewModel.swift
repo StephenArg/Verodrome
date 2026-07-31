@@ -27,6 +27,8 @@ final class PlayerViewModel: ObservableObject {
     @Published var repeatMode: RepeatMode = .off
     @Published var shuffleMode: ShuffleMode = .off
     @Published var lyrics = ""
+    /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
+    @Published var statusMessage = ""
     @Published var equalizerBands: [Float] = Array(repeating: 0, count: 10)
     @Published var equalizerEnabled = false
     @Published var isOfflineMode = false
@@ -67,6 +69,7 @@ final class PlayerViewModel: ObservableObject {
             }
         }.store(in: &cancellables)
         impl.$lyrics.receive(on: DispatchQueue.main).assign(to: &$lyrics)
+        impl.$statusMessage.receive(on: DispatchQueue.main).assign(to: &$statusMessage)
         queue = impl.queue
         let user = SettingsStore.shared.loadUserSettings()
         equalizerBands = user.equalizerBands
@@ -113,10 +116,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func skipBackward() {
-        if progress.currentTime > 3 {
-            seek(to: 0)
-            return
-        }
+        // The restart-vs-previous-track decision lives in the player, which also knows
+        // whether the engine can still seek at all.
         facade?.previous()
         queue = facade?.queue ?? queue
         currentItem = facade?.currentItem

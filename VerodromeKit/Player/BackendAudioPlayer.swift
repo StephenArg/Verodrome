@@ -15,6 +15,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     /// crossfade), so the queue pointer can follow without restarting audio.
     public var onTrackAdvancedGaplessly: (() -> Void)?
     public var onProgress: ((TimeInterval, TimeInterval) -> Void)?
+    /// Fires when the streaming engine fails mid-load or mid-playback (most often a
+    /// network drop). The engine is unusable until the next `play(item:)`.
+    public var onPlaybackError: ((AudioPlayerError) -> Void)?
 
     private let streamingPlayer: AudioStreaming.AudioPlayer
     private let urlProvider: any StreamURLProviding
@@ -34,6 +37,15 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     private var currentPlayURL: String = ""
     /// Set while intentionally replacing/stopping audio so finish callbacks don't advance.
     private var ignoreFinishCallbacks = false
+    /// Offset to seek to once the engine reports the entry as playing. `seek(to:)` is a
+    /// no-op until AudioStreaming has an `audioPlayingEntry`, so it cannot run inline.
+    private var pendingSeek: TimeInterval?
+    /// How long the engine may report no forward progress before we declare the stream
+    /// dead. Comfortably above AudioStreaming's own 2s underrun rebuffer threshold.
+    private static let stallTimeout: TimeInterval = 12
+    /// Shorter window used when connectivity returns and we can act early.
+    private static let silentStuckGrace: TimeInterval = 2
+    private var stallDetector = PlaybackStallDetector(timeout: BackendAudioPlayer.stallTimeout)
 
     private static let bandFrequencies: [Float] = [
         32, 64, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000
@@ -60,6 +72,29 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         // Keep EQ in the graph (Amperfy-style). Bands are bypassed until enabled.
         attachEqualizerIfNeeded()
         setEqualizerEnabled(false)
+    }
+
+    /// AudioStreaming's `resume()` early-returns unless its internal state is exactly
+    /// `.paused`, so from `.error` / `.stopped` the only way back to audio is a fresh
+    /// `play(url:)`. Callers must check this before treating `resume()` as effective.
+    ///
+    /// A never-started entry also has to be excluded: `.waitingForData` contains
+    /// `.running`, so pausing a stream that never delivered a byte moves the engine to
+    /// `.paused` around a dead entry, where `resume()` succeeds but stays silent.
+    public var canResume: Bool {
+        streamingPlayer.state == .paused && stallDetector.hasStartedAudio
+    }
+
+    /// Nominally loading or playing, but the engine has not produced a single frame of
+    /// audio for long enough that it is not going to on its own. Lets callers recover
+    /// before the stall watchdog's full timeout elapses.
+    public var isSilentlyStuck: Bool {
+        guard !currentPlayURL.isEmpty else { return false }
+        return stallDetector.isSilentlyStuck(grace: Self.silentStuckGrace)
+    }
+
+    public func isCached(item: QueueItem) -> Bool {
+        item.directStreamURL != nil || cache.fileURL(forPlayableId: item.playableId, kind: item.kind) != nil
     }
 
     public func configure(
@@ -95,6 +130,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func adoptEngineAdvancedTrack(duration newDuration: TimeInterval) {
         duration = newDuration
         currentTime = 0
+        stallDetector.adoptPlayingEntry()
     }
 
     public func setEqualizerBands(_ bands: [Float]) {
@@ -121,8 +157,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         applyGlobalGain()
     }
 
-    public func play(item: QueueItem, maxBitrate: Int, format: StreamFormat) async throws {
-        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate) format=\(format)")
+    public func play(item: QueueItem, maxBitrate: Int, format: StreamFormat, startAt: TimeInterval = 0) async throws {
+        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate) format=\(format) startAt=\(Int(startAt))")
         let url: URL
         var source = "stream"
         var cachedPlayable: (id: String, kind: PlayableRef.Kind)?
@@ -144,6 +180,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         pendingNextURL = nil
         isCrossfading = false
         streamingPlayer.volume = 1
+        // Live streams have no meaningful position to restore.
+        pendingSeek = (startAt > 1 && !item.isLiveStream) ? startAt : nil
         // Mark the intended entry before replacing audio so the previous track's
         // finish callback (stopReason .none / .userAction) cannot advance the queue.
         ignoreFinishCallbacks = true
@@ -152,8 +190,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         streamingPlayer.play(url: url)
         ignoreFinishCallbacks = false
         duration = item.isLiveStream ? 0 : item.duration
-        currentTime = 0
+        currentTime = pendingSeek ?? 0
         isPlaying = true
+        stallDetector.reset()
         startProgressTimer()
         PlayTrace.mark("streamingPlayer.play returned (buffering may still be in progress)")
         // Touch cache after play starts so disk meta writes don't delay first audio.
@@ -189,6 +228,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func resume() {
         streamingPlayer.resume()
         isPlaying = true
+        // Give the stream a fresh window to deliver audio before we call it dead.
+        stallDetector.extendWindow()
         startProgressTimer()
     }
 
@@ -199,12 +240,16 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         ignoreFinishCallbacks = false
         isPlaying = false
         currentTime = 0
+        pendingSeek = nil
+        stallDetector.reset()
         stopProgressTimer()
     }
 
     public func seek(to seconds: TimeInterval) {
         streamingPlayer.seek(to: seconds)
         currentTime = seconds
+        // The clock jumps (possibly backwards), so rebase rather than reading it as a stall.
+        stallDetector.extendWindow()
     }
 
     private func configureEQBands() {
@@ -269,7 +314,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         let dur = streamingPlayer.duration
         // AudioStreaming reports `progress == 0` while `pendingNext` or briefly during
         // seek setup. Do not snap the UI clock back to 0:00 while audio is playing.
-        if progress.isFinite {
+        if progress.isFinite, pendingSeek == nil {
             let looksLikeTransientZero = progress == 0 && isPlaying && currentTime > 1
             if !looksLikeTransientZero, abs(progress - currentTime) >= 0.05 {
                 currentTime = progress
@@ -279,21 +324,52 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             duration = dur
         }
         onProgress?(currentTime, duration)
+        checkForStall(progress: progress)
         maybeStartCrossfade()
+    }
+
+    private func checkForStall(progress: Double) {
+        let startedAudio = stallDetector.hasStartedAudio
+        guard stallDetector.update(progress: progress, isPlaying: isPlaying) else { return }
+        PlayTrace.error(
+            "playback stalled",
+            details: "no progress for \(Int(Self.stallTimeout))s startedAudio=\(startedAudio)"
+        )
+        reportDeadStream()
+    }
+
+    /// Tears the engine down to a known-clean `.stopped` state and reports the failure.
+    /// Leaving the hung entry in place would let a later `resume()` report success while
+    /// staying silent forever, which is unrecoverable without restarting the app.
+    private func reportDeadStream() {
+        let position = currentTime
+        ignoreFinishCallbacks = true
+        streamingPlayer.stop()
+        ignoreFinishCallbacks = false
+        stopProgressTimer()
+        isPlaying = false
+        currentPlayURL = ""
+        pendingSeek = nil
+        clearPendingNext()
+        stallDetector.reset()
+        // Preserve the position so the retry can pick up where the audio died.
+        currentTime = position
+        onPlaybackError?(.dataNotFound)
     }
 
     private func maybeStartCrossfade() {
         guard crossfadeSeconds > 0, !isCrossfading, duration > 0 else { return }
         let remaining = duration - currentTime
         guard remaining <= crossfadeSeconds, remaining > 0 else { return }
+        // Only latch the flag once there is something to fade into, otherwise a failed
+        // preload would disable crossfade for the rest of the track.
+        guard let next = pendingNextURL else { return }
         isCrossfading = true
-        if let next = pendingNextURL {
-            fadeVolume(to: 0, duration: crossfadeSeconds) { [weak self] in
-                guard let self else { return }
-                self.streamingPlayer.play(url: next)
-                self.streamingPlayer.volume = 0
-                self.fadeVolume(to: 1, duration: max(self.crossfadeSeconds * 0.5, 0.1), completion: nil)
-            }
+        fadeVolume(to: 0, duration: crossfadeSeconds) { [weak self] in
+            guard let self else { return }
+            self.streamingPlayer.play(url: next)
+            self.streamingPlayer.volume = 0
+            self.fadeVolume(to: 1, duration: max(self.crossfadeSeconds * 0.5, 0.1), completion: nil)
         }
     }
 
@@ -324,8 +400,18 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
         PlayTrace.mark("AudioStreaming didStartPlaying", details: entryId.id)
         PlayTrace.end("first audio audible / didStartPlaying")
         Task { @MainActor in
+            // Fires the moment the engine adopts the entry, *before* any audio data
+            // arrives. A callback for an entry we already gave up on (play / error both
+            // clear `currentPlayURL`) must not resurrect the playing state.
+            guard entryId.id == self.currentPlayURL
+                    || entryId.id == self.pendingNextURL?.absoluteString else { return }
             self.isPlaying = true
             self.startProgressTimer()
+            if let offset = self.pendingSeek, entryId.id == self.currentPlayURL {
+                self.pendingSeek = nil
+                PlayTrace.mark("applying resume offset", details: "\(Int(offset))s")
+                self.seek(to: offset)
+            }
             // Gapless / crossfade hand-offs never report `.eof`, so this is the only
             // signal that the engine moved on to the pre-queued entry on its own.
             // `play(item:)` clears `pendingNextURL` and sets `currentPlayURL` before
@@ -350,10 +436,16 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
             switch newState {
             case .playing, .running:
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")
+                // No intended entry means we already abandoned this stream.
+                guard !self.currentPlayURL.isEmpty else { return }
                 self.isPlaying = true
-            case .paused, .stopped, .disposed, .error:
+            case .paused, .stopped, .disposed:
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")
                 self.isPlaying = false
+            case .error:
+                PlayTrace.mark("AudioStreaming state → error")
+                self.isPlaying = false
+                self.stopProgressTimer()
             case .bufferring, .ready:
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")
             @unknown default:
@@ -382,9 +474,19 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
     }
 
     public nonisolated func audioPlayerUnexpectedError(player: AudioStreaming.AudioPlayer, error: AudioPlayerError) {
+        PlayTrace.error("AudioStreaming unexpected error", details: error.localizedDescription)
         Task { @MainActor in
+            let position = self.currentTime
             self.isPlaying = false
-            // Don't auto-advance on error here — AudioPlayer decides.
+            self.stopProgressTimer()
+            // The engine is now in its `.error` state, where `resume()` is a no-op and
+            // the queued entries are dead. Drop them so nothing tries to reuse them.
+            self.currentPlayURL = ""
+            self.pendingSeek = nil
+            self.clearPendingNext()
+            self.stallDetector.reset()
+            self.currentTime = position
+            self.onPlaybackError?(error)
         }
     }
 

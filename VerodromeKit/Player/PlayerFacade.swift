@@ -44,6 +44,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
     @Published public private(set) var lyrics: String = ""
+    /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
+    @Published public private(set) var statusMessage: String = ""
 
     public init(audioPlayer: AudioPlayer) {
         self.audioPlayer = audioPlayer
@@ -75,6 +77,9 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.$lyrics
             .receive(on: DispatchQueue.main)
             .assign(to: &$lyrics)
+        audioPlayer.$statusMessage
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$statusMessage)
         refreshPublished()
     }
 
@@ -188,6 +193,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         currentTime = audioPlayer.backend.currentTime
         duration = audioPlayer.backend.duration
         lyrics = audioPlayer.lyrics
+        statusMessage = audioPlayer.statusMessage
         let trackChanged = currentItem?.id != previousId
         pushNowPlaying(reloadArtwork: trackChanged || lastArtworkLoadedItemId != currentItem?.id)
     }

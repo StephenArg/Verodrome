@@ -6,8 +6,8 @@ import Network
 public final class NetworkMonitor: ObservableObject {
     public static let shared = NetworkMonitor()
 
-    public private(set) var isConnected = true
-    public private(set) var isExpensive = false
+    @Published public private(set) var isConnected = true
+    @Published public private(set) var isExpensive = false
     public private(set) var interfaceType: NWInterface.InterfaceType?
 
     private let monitor = NWPathMonitor()
@@ -27,8 +27,11 @@ public final class NetworkMonitor: ObservableObject {
     }
 
     private func apply(path: NWPath) {
-        isConnected = path.status == .satisfied
-        isExpensive = path.isExpensive
+        // NWPathMonitor fires on every path detail change; assigning unconditionally
+        // would publish a stream of no-op updates to every subscriber.
+        let connected = path.status == .satisfied
+        if connected != isConnected { isConnected = connected }
+        if path.isExpensive != isExpensive { isExpensive = path.isExpensive }
         interfaceType = path.availableInterfaces.first?.type
     }
 }

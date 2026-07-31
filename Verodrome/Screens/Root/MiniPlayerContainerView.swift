@@ -38,10 +38,19 @@ struct MiniPlayerBar: View {
                         )
                         .foregroundStyle(.primary)
 
-                        Text(item.artist ?? "")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        // Only one subtitle line fits, so a stall takes precedence
+                        // over the artist name while it lasts.
+                        if player.statusMessage.isEmpty {
+                            Text(item.artist ?? "")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Label(player.statusMessage, systemImage: "wifi.exclamationmark")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     .animation(.easeInOut(duration: 0.2), value: item.id)
 

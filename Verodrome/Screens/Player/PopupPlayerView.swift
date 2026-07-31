@@ -42,6 +42,14 @@ struct PopupPlayerView: View {
                     artistCreditsRow
                         .opacity(artistCredits.isEmpty ? 0 : 1)
 
+                    if !player.statusMessage.isEmpty {
+                        Label(player.statusMessage, systemImage: "wifi.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 4)
+                    }
+
                     if let song = currentSong {
                         RatingStarsView(rating: song.rating) { newRating in
                             Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
