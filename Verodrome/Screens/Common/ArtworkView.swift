@@ -51,8 +51,19 @@ struct ArtworkView: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .task(id: ArtworkRequestID(token: token, size: size)) {
-                // Only start work on a miss — `image` is already seeded for cache hits.
-                guard image == nil, !loadFailed else { return }
+                // `State(initialValue:)` only seeds a brand-new view identity; a reused
+                // view (mini player / hero art on track change) still holds the previous
+                // token's image, so re-resolve against the cache on each token change.
+                let cached = token.flatMap {
+                    ArtworkImageCache.shared.image(for: $0, size: size)
+                }
+                if let cached {
+                    if image !== cached { image = cached }
+                    loadFailed = false
+                    return
+                }
+                if image != nil { image = nil }
+                loadFailed = false
                 await loadArtwork()
             }
     }
@@ -81,8 +92,6 @@ struct ArtworkView: View {
             loadFailed = false
             return
         }
-        // Cache hit was handled in init; we're here only on a miss.
-        loadFailed = false
 
         // Thumbnails: briefly yield so rapid scroll can cancel before network.
         if isThumbnail {

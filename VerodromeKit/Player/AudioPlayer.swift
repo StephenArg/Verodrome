@@ -18,6 +18,7 @@ public final class AudioPlayer: ObservableObject {
         self.backend = backend
         self.settings = settings
         backend.onTrackFinished = { [weak self] in Task { @MainActor in self?.handleTrackFinished() } }
+        backend.onTrackAdvancedGaplessly = { [weak self] in Task { @MainActor in self?.handleEngineAdvance() } }
         backend.onProgress = { [weak self] elapsed, duration in
             guard let self, let item = self.nowPlaying, !item.isLiveStream else { return }
             self.scrobbleSyncer?.trackProgress(item: item, elapsed: elapsed, duration: duration)
@@ -78,6 +79,22 @@ public final class AudioPlayer: ObservableObject {
         }
         // Don't hold first-audio behind lyrics / scrobble / gapless preload.
         let showLyrics = user.showLyricsWhenAvailable
+        scheduleDeferredWork(for: item, showLyrics: showLyrics, bitrate: bitrate, format: format)
+    }
+
+    /// Post-play work shared by `playCurrent()` and `handleEngineAdvance()`: cache
+    /// re-evaluation, gapless preload of the *following* track, scrobble, and lyrics.
+    /// Runs after a short delay so the new stream can claim bandwidth first.
+    private func scheduleDeferredWork(
+        for item: QueueItem,
+        showLyrics: Bool? = nil,
+        bitrate: Int? = nil,
+        format: StreamFormat? = nil
+    ) {
+        let user = settings()
+        let showLyrics = showLyrics ?? user.showLyricsWhenAvailable
+        let bitrate = bitrate ?? (NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi)
+        let format = format ?? (user.cacheTranscodingFormat.streamFormat ?? .original)
         Task { @MainActor [weak self] in
             guard let self else { return }
             PlayTrace.mark("post-play deferred work scheduled (1.5s)")
@@ -104,6 +121,25 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         playNext()
+    }
+
+    /// The engine already started the pre-queued track (gapless / crossfade). Move the
+    /// queue pointer and refresh published metadata only — calling `playCurrent()` here
+    /// would restart the already-playing audio from zero and destroy the gapless join.
+    private func handleEngineAdvance() {
+        guard !isAdvancing else { return }
+        isAdvancing = true
+        defer { isAdvancing = false }
+        guard let item = queueHandler.advance() else {
+            // Nothing to advance to (e.g. repeat off at end of queue). Let the engine
+            // stop on its own; the `.eof` finish path will handle the final state.
+            return
+        }
+        PlayTrace.mark("handleEngineAdvance", details: "\(item.title) id=\(item.playableId)")
+        nowPlaying = item
+        lyrics = ""
+        backend.adoptEngineAdvancedTrack(duration: item.isLiveStream ? 0 : item.duration)
+        scheduleDeferredWork(for: item)
     }
 
     /// Keep engine-level loop / gapless in sync when the user toggles repeat mid-track.

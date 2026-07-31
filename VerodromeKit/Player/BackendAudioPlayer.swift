@@ -11,6 +11,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     @Published public private(set) var duration: TimeInterval = 0
     public var isOfflineMode = false
     public var onTrackFinished: (() -> Void)?
+    /// Fires when the engine starts an entry it advanced to on its own (gapless or
+    /// crossfade), so the queue pointer can follow without restarting audio.
+    public var onTrackAdvancedGaplessly: (() -> Void)?
     public var onProgress: ((TimeInterval, TimeInterval) -> Void)?
 
     private let streamingPlayer: AudioStreaming.AudioPlayer
@@ -85,6 +88,13 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func clearPendingNext() {
         pendingNextURL = nil
         isCrossfading = false
+    }
+
+    /// Clock seed for a track the engine advanced to by itself (gapless / crossfade).
+    /// The engine is already playing it; we only need to reset our published clock.
+    public func adoptEngineAdvancedTrack(duration newDuration: TimeInterval) {
+        duration = newDuration
+        currentTime = 0
     }
 
     public func setEqualizerBands(_ bands: [Float]) {
@@ -316,6 +326,16 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
         Task { @MainActor in
             self.isPlaying = true
             self.startProgressTimer()
+            // Gapless / crossfade hand-offs never report `.eof`, so this is the only
+            // signal that the engine moved on to the pre-queued entry on its own.
+            // `play(item:)` clears `pendingNextURL` and sets `currentPlayURL` before
+            // starting audio, so an explicit play / manual skip can never match here.
+            guard entryId.id != self.currentPlayURL,
+                  entryId.id == self.pendingNextURL?.absoluteString else { return }
+            self.currentPlayURL = entryId.id
+            self.pendingNextURL = nil
+            self.isCrossfading = false
+            self.onTrackAdvancedGaplessly?()
         }
     }
 
