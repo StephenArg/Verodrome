@@ -32,7 +32,7 @@ struct MiniPlayerBar: View {
                     VStack(alignment: .leading, spacing: 2) {
                         MarqueeText(
                             text: item.title,
-                            font: .callout.weight(.semibold),
+                            font: .footnote.weight(.semibold),
                             speed: 26,
                             fitAlignment: .leading
                         )

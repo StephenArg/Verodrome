@@ -10,10 +10,16 @@ struct PopupPlayerView: View {
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
     @State private var artistCredits: [PlayerArtistCredit] = []
+    @State private var selectedAlbumId: String?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                playerHeader
+                    .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
+                    .padding(.top, 36)
+                    .padding(.bottom, 4)
+
                 LargeArtworkView(
                     urlString: player.currentItem?.artworkId,
                     symbol: player.currentItem?.kind == .radio
@@ -91,13 +97,8 @@ struct PopupPlayerView: View {
                 )
                 .ignoresSafeArea()
             )
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                }
-            }
+            .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+            .toolbar(.hidden, for: .navigationBar)
             .task(id: player.currentItem?.playableId) {
                 currentSong = resolveCurrentSong()
                 artistCredits = resolveArtistCredits()
@@ -113,15 +114,12 @@ struct PopupPlayerView: View {
                             }
                     }
                     .presentationDetents([.large])
-                case .lyrics:
-                    NavigationStack {
-                        LyricsView()
-                            .navigationTitle("Lyrics")
-                            .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) { Button("Done") { bottomPanel = nil } }
-                            }
+                case .addToPlaylist:
+                    if let song = currentSong {
+                        PlaylistSelectorView { playlist in
+                            Task { try? await LibraryActions.shared.addSongs([song], to: playlist) }
+                        }
                     }
-                    .presentationDetents([.large])
                 case .equalizer:
                     NavigationStack {
                         EqualizerView()
@@ -139,7 +137,33 @@ struct PopupPlayerView: View {
         .presentationCornerRadius(24)
     }
 
-    // MARK: - Bottom action bar (AirPlay / Share / Queue / Lyrics / EQ)
+    private var albumTitle: String {
+        let name = player.currentItem?.albumName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let name, !name.isEmpty else { return "" }
+        return name
+    }
+
+    // MARK: - Player header (dismiss / album / overflow)
+
+    /// Custom header so it can sit a little below the top safe area instead of
+    /// being pinned to it by the system navigation bar. The album title is
+    /// z-centered so unequal chevron / menu widths don't shift it.
+    private var playerHeader: some View {
+        EquatableView(content: PlayerHeader(
+            albumTitle: albumTitle,
+            albumId: currentSong?.album?.compoundRemoteId,
+            song: currentSong,
+            onDismiss: { dismiss() },
+            onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
+            onShare: { presentShareSheet() },
+            onAddToPlaylist: { bottomPanel = .addToPlaylist },
+            onOpenQueue: { bottomPanel = .queue },
+            onEqualizer: { bottomPanel = .equalizer }
+        ))
+    }
+
+    // MARK: - Bottom action bar (AirPlay / Share / Queue)
 
     private var bottomActionBar: some View {
         HStack(spacing: 28) {
@@ -159,20 +183,6 @@ struct PopupPlayerView: View {
                 bottomPanel = .queue
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.title3)
-            }
-
-            Button {
-                bottomPanel = .lyrics
-            } label: {
-                Image(systemName: "text.quote")
-                    .font(.title3)
-            }
-
-            Button {
-                bottomPanel = .equalizer
-            } label: {
-                Image(systemName: "slider.vertical.3")
                     .font(.title3)
             }
         }
@@ -356,8 +366,200 @@ private struct PlayerArtistCredit: Equatable {
     let artistID: String?
 }
 
+/// Header containing the dismiss chevron, centered album title, and overflow
+/// menu.
+private struct PlayerHeader: View, Equatable {
+    let albumTitle: String
+    let albumId: String?
+    let song: Song?
+    let onDismiss: () -> Void
+    let onOpenAlbum: () -> Void
+    let onShare: () -> Void
+    let onAddToPlaylist: () -> Void
+    let onOpenQueue: () -> Void
+    let onEqualizer: () -> Void
+
+    private let sideButtonWidth: CGFloat = 52
+
+    var body: some View {
+        ZStack {
+            // Below the buttons in z-order, and inset past them, so a long title
+            // can never swallow taps meant for the chevron / overflow menu.
+            Button { onOpenAlbum() } label: {
+                Text(albumTitle)
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .buttonStyle(.plain)
+            .disabled(albumId == nil)
+            .padding(.horizontal, sideButtonWidth + 8)
+
+            HStack(spacing: 0) {
+                Button { onDismiss() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.body.weight(.semibold))
+                        .frame(width: sideButtonWidth, height: sideButtonWidth, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+
+                Spacer(minLength: 0)
+
+                PlayerOverflowMenuButton(
+                    menuState: PlayerOverflowMenuButton.MenuState(
+                        hasSong: song != nil,
+                        isFavorite: song?.isFavorite == true
+                    ),
+                    onShare: onShare,
+                    onToggleFavorite: {
+                        guard let song else { return }
+                        Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+                    },
+                    onAddToPlaylist: onAddToPlaylist,
+                    onOpenQueue: onOpenQueue,
+                    onEqualizer: onEqualizer
+                )
+                .frame(width: sideButtonWidth, height: sideButtonWidth)
+                .accessibilityLabel("More options")
+            }
+        }
+        .frame(height: sideButtonWidth)
+    }
+
+    static func == (lhs: PlayerHeader, rhs: PlayerHeader) -> Bool {
+        lhs.albumTitle == rhs.albumTitle
+            && lhs.albumId == rhs.albumId
+            && lhs.song?.remoteId == rhs.song?.remoteId
+            && lhs.song?.isFavorite == rhs.song?.isFavorite
+    }
+}
+
+/// Overflow menu hosted as a `UIButton` menu. A SwiftUI `Menu` is rebuilt
+/// whenever any ancestor re-renders — which the player does continuously while
+/// playing — and that makes the open menu's rows visibly pulse. A `UIMenu` is a
+/// static snapshot, so it stays put; it is only rebuilt when `state` changes.
+private struct PlayerOverflowMenuButton: UIViewRepresentable {
+    struct MenuState: Equatable {
+        var hasSong: Bool
+        var isFavorite: Bool
+    }
+
+    var menuState: MenuState
+    var onShare: () -> Void
+    var onToggleFavorite: () -> Void
+    var onAddToPlaylist: () -> Void
+    var onOpenQueue: () -> Void
+    var onEqualizer: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(owner: self)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(
+            UIImage(
+                systemName: "ellipsis",
+                withConfiguration: UIImage.SymbolConfiguration(textStyle: .body, scale: .medium)
+                    .applying(UIImage.SymbolConfiguration(weight: .semibold))
+            ),
+            for: .normal
+        )
+        button.tintColor = .label
+        button.showsMenuAsPrimaryAction = true
+        button.menu = context.coordinator.makeMenu(for: menuState)
+        context.coordinator.renderedState = menuState
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        // Keep the action closures current without touching the menu, so an open
+        // menu is never rebuilt underneath the user.
+        context.coordinator.owner = self
+        guard context.coordinator.renderedState != menuState else { return }
+        context.coordinator.renderedState = menuState
+        button.menu = context.coordinator.makeMenu(for: menuState)
+    }
+
+    final class Coordinator {
+        var owner: PlayerOverflowMenuButton
+        var renderedState: MenuState?
+
+        init(owner: PlayerOverflowMenuButton) {
+            self.owner = owner
+        }
+
+        func makeMenu(for state: MenuState) -> UIMenu {
+            let share = UIAction(
+                title: "Share Song",
+                image: UIImage(systemName: "square.and.arrow.up")
+            ) { [weak self] _ in self?.owner.onShare() }
+
+            let songInfo = UIAction(
+                title: "Song Info",
+                image: UIImage(systemName: "info.circle"),
+                attributes: .disabled
+            ) { _ in }
+
+            let favorite = UIAction(
+                title: state.isFavorite ? "Unlike Song" : "Like Song",
+                image: UIImage(systemName: state.isFavorite ? "heart.slash" : "heart"),
+                attributes: state.hasSong ? [] : .disabled
+            ) { [weak self] _ in self?.owner.onToggleFavorite() }
+
+            let addToPlaylist = UIAction(
+                title: "Add to Playlist",
+                image: UIImage(systemName: "text.badge.plus"),
+                attributes: state.hasSong ? [] : .disabled
+            ) { [weak self] _ in self?.owner.onAddToPlaylist() }
+
+            let addToQueue = UIAction(
+                title: "Add to Queue",
+                image: UIImage(systemName: "text.append"),
+                attributes: .disabled
+            ) { _ in }
+
+            let openQueue = UIAction(
+                title: "Open Queue",
+                image: UIImage(systemName: "list.bullet")
+            ) { [weak self] _ in self?.owner.onOpenQueue() }
+
+            let lyrics = UIAction(
+                title: "Lyrics On/Off",
+                image: UIImage(systemName: "text.quote"),
+                attributes: .disabled
+            ) { _ in }
+
+            let hideRating = UIAction(
+                title: "Hide Rating Stars",
+                image: UIImage(systemName: "star.slash"),
+                attributes: .disabled
+            ) { _ in }
+
+            let equalizer = UIAction(
+                title: "Equalizer",
+                image: UIImage(systemName: "slider.vertical.3")
+            ) { [weak self] _ in self?.owner.onEqualizer() }
+
+            let sleepTimer = UIAction(
+                title: "Sleep Timer",
+                image: UIImage(systemName: "moon.zzz"),
+                attributes: .disabled
+            ) { _ in }
+
+            return UIMenu(children: [
+                UIMenu(options: .displayInline, children: [share, songInfo]),
+                UIMenu(options: .displayInline, children: [favorite, addToPlaylist, addToQueue, openQueue]),
+                UIMenu(options: .displayInline, children: [lyrics, hideRating, equalizer, sleepTimer])
+            ])
+        }
+    }
+}
+
 private enum BottomPanel: Identifiable {
-    case queue, lyrics, equalizer
+    case queue, equalizer, addToPlaylist
     var id: Int { hashValue }
 }
 
