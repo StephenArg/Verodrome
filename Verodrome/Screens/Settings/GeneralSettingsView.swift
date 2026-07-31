@@ -18,6 +18,11 @@ struct GeneralSettingsView: View {
                     theme.applyTheme()
                 }
             }
+
+            Section("Player") {
+                Toggle("Show Rating Stars", isOn: $settings.showRatingStars)
+                    .onChange(of: settings.showRatingStars) { _, _ in settings.save() }
+            }
         }
         .navigationTitle("General")
     }

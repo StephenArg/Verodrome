@@ -65,10 +65,13 @@ struct ArtworkTint: Equatable {
         )
     }
 
+    /// True when the artwork has no hue worth carrying into the UI.
+    var isNeutral: Bool { saturation < Self.neutralSaturation }
+
     private func color(for scheme: ColorScheme, saturationScale: CGFloat, brightness: CGFloat) -> Color {
         // Below this saturation the hue carries no usable color, and tinting only
         // adds a random cast to what should read as a neutral gray.
-        guard saturation >= 0.06 else {
+        guard !isNeutral else {
             return Color(hue: 0, saturation: 0, brightness: brightness)
         }
         // Clamped so washed-out covers still tint visibly and vivid ones don't
@@ -80,6 +83,75 @@ struct ArtworkTint: Equatable {
             saturation: clamped * saturationScale,
             brightness: brightness
         )
+    }
+
+    private static let neutralSaturation: CGFloat = 0.06
+}
+
+// MARK: - Action buttons
+
+/// Fills and labels for the Play/Shuffle pair on a detail screen, kept in the
+/// artwork's hue but pushed far enough from `ArtworkTint.top(for:)` in lightness
+/// that the buttons never sink into the background they sit on.
+extension ArtworkTint {
+    /// Solid fill for the primary action, saturated and well clear of the
+    /// background's lightness in either appearance.
+    func primaryButtonFill(for scheme: ColorScheme) -> Color {
+        guard !isNeutral else {
+            return Color(hue: 0, saturation: 0, brightness: scheme == .dark ? 0.92 : 0.16)
+        }
+        let range: ClosedRange<CGFloat> = scheme == .dark ? 0.40...0.80 : 0.55...0.95
+        let clamped = min(max(saturation, range.lowerBound), range.upperBound)
+        return Color(hue: hue, saturation: clamped, brightness: scheme == .dark ? 0.92 : 0.52)
+    }
+
+    /// Muted companion fill for the secondary action: readable as a surface of
+    /// its own, but never competing with the primary button.
+    func secondaryButtonFill(for scheme: ColorScheme) -> Color {
+        guard !isNeutral else {
+            return Color(hue: 0, saturation: 0, brightness: scheme == .dark ? 0.30 : 1)
+        }
+        let range: ClosedRange<CGFloat> = scheme == .dark ? 0.18...0.40 : 0.05...0.14
+        let clamped = min(max(saturation, range.lowerBound), range.upperBound)
+        return Color(hue: hue, saturation: clamped, brightness: scheme == .dark ? 0.42 : 1)
+    }
+
+    /// Label for the secondary action, tinted just enough to belong to the
+    /// artwork while staying high contrast on `secondaryButtonFill(for:)`.
+    func secondaryButtonLabel(for scheme: ColorScheme) -> Color {
+        guard !isNeutral else {
+            return Color(hue: 0, saturation: 0, brightness: scheme == .dark ? 0.97 : 0.12)
+        }
+        return scheme == .dark
+            ? Color(hue: hue, saturation: min(saturation, 0.14), brightness: 0.98)
+            : Color(hue: hue, saturation: min(max(saturation, 0.55), 0.95), brightness: 0.30)
+    }
+
+    /// Hairline edge that keeps the near-white light-mode secondary button from
+    /// blending into a pale background gradient.
+    func secondaryButtonStroke(for scheme: ColorScheme) -> Color {
+        secondaryButtonLabel(for: scheme).opacity(scheme == .dark ? 0.16 : 0.14)
+    }
+}
+
+extension Color {
+    /// Black or white, whichever has the higher WCAG contrast ratio against the
+    /// receiver. Artwork hues range from near-black navies to bright yellows, so
+    /// a fixed label color is unreadable on one end or the other.
+    var contrastingLabel: Color {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(self).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .white
+        }
+
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.03928 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+
+        let luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        let contrastOnWhite = 1.05 / (luminance + 0.05)
+        let contrastOnBlack = (luminance + 0.05) / 0.05
+        return contrastOnWhite >= contrastOnBlack ? .white : Color(white: 0.08)
     }
 }
 

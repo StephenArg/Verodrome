@@ -6,23 +6,20 @@ struct LargeArtworkView: View {
     var urlString: String?
     var symbol: String = "music.note"
     @EnvironmentObject private var themeManager: ThemeManager
-    /// Width-driven side length so the square matches the seek bar and cannot be
-    /// compressed by the player VStack's flexible controls.
-    @State private var side: CGFloat = 0
+
+    /// Floor for the cover, so an extremely short layout still shows recognizable
+    /// art rather than a sliver.
+    private let minimumSide: CGFloat = 140
 
     var body: some View {
+        // `ArtworkView` is already an aspect-fit square, so offering it a flexible
+        // box yields the largest square that fits *both* the content width and the
+        // height the player has left over. Pinning the side to the width instead
+        // would push the transport controls off the bottom on shorter screens.
         ArtworkView.hero(urlString, symbol: symbol)
-            .frame(width: side, height: side)
             .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
-            .frame(maxWidth: .infinity)
-            .frame(height: side)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
-            } action: { width in
-                if abs(width - side) > 0.5 {
-                    side = width
-                }
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(minHeight: minimumSide)
             .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
             .task(id: urlString) {
                 let image = await ArtworkResolver.shared.loadImage(

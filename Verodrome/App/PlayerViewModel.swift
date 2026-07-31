@@ -91,8 +91,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     /// - Parameters:
-    ///   - index: Track to start on. When nil, shuffled playback starts on a random
-    ///     track and ordered playback starts on the first one.
+    ///   - index: Track to start on. When nil, Shuffle picks a random track and Play
+    ///     starts on the first.
     ///   - shuffle: Explicit shuffle state for the new context; nil keeps the current one.
     func play(items: [QueueItem], startAt index: Int? = nil, shuffle: Bool? = nil) {
         guard !items.isEmpty else {
@@ -104,15 +104,9 @@ final class PlayerViewModel: ObservableObject {
         if let index, items.indices.contains(index) {
             startIndex = index
         } else if mode == .on || (mode == nil && shuffleMode == .on) {
-            // Prefer the song already playing when it belongs to this context — shuffling
-            // an album mid-track should keep that track as the queue head instead of
-            // jumping to a random one and flashing the wrong now-playing info.
-            if let currentId = currentItem?.id,
-               let currentInItems = items.firstIndex(where: { $0.id == currentId }) {
-                startIndex = currentInItems
-            } else {
-                startIndex = items.indices.randomElement() ?? 0
-            }
+            // Shuffle starts on a random track; replaceContext keeps that track at the
+            // front of the shuffled remainder.
+            startIndex = items.indices.randomElement() ?? 0
         } else {
             startIndex = 0
         }

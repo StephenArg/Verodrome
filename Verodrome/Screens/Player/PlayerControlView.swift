@@ -41,7 +41,7 @@ struct PlayerControlView: View {
                         Text("-\(formatTime(max(0, progress.duration - displayedTime)))")
                     }
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
             }
@@ -62,7 +62,7 @@ struct PlayerControlView: View {
                 repeatButton
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 8)
         }
@@ -74,12 +74,13 @@ struct PlayerControlView: View {
 
     // MARK: - Controls
 
-    /// White circle with play/pause cut out so the dark background shows through.
+    /// Solid label-colored circle with the play/pause glyph cut out, so the player
+    /// background shows through it in either appearance.
     private var playButton: some View {
         Button { player.playPause() } label: {
             ZStack {
                 Circle()
-                    .fill(Color.white)
+                    .fill(Color.primary)
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: playDiameter * 0.38, weight: .bold))
                     .offset(x: player.isPlaying ? 0 : 2)
@@ -123,7 +124,7 @@ struct PlayerControlView: View {
             VStack(spacing: 5) {
                 ShuffleControlIcon()
                     .frame(width: sideIconSize + 8, height: sideIconSize)
-                    .foregroundStyle(isOn ? Color.accentColor : Color.white)
+                    .foregroundStyle(isOn ? Color.accentColor : Color.primary)
                 // Active-state green dot (Spotify-style).
                 Circle()
                     .fill(isOn ? Color.accentColor : Color.clear)
@@ -143,7 +144,7 @@ struct PlayerControlView: View {
             VStack(spacing: 5) {
                 RepeatControlIcon(mode: player.repeatMode)
                     .frame(width: sideIconSize + 6, height: sideIconSize - 2)
-                    .foregroundStyle(isOn ? Color.accentColor : Color.white)
+                    .foregroundStyle(isOn ? Color.accentColor : Color.primary)
                 // Keep height aligned with shuffle's optional dot.
                 Circle()
                     .fill(isOn ? Color.accentColor : Color.clear)
@@ -173,7 +174,7 @@ struct PlayerControlView: View {
 
 // MARK: - Repeat icon (rounded loop + arrow)
 
-/// Spotify-style repeat loop. Off = white; on (.all) = accent; .one = accent with
+/// Spotify-style repeat loop. Off = label color; on (.all) = accent; .one = accent with
 /// a top-edge cutout containing a small "1".
 struct RepeatControlIcon: View {
     var mode: RepeatMode

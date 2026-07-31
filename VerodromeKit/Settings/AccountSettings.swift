@@ -33,7 +33,7 @@ public struct AccountSettings: Codable, Equatable, Sendable {
     public init(
         credentials: AccountCredentials = AccountCredentials(),
         themeColorHex: String? = nil,
-        artworkDownloadSetting: ArtworkDownloadSetting = .wifiOnly,
+        artworkDownloadSetting: ArtworkDownloadSetting = .always,
         autoCacheNewest: Bool = false,
         scrobbleEnabled: Bool = true,
         artistSortField: ArtistSortField = .name,

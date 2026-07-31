@@ -18,6 +18,14 @@ struct ArtworkSettingsView: View {
                         Text(setting.label).tag(setting)
                     }
                 }
+                .onChange(of: settings.artworkDownloadSetting) { _, value in
+                    settings.save()
+                    if let key = AccountStore.shared.activeAccountKey() {
+                        var account = settings.loadAccountSettings(for: key)
+                        account.artworkDownloadSetting = value
+                        settings.saveAccountSettings(account, for: key)
+                    }
+                }
             }
 
             Section {

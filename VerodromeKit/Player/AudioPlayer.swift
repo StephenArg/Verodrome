@@ -421,9 +421,17 @@ public final class AudioPlayer: ObservableObject {
         stalled = nil
         if queueHandler.advance() != nil {
             Task { await playCurrent() }
-        } else {
-            backend.stop()
+            return
         }
+        // End of queue with repeat off — same as natural finish: park on the first
+        // track paused so skip doesn't leave the player empty / stopped.
+        guard !queueHandler.activeQueue.isEmpty else {
+            backend.stop()
+            return
+        }
+        PlayTrace.mark("skip past end — parking on first track paused")
+        queueHandler.jump(to: 0)
+        Task { await playCurrent(paused: true) }
     }
 
     public func playPrevious() {

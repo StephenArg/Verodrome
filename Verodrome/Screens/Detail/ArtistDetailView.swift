@@ -24,6 +24,7 @@ struct ArtistDetailView: View {
                         title: artist.name,
                         subtitle: "\(artistAlbums.count) albums · \(artistSongs.count) songs",
                         artworkURL: artist.artworkToken,
+                        tintToken: backgroundArtworkToken,
                         symbol: "person.fill",
                         onPlay: { play(shuffle: false, artist: artist) },
                         onShuffle: { play(shuffle: true, artist: artist) }

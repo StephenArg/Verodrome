@@ -6,6 +6,7 @@ import VerodromeKit
 struct PopupPlayerView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(\.dismiss) private var dismiss
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
@@ -19,6 +20,7 @@ struct PopupPlayerView: View {
                     .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
                     .padding(.top, 36)
                     .padding(.bottom, 4)
+                    .layoutPriority(1)
 
                 LargeArtworkView(
                     urlString: player.currentItem?.artworkId,
@@ -38,16 +40,30 @@ struct PopupPlayerView: View {
                         }
                 )
 
-                // Absorb leftover height above the metadata so title / progress /
-                // transport / options stay packed toward the bottom.
-                Spacer(minLength: 8)
-
+                // Everything below the cover carries a layout priority so it is
+                // measured first and keeps its full height; the artwork then takes
+                // whatever is left. Without this the cover claims its ideal square
+                // and the transport controls are pushed past the bottom edge.
                 VStack(alignment: .leading, spacing: 6) {
-                    if let song = currentSong {
-                        RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
-                            Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                    if settings.showRatingStars || settings.showSongInfo {
+                        HStack(alignment: .center, spacing: 12) {
+                            if settings.showRatingStars, let song = currentSong {
+                                RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
+                                    Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            Spacer(minLength: 0)
+
+                            if settings.showSongInfo, let song = currentSong, let info = songInfoText(for: song) {
+                                Text(info)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
-                        .frame(height: 16)
                     }
 
                     HStack(spacing: 12) {
@@ -76,15 +92,19 @@ struct PopupPlayerView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 6)
                 .clipped()
+                .animation(.easeInOut(duration: 0.2), value: settings.showRatingStars)
+                .animation(.easeInOut(duration: 0.2), value: settings.showSongInfo)
+                .layoutPriority(1)
 
                 PlayerControlView()
                     .frame(maxWidth: .infinity)
-                    .clipped()
+                    .layoutPriority(1)
 
                 bottomActionBar
                     .padding(.horizontal)
                     .padding(.top, 20)
                     .padding(.bottom, 16)
+                    .layoutPriority(1)
             }
             .background(
                 LinearGradient(
@@ -151,13 +171,64 @@ struct PopupPlayerView: View {
             albumTitle: albumTitle,
             albumId: currentSong?.album?.compoundRemoteId,
             song: currentSong,
+            showRatingStars: settings.showRatingStars,
+            showSongInfo: settings.showSongInfo,
             onDismiss: { dismiss() },
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
             onShare: { presentShareSheet() },
             onAddToPlaylist: { bottomPanel = .addToPlaylist },
             onOpenQueue: { bottomPanel = .queue },
-            onEqualizer: { bottomPanel = .equalizer }
+            onEqualizer: { bottomPanel = .equalizer },
+            onToggleRatingStars: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    settings.showRatingStars.toggle()
+                }
+                settings.save()
+            },
+            onToggleSongInfo: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    settings.showSongInfo.toggle()
+                }
+                settings.save()
+            }
         ))
+    }
+
+    /// Compact file-type + bitrate label shown opposite the rating stars.
+    private func songInfoText(for song: Song) -> String? {
+        var parts: [String] = []
+        if let format = fileTypeLabel(for: song.contentType) {
+            parts.append(format)
+        }
+        if let bitrate = song.bitrate, bitrate > 0 {
+            let kbps = bitrate >= 1000 ? bitrate / 1000 : bitrate
+            parts.append("\(kbps) kbps")
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " · ")
+    }
+
+    private func fileTypeLabel(for contentType: String?) -> String? {
+        guard let raw = contentType?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        let token: String
+        if let slash = raw.lastIndex(of: "/") {
+            token = String(raw[raw.index(after: slash)...])
+        } else {
+            token = raw
+        }
+        switch token.lowercased() {
+        case "mpeg", "mpga": return "MP3"
+        case "mp4", "x-m4a", "m4a": return "M4A"
+        case "x-flac", "flac": return "FLAC"
+        case "ogg", "vorbis", "x-vorbis": return "OGG"
+        case "opus", "x-opus": return "OPUS"
+        case "wav", "x-wav": return "WAV"
+        case "aiff", "x-aiff": return "AIFF"
+        case "aac", "x-aac": return "AAC"
+        default: return token.uppercased()
+        }
     }
 
     // MARK: - Bottom action bar (AirPlay / Share / Queue)
@@ -197,7 +268,7 @@ struct PopupPlayerView: View {
             } label: {
                 Image(systemName: song.isFavorite ? "heart.fill" : "heart")
                     .font(.system(size: 24))
-                    .foregroundStyle(song.isFavorite ? Color.accentColor : Color.white)
+                    .foregroundStyle(song.isFavorite ? Color.accentColor : Color.primary)
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
@@ -369,12 +440,16 @@ private struct PlayerHeader: View, Equatable {
     let albumTitle: String
     let albumId: String?
     let song: Song?
+    let showRatingStars: Bool
+    let showSongInfo: Bool
     let onDismiss: () -> Void
     let onOpenAlbum: () -> Void
     let onShare: () -> Void
     let onAddToPlaylist: () -> Void
     let onOpenQueue: () -> Void
     let onEqualizer: () -> Void
+    let onToggleRatingStars: () -> Void
+    let onToggleSongInfo: () -> Void
 
     private let sideButtonWidth: CGFloat = 52
 
@@ -407,7 +482,9 @@ private struct PlayerHeader: View, Equatable {
                 PlayerOverflowMenuButton(
                     menuState: PlayerOverflowMenuButton.MenuState(
                         hasSong: song != nil,
-                        isFavorite: song?.isFavorite == true
+                        isFavorite: song?.isFavorite == true,
+                        showRatingStars: showRatingStars,
+                        showSongInfo: showSongInfo
                     ),
                     onShare: onShare,
                     onToggleFavorite: {
@@ -416,7 +493,9 @@ private struct PlayerHeader: View, Equatable {
                     },
                     onAddToPlaylist: onAddToPlaylist,
                     onOpenQueue: onOpenQueue,
-                    onEqualizer: onEqualizer
+                    onEqualizer: onEqualizer,
+                    onToggleRatingStars: onToggleRatingStars,
+                    onToggleSongInfo: onToggleSongInfo
                 )
                 .frame(width: sideButtonWidth, height: sideButtonWidth)
                 .accessibilityLabel("More options")
@@ -430,6 +509,8 @@ private struct PlayerHeader: View, Equatable {
             && lhs.albumId == rhs.albumId
             && lhs.song?.remoteId == rhs.song?.remoteId
             && lhs.song?.isFavorite == rhs.song?.isFavorite
+            && lhs.showRatingStars == rhs.showRatingStars
+            && lhs.showSongInfo == rhs.showSongInfo
     }
 }
 
@@ -441,6 +522,8 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     struct MenuState: Equatable {
         var hasSong: Bool
         var isFavorite: Bool
+        var showRatingStars: Bool
+        var showSongInfo: Bool
     }
 
     var menuState: MenuState
@@ -449,6 +532,8 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     var onAddToPlaylist: () -> Void
     var onOpenQueue: () -> Void
     var onEqualizer: () -> Void
+    var onToggleRatingStars: () -> Void
+    var onToggleSongInfo: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(owner: self)
@@ -494,12 +579,6 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.owner.onShare() }
 
-            let songInfo = UIAction(
-                title: "Song Info",
-                image: UIImage(systemName: "info.circle"),
-                attributes: .disabled
-            ) { _ in }
-
             let favorite = UIAction(
                 title: state.isFavorite ? "Unlike Song" : "Like Song",
                 image: UIImage(systemName: state.isFavorite ? "heart.slash" : "heart"),
@@ -530,10 +609,14 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             ) { _ in }
 
             let hideRating = UIAction(
-                title: "Hide Rating Stars",
-                image: UIImage(systemName: "star.slash"),
-                attributes: .disabled
-            ) { _ in }
+                title: state.showRatingStars ? "Hide Rating Stars" : "Show Rating Stars",
+                image: UIImage(systemName: state.showRatingStars ? "star.slash" : "star")
+            ) { [weak self] _ in self?.owner.onToggleRatingStars() }
+
+            let songInfo = UIAction(
+                title: state.showSongInfo ? "Hide Song Info" : "Show Song Info",
+                image: UIImage(systemName: state.showSongInfo ? "info.circle.fill" : "info.circle")
+            ) { [weak self] _ in self?.owner.onToggleSongInfo() }
 
             let equalizer = UIAction(
                 title: "Equalizer",
@@ -547,9 +630,9 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             ) { _ in }
 
             return UIMenu(children: [
-                UIMenu(options: .displayInline, children: [share, songInfo]),
+                UIMenu(options: .displayInline, children: [share]),
                 UIMenu(options: .displayInline, children: [favorite, addToPlaylist, addToQueue, openQueue]),
-                UIMenu(options: .displayInline, children: [lyrics, hideRating, equalizer, sleepTimer])
+                UIMenu(options: .displayInline, children: [lyrics, hideRating, songInfo, equalizer, sleepTimer])
             ])
         }
     }

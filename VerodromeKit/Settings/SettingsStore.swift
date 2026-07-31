@@ -25,11 +25,13 @@ public final class SettingsStore: ObservableObject {
     @Published public var libraryDisplayType: LibraryDisplayType = .list
     @Published public var playerDisplayStyle: PlayerDisplayStyle = .standard
     @Published public var showMiniLyrics: Bool = true
+    @Published public var showRatingStars: Bool = true
+    @Published public var showSongInfo: Bool = false
     @Published public var streamFormat: StreamFormatPreference = .original
     @Published public var smartQueuePrefetchEnabled: Bool = true
     @Published public var smartQueueStaleHours: Int = 18
     @Published public var offlineModeEnabled: Bool = false
-    @Published public var artworkDownloadSetting: ArtworkDownloadSetting = .wifiOnly
+    @Published public var artworkDownloadSetting: ArtworkDownloadSetting = .always
     @Published public var swipeLeftAction: String = "queue"
     @Published public var swipeRightAction: String = "download"
     @Published public var developerWindowSizes: Bool = false
@@ -41,6 +43,8 @@ public final class SettingsStore: ObservableObject {
         var libraryDisplayType: LibraryDisplayType
         var playerDisplayStyle: PlayerDisplayStyle
         var showMiniLyrics: Bool
+        var showRatingStars: Bool
+        var showSongInfo: Bool
         var streamFormat: StreamFormatPreference
         var smartQueuePrefetchEnabled: Bool
         var smartQueueStaleHours: Int
@@ -50,6 +54,62 @@ public final class SettingsStore: ObservableObject {
         var swipeRightAction: String
         var developerWindowSizes: Bool
         var enabledHomeSections: [HomeSection]
+
+        init(
+            themePreference: ThemePreference,
+            isLibrarySynced: Bool,
+            libraryDisplayType: LibraryDisplayType,
+            playerDisplayStyle: PlayerDisplayStyle,
+            showMiniLyrics: Bool,
+            showRatingStars: Bool,
+            showSongInfo: Bool,
+            streamFormat: StreamFormatPreference,
+            smartQueuePrefetchEnabled: Bool,
+            smartQueueStaleHours: Int,
+            offlineModeEnabled: Bool,
+            artworkDownloadSetting: ArtworkDownloadSetting,
+            swipeLeftAction: String,
+            swipeRightAction: String,
+            developerWindowSizes: Bool,
+            enabledHomeSections: [HomeSection]
+        ) {
+            self.themePreference = themePreference
+            self.isLibrarySynced = isLibrarySynced
+            self.libraryDisplayType = libraryDisplayType
+            self.playerDisplayStyle = playerDisplayStyle
+            self.showMiniLyrics = showMiniLyrics
+            self.showRatingStars = showRatingStars
+            self.showSongInfo = showSongInfo
+            self.streamFormat = streamFormat
+            self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
+            self.smartQueueStaleHours = smartQueueStaleHours
+            self.offlineModeEnabled = offlineModeEnabled
+            self.artworkDownloadSetting = artworkDownloadSetting
+            self.swipeLeftAction = swipeLeftAction
+            self.swipeRightAction = swipeRightAction
+            self.developerWindowSizes = developerWindowSizes
+            self.enabledHomeSections = enabledHomeSections
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            themePreference = try c.decode(ThemePreference.self, forKey: .themePreference)
+            isLibrarySynced = try c.decode(Bool.self, forKey: .isLibrarySynced)
+            libraryDisplayType = try c.decode(LibraryDisplayType.self, forKey: .libraryDisplayType)
+            playerDisplayStyle = try c.decode(PlayerDisplayStyle.self, forKey: .playerDisplayStyle)
+            showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
+            showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
+            showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
+            streamFormat = try c.decode(StreamFormatPreference.self, forKey: .streamFormat)
+            smartQueuePrefetchEnabled = try c.decode(Bool.self, forKey: .smartQueuePrefetchEnabled)
+            smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
+            offlineModeEnabled = try c.decode(Bool.self, forKey: .offlineModeEnabled)
+            artworkDownloadSetting = try c.decode(ArtworkDownloadSetting.self, forKey: .artworkDownloadSetting)
+            swipeLeftAction = try c.decode(String.self, forKey: .swipeLeftAction)
+            swipeRightAction = try c.decode(String.self, forKey: .swipeRightAction)
+            developerWindowSizes = try c.decode(Bool.self, forKey: .developerWindowSizes)
+            enabledHomeSections = try c.decode([HomeSection].self, forKey: .enabledHomeSections)
+        }
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -65,6 +125,8 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType: libraryDisplayType,
             playerDisplayStyle: playerDisplayStyle,
             showMiniLyrics: showMiniLyrics,
+            showRatingStars: showRatingStars,
+            showSongInfo: showSongInfo,
             streamFormat: streamFormat,
             smartQueuePrefetchEnabled: smartQueuePrefetchEnabled,
             smartQueueStaleHours: smartQueueStaleHours,
@@ -103,6 +165,8 @@ public final class SettingsStore: ObservableObject {
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.showRatingStars = showRatingStars
+        user.showSongInfo = showSongInfo
         user.appearanceMode = appearanceMode(from: themePreference)
         return user
     }
@@ -115,6 +179,8 @@ public final class SettingsStore: ObservableObject {
         streamFormat = settings.cacheTranscodingFormat
         playerDisplayStyle = settings.playerDisplayStyle
         showMiniLyrics = settings.showLyricsWhenAvailable
+        showRatingStars = settings.showRatingStars
+        showSongInfo = settings.showSongInfo
         themePreference = themePreference(from: settings.appearanceMode)
         save()
     }
@@ -149,6 +215,8 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType = snapshot.libraryDisplayType
             playerDisplayStyle = snapshot.playerDisplayStyle
             showMiniLyrics = snapshot.showMiniLyrics
+            showRatingStars = snapshot.showRatingStars
+            showSongInfo = snapshot.showSongInfo
             streamFormat = snapshot.streamFormat
             smartQueuePrefetchEnabled = snapshot.smartQueuePrefetchEnabled
             smartQueueStaleHours = snapshot.smartQueueStaleHours
@@ -169,6 +237,8 @@ public final class SettingsStore: ObservableObject {
         streamFormat = user.cacheTranscodingFormat
         playerDisplayStyle = user.playerDisplayStyle
         showMiniLyrics = user.showLyricsWhenAvailable
+        showRatingStars = user.showRatingStars
+        showSongInfo = user.showSongInfo
         themePreference = themePreference(from: user.appearanceMode)
     }
 
@@ -184,6 +254,8 @@ public final class SettingsStore: ObservableObject {
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.showRatingStars = showRatingStars
+        user.showSongInfo = showSongInfo
         user.appearanceMode = appearanceMode(from: themePreference)
         save(key: Keys.userSettings, value: user)
     }

@@ -17,6 +17,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var crossfadeDurationSeconds: Double
     public var gaplessPlaybackEnabled: Bool
     public var showLyricsWhenAvailable: Bool
+    public var showRatingStars: Bool
+    public var showSongInfo: Bool
     public var allowCellularDownloads: Bool
     public var confirmBeforeDeletingDownloads: Bool
     public var equalizerBands: [Float]
@@ -38,6 +40,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         crossfadeDurationSeconds: Double = 3,
         gaplessPlaybackEnabled: Bool = true,
         showLyricsWhenAvailable: Bool = true,
+        showRatingStars: Bool = true,
+        showSongInfo: Bool = false,
         allowCellularDownloads: Bool = false,
         confirmBeforeDeletingDownloads: Bool = true,
         equalizerBands: [Float] = Array(repeating: 0, count: 10)
@@ -58,10 +62,37 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.crossfadeDurationSeconds = crossfadeDurationSeconds
         self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
         self.showLyricsWhenAvailable = showLyricsWhenAvailable
+        self.showRatingStars = showRatingStars
+        self.showSongInfo = showSongInfo
         self.allowCellularDownloads = allowCellularDownloads
         self.confirmBeforeDeletingDownloads = confirmBeforeDeletingDownloads
         self.equalizerBands = equalizerBands
     }
 
     public static let `default` = UserSettings()
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        isOfflineMode = try c.decodeIfPresent(Bool.self, forKey: .isOfflineMode) ?? false
+        cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? 5_368_709_120
+        streamingBitrateWifi = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateWifi) ?? 320
+        streamingBitrateCellular = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateCellular) ?? 192
+        cacheTranscodingFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .cacheTranscodingFormat) ?? .original
+        smartQueuePrefetchEnabled = try c.decodeIfPresent(Bool.self, forKey: .smartQueuePrefetchEnabled) ?? true
+        queuePrefetchStaleHours = try c.decodeIfPresent(Int.self, forKey: .queuePrefetchStaleHours) ?? 18
+        appearanceMode = try c.decodeIfPresent(AppearanceMode.self, forKey: .appearanceMode) ?? .system
+        hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
+        replayGainEnabled = try c.decodeIfPresent(Bool.self, forKey: .replayGainEnabled) ?? false
+        equalizerEnabled = try c.decodeIfPresent(Bool.self, forKey: .equalizerEnabled) ?? false
+        playerDisplayStyle = try c.decodeIfPresent(PlayerDisplayStyle.self, forKey: .playerDisplayStyle) ?? .standard
+        crossfadeEnabled = try c.decodeIfPresent(Bool.self, forKey: .crossfadeEnabled) ?? false
+        crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
+        gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
+        showLyricsWhenAvailable = try c.decodeIfPresent(Bool.self, forKey: .showLyricsWhenAvailable) ?? true
+        showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
+        showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
+        allowCellularDownloads = try c.decodeIfPresent(Bool.self, forKey: .allowCellularDownloads) ?? false
+        confirmBeforeDeletingDownloads = try c.decodeIfPresent(Bool.self, forKey: .confirmBeforeDeletingDownloads) ?? true
+        equalizerBands = try c.decodeIfPresent([Float].self, forKey: .equalizerBands) ?? Array(repeating: 0, count: 10)
+    }
 }

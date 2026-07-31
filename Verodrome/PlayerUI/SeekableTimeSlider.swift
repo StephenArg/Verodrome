@@ -24,8 +24,8 @@ struct SeekableTimeSlider: View {
 }
 
 /// UIKit slider (Amperfy-style): never fights the thumb while tracking, seeks on release only.
-/// Styled to match the target player: thin track, prominent white circular thumb.
-/// Tapping anywhere on the track jumps to that position.
+/// Styled to match the target player: thin track, prominent circular thumb in the
+/// label color. Tapping anywhere on the track jumps to that position.
 struct SeekableTimeSliderUIKit: UIViewRepresentable {
     let currentTime: TimeInterval
     let duration: TimeInterval
@@ -36,7 +36,7 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
     private static let thumbDiameter: CGFloat = 13
     /// Slightly larger thumb while the finger is down scrubbing.
     private static let scrubbingThumbDiameter: CGFloat = 18
-    private static let remainingTrackColor = UIColor(white: 1, alpha: 0.32)
+    private static let remainingTrackColor = UIColor.label.withAlphaComponent(0.28)
 
     func makeUIView(context: Context) -> UISlider {
         let slider = UISlider()
@@ -49,11 +49,12 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp(_:)), for: .touchUpOutside)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp(_:)), for: .touchCancel)
 
-        Self.applyTrackImages(to: slider)
-
-        // Prominent white circular thumb; grows a little while scrubbing.
-        slider.setThumbImage(Self.makeThumbImage(size: Self.thumbDiameter), for: .normal)
-        slider.setThumbImage(Self.makeThumbImage(size: Self.scrubbingThumbDiameter), for: .highlighted)
+        Self.applyImages(to: slider)
+        // Track and thumb are pre-rendered bitmaps, so the label color baked into
+        // them has to be redrawn when the appearance flips.
+        slider.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (slider: UISlider, _) in
+            Self.applyImages(to: slider)
+        }
 
         // Tap-to-seek: UISlider only moves the thumb when dragging by default.
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapTrack(_:)))
@@ -72,7 +73,7 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         if abs(uiView.maximumValue - maxValue) > 0.01 {
             uiView.maximumValue = maxValue
             // Re-apply track images since max-value changes can invalidate them.
-            Self.applyTrackImages(to: uiView)
+            Self.applyImages(to: uiView)
         }
         // Match Amperfy: never fight the thumb while the user is dragging, unless the
         // drag was cancelled for being idle — then the thumb tracks playback again.
@@ -179,9 +180,26 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
 
     // MARK: - Asset rendering
 
-    private static func applyTrackImages(to slider: UISlider) {
-        slider.setMinimumTrackImage(makeTrackImage(height: trackHeight, color: .white), for: .normal)
-        slider.setMaximumTrackImage(makeTrackImage(height: trackHeight, color: remainingTrackColor), for: .normal)
+    private static func applyImages(to slider: UISlider) {
+        // Resolve against the slider's own traits: an image renderer otherwise picks
+        // up whatever appearance happens to be current when it runs.
+        let traits = slider.traitCollection
+        slider.setMinimumTrackImage(
+            makeTrackImage(height: trackHeight, color: UIColor.label.resolvedColor(with: traits)),
+            for: .normal
+        )
+        slider.setMaximumTrackImage(
+            makeTrackImage(height: trackHeight, color: remainingTrackColor.resolvedColor(with: traits)),
+            for: .normal
+        )
+        slider.setThumbImage(
+            makeThumbImage(size: thumbDiameter, color: UIColor.label.resolvedColor(with: traits)),
+            for: .normal
+        )
+        slider.setThumbImage(
+            makeThumbImage(size: scrubbingThumbDiameter, color: UIColor.label.resolvedColor(with: traits)),
+            for: .highlighted
+        )
     }
 
     private static func makeTrackImage(height: CGFloat, color: UIColor) -> UIImage {
@@ -196,13 +214,13 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         .resizableImage(withCapInsets: .zero, resizingMode: .stretch)
     }
 
-    private static func makeThumbImage(size: CGFloat) -> UIImage {
+    private static func makeThumbImage(size: CGFloat, color: UIColor) -> UIImage {
         let inset: CGFloat = 4
         let outer = CGSize(width: size + inset * 2, height: size + inset * 2)
         let renderer = UIGraphicsImageRenderer(size: outer)
         return renderer.image { _ in
             let circle = CGRect(x: inset, y: inset, width: size, height: size)
-            UIColor.white.setFill()
+            color.setFill()
             UIBezierPath(ovalIn: circle).fill()
         }
     }
