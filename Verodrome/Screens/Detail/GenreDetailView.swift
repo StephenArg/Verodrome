@@ -107,12 +107,8 @@ struct GenreDetailView: View {
             }
         }
         PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
-        if shuffle {
-            items.shuffle()
-            PlayTrace.mark("items.shuffle() done")
-        }
         PlayTrace.mark("calling player.play")
-        player.play(items: items)
+        player.play(items: items, shuffle: shuffle)
     }
 
     private func playSong(_ song: Song) {

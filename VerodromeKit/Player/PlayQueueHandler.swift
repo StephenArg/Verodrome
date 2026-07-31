@@ -56,37 +56,88 @@ public final class PlayQueueHandler: ObservableObject {
     }
 
     public func enqueueNext(_ items: [QueueItem]) {
+        let items = items.map(Self.markUserQueued)
         let insertAt = min(currentIndex + 1, contextQueue.count)
         contextQueue.insert(contentsOf: items, at: insertAt)
+        mirrorEdit(inserted: items)
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
     public func enqueueLast(_ items: [QueueItem]) {
+        let items = items.map(Self.markUserQueued)
         contextQueue.append(contentsOf: items)
+        mirrorEdit(inserted: items)
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
+    /// Removes queue rows. Only items the user queued themselves can be removed — the
+    /// tracks a context (album, playlist, …) brought in stay for as long as it plays.
     public func remove(at offsets: IndexSet) {
-        let removed = offsets.sorted(by: >).compactMap { index -> QueueItem? in
-            guard contextQueue.indices.contains(index) else { return nil }
-            return contextQueue.remove(at: index)
-        }
-        if currentIndex >= contextQueue.count {
-            currentIndex = max(0, contextQueue.count - 1)
-        }
+        let removable = offsets.filter { contextQueue.indices.contains($0) && contextQueue[$0].isUserQueued }
+        guard !removable.isEmpty else { return }
+        // Positional arithmetic rather than an id lookup: the same song can sit in the
+        // queue twice (context copy plus a queued copy), so ids are not unique.
+        let removedBefore = removable.filter { $0 < currentIndex }.count
+        let removed = removable.sorted(by: >).map { contextQueue.remove(at: $0) }
+        currentIndex = min(max(0, currentIndex - removedBefore), max(0, contextQueue.count - 1))
+        mirrorEdit(removedIds: Set(removed.map(\.id)))
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: removed)
     }
 
+    private static func markUserQueued(_ item: QueueItem) -> QueueItem {
+        var copy = item
+        copy.isUserQueued = true
+        // Fresh row identity — the source item may already sit in the queue.
+        copy.entryId = UUID()
+        return copy
+    }
+
+    /// Reorders the context queue. `currentIndex` follows the playing track through the
+    /// move so the pointer, the prefetch window, and the next-up track stay in sync with
+    /// what the engine is playing.
     public func move(from source: IndexSet, to destination: Int) {
-        guard let from = source.first, contextQueue.indices.contains(from) else { return }
-        let item = contextQueue.remove(at: from)
-        let insertAt = destination > from ? destination - 1 : destination
-        contextQueue.insert(item, at: min(max(0, insertAt), contextQueue.count))
+        let sources = source.filter { contextQueue.indices.contains($0) }
+        guard !sources.isEmpty else { return }
+        let previousIndex = currentIndex
+
+        // The same permutation is applied to the positions, so the playing track can be
+        // found again by where its old position landed — ids are not unique enough, the
+        // same song can sit in the queue twice.
+        var positions = Array(contextQueue.indices)
+        Self.applyMove(sources: sources, destination: destination, to: &contextQueue)
+        Self.applyMove(sources: sources, destination: destination, to: &positions)
+        currentIndex = positions.firstIndex(of: previousIndex) ?? previousIndex
+
+        // Deliberately no `queueGeneration` bump: prefetch re-evaluation treats an older
+        // generation as obsolete and would delete the playing track's cached file.
+        mirrorEdit()
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+    }
+
+    private static func applyMove<T>(sources: [Int], destination: Int, to array: inout [T]) {
+        let moved = sources.sorted().map { array[$0] }
+        let insertAt = destination - sources.filter { $0 < destination }.count
+        for index in sources.sorted(by: >) {
+            array.remove(at: index)
+        }
+        array.insert(contentsOf: moved, at: min(max(0, insertAt), array.count))
+    }
+
+    /// Keeps the restore-order copy aligned with queue edits, so turning shuffle off
+    /// later cannot resurrect removed tracks or drop newly queued ones.
+    private func mirrorEdit(inserted: [QueueItem] = [], removedIds: Set<String> = []) {
+        guard shuffleMode == .on else {
+            unshuffledContext = contextQueue
+            return
+        }
+        if !removedIds.isEmpty {
+            unshuffledContext.removeAll { removedIds.contains($0.id) }
+        }
+        unshuffledContext.append(contentsOf: inserted)
     }
 
     /// Moves to the next queue item. Used for manual skip and for auto-advance when
@@ -130,36 +181,68 @@ public final class PlayQueueHandler: ObservableObject {
     public func setRepeat(_ mode: RepeatMode) { repeatMode = mode; persist() }
 
     public func toggleShuffle() {
-        PlayTrace.begin("toggleShuffle", details: "was=\(shuffleMode) count=\(contextQueue.count)")
-        let playingId = currentItem?.id
-        let playingItem = currentItem
+        setShuffle(shuffleMode == .on ? .off : .on)
+    }
 
-        if shuffleMode == .off {
-            // Turn ON — keep the playing track in place; only shuffle the others.
-            // Reshuffling the whole array and then re-finding the track is fragile:
-            // a missed match leaves currentIndex on a different song while audio
-            // keeps playing the original (title appears to change).
+    /// Applies shuffle state idempotently: turning it on shuffles the context around
+    /// the playing track, turning it off puts the context back in the order it had
+    /// before. Pass `reorder: false` to record the mode only — used right before
+    /// `replaceContext`, which builds the shuffled order itself.
+    public func setShuffle(_ mode: ShuffleMode, reorder: Bool = true) {
+        guard mode != shuffleMode else { return }
+        guard reorder else {
+            shuffleMode = mode
+            persist()
+            return
+        }
+
+        PlayTrace.begin("setShuffle", details: "was=\(shuffleMode) count=\(contextQueue.count)")
+        // Anchor on the playing *position*, not an id lookup — the same song can appear
+        // twice (context + Play Next), and a wrong firstIndex would pull a different row
+        // to the front while the engine keeps playing the original.
+        let playingAt = currentIndex
+        let playingItem = contextQueue.indices.contains(playingAt) ? contextQueue[playingAt] : nil
+        let playingId = playingItem?.id
+
+        if mode == .on {
+            // Turn ON — move the playing track to the front, then shuffle the rest.
+            // Done as swap-then-shuffle so `currentItem` never points at a different
+            // song between the two @Published writes (that flash corrupts now-playing).
             shuffleMode = .on
             unshuffledContext = contextQueue
-            if let playingItem, let playingId,
-               let keepAt = contextQueue.firstIndex(where: { $0.id == playingId }) {
-                var rest = contextQueue
-                rest.remove(at: keepAt)
-                rest.shuffle()
-                rest.insert(playingItem, at: min(keepAt, rest.count))
-                contextQueue = rest
-                currentIndex = contextQueue.firstIndex(where: { $0.id == playingId }) ?? keepAt
-                PlayTrace.mark("shuffled others; kept playing in place", details: "index=\(currentIndex)")
+            if playingItem != nil, contextQueue.indices.contains(playingAt) {
+                if playingAt != 0 {
+                    contextQueue.swapAt(0, playingAt)
+                    currentIndex = 0
+                }
+                if contextQueue.count > 1 {
+                    var rest = Array(contextQueue[1...])
+                    rest.shuffle()
+                    contextQueue = [contextQueue[0]] + rest
+                }
+                PlayTrace.mark("shuffled remainder behind playing track")
             } else {
                 contextQueue = contextQueue.shuffled()
                 PlayTrace.mark("shuffled all (no current item)")
             }
         } else {
             // Turn OFF — restore original order; keep pointing at the same playing track.
+            // Staged via swaps so `currentItem` never resolves to a different song between
+            // the @Published writes (same flash as turning shuffle on).
             shuffleMode = .off
-            contextQueue = unshuffledContext.isEmpty ? contextQueue : unshuffledContext
-            if let playingId, let idx = contextQueue.firstIndex(where: { $0.id == playingId }) {
-                currentIndex = idx
+            let restored = unshuffledContext.isEmpty ? contextQueue : unshuffledContext
+            let restoredIndex = playingId.flatMap { id in
+                restored.firstIndex(where: { $0.id == id })
+            } ?? min(playingAt, max(0, restored.count - 1))
+            if restoredIndex == currentIndex || !restored.indices.contains(currentIndex) {
+                contextQueue = restored
+                currentIndex = restoredIndex
+            } else {
+                var staged = restored
+                staged.swapAt(currentIndex, restoredIndex) // playing track sits at currentIndex
+                contextQueue = staged
+                contextQueue.swapAt(currentIndex, restoredIndex)
+                currentIndex = restoredIndex
             }
             PlayTrace.mark("restored unshuffled context", details: "index=\(currentIndex)")
         }
@@ -167,7 +250,7 @@ public final class PlayQueueHandler: ObservableObject {
         queueGeneration += 1
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
-        PlayTrace.end("toggleShuffle done", details: "now=\(shuffleMode)")
+        PlayTrace.end("setShuffle done", details: "now=\(shuffleMode)")
     }
 
     public func windowItems(previous: Int, next: Int) -> [QueueItem] {

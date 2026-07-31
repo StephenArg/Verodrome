@@ -18,6 +18,7 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
     var subtitle: String { "\(artistName) · \(albumTitle)" }
     var symbol: String { "music.note" }
     var trailingText: String? { durationText }
+    var playableId: String? { remoteId }
 
     init(song: Song) {
         id = song.compoundRemoteId

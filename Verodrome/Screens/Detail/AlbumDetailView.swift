@@ -83,14 +83,12 @@ struct AlbumDetailView: View {
                     PlayTrace.error("no tracks after sync")
                     return
                 }
-                if shuffle { items.shuffle() }
-                player.play(items: items)
+                player.play(items: items, shuffle: shuffle)
             }
             return
         }
 
-        if shuffle { items.shuffle() }
-        player.play(items: items)
+        player.play(items: items, shuffle: shuffle)
     }
 
     private func playSong(_ song: Song, tracks: [Song]) {

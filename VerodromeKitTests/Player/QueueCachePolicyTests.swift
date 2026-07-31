@@ -89,6 +89,40 @@ final class QueueCachePolicyTests: XCTestCase {
         XCTAssertNotNil(cache.files["song::0"])
     }
 
+    /// A reorder moves the prefetch window with the playing track: songs that became
+    /// upcoming are kept, songs that dropped out of the window are pruned, and the
+    /// playing track's own file survives (a queue-generation bump would delete it).
+    func testWindowFollowsQueueReorder() {
+        let cache = MockCache()
+        let downloader = DownloadManager(urlProvider: MockURLProvider(), cache: cache)
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+        for item in items {
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        }
+
+        // Pull the last track to the front; the playing track slides one slot down.
+        queue.move(from: IndexSet(integer: 9), to: 0)
+        XCTAssertEqual(queue.currentItem?.playableId, "5")
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.reevaluate()
+
+        // New order [9,0,1,2,3,4,5,6,7,8] with "5" at index 6 → window covers 3…8.
+        for kept in ["3", "4", "5", "6", "7", "8"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) should still be cached")
+        }
+        for pruned in ["9", "0", "1", "2"] {
+            XCTAssertNil(cache.files["song::\(pruned)"], "\(pruned) fell outside the window")
+        }
+    }
+
     func testStalePrune() {
         let cache = MockCache()
         let downloader = DownloadManager(urlProvider: MockURLProvider(), cache: cache)

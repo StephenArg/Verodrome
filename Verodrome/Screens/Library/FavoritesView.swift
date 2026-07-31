@@ -32,7 +32,7 @@ struct FavoritesView: View {
                             title: row.title,
                             subtitle: row.subtitle,
                             artworkURL: row.artworkToken,
-                            isPlaying: nowPlaying.currentItem?.playableId == row.id
+                            isPlaying: nowPlaying.isCurrent(row.playableId)
                         )
                     }
                 }
@@ -87,7 +87,8 @@ struct FavoritesView: View {
                         sectionKey: song.title.sectionInitial,
                         title: song.title,
                         subtitle: song.displayArtist,
-                        artworkToken: song.artworkToken
+                        artworkToken: song.artworkToken,
+                        playableId: song.remoteId
                     )
                 }
 

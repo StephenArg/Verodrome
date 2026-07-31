@@ -107,11 +107,8 @@ struct PopupPlayerView: View {
                 switch panel {
                 case .queue:
                     NavigationStack {
-                        QueueView()
+                        QueueView(onDismiss: { bottomPanel = nil })
                             .navigationTitle("Queue")
-                            .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) { Button("Done") { bottomPanel = nil } }
-                            }
                     }
                     .presentationDetents([.large])
                 case .addToPlaylist:

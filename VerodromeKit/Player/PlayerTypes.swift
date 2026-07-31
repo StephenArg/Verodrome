@@ -23,7 +23,12 @@ public enum PlayerMode: Int, Codable, CaseIterable, Sendable {
 
 
 public struct QueueItem: Sendable, Hashable, Identifiable {
+    /// Playable identity (song / episode / …). Not unique in the queue when the same
+    /// track is queued twice — use `entryId` for list row identity.
     public var id: String { playableId + "|" + kind.rawValue }
+    /// Stable per queue-row identity so SwiftUI can reorder without recycling the wrong
+    /// cell (offset-based ids make the last row vanish mid-drag).
+    public var entryId: UUID
     public var playableId: String
     public var kind: PlayableRef.Kind
     public var title: String
@@ -33,6 +38,10 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
     public var artworkId: String?
     /// When set, playback uses this URL directly (e.g. internet radio) instead of StreamURLProviding.
     public var directStreamURL: URL?
+    /// True for items the user explicitly put in the queue ("Play Next" / "Add to Queue")
+    /// rather than tracks that came in with the album, playlist, or other context. Only
+    /// these may be removed from the queue.
+    public var isUserQueued: Bool = false
 
     public var isLiveStream: Bool { kind == .radio || directStreamURL != nil }
 
@@ -44,8 +53,11 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
         albumName: String? = nil,
         duration: TimeInterval = 0,
         artworkId: String? = nil,
-        directStreamURL: URL? = nil
+        directStreamURL: URL? = nil,
+        isUserQueued: Bool = false,
+        entryId: UUID = UUID()
     ) {
+        self.entryId = entryId
         self.playableId = playableId
         self.kind = kind
         self.title = title
@@ -54,6 +66,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
         self.duration = duration
         self.artworkId = artworkId
         self.directStreamURL = directStreamURL
+        self.isUserQueued = isUserQueued
     }
 
     public init(from ref: PlayableRef) {

@@ -17,6 +17,13 @@ final class PlayerProgressModel: ObservableObject {
 final class NowPlayingModel: ObservableObject {
     @Published var currentItem: QueueItem?
     @Published var isPlaying = false
+
+    /// Whether `playableId` is the track the player is currently on. Nil-safe in
+    /// both directions, so an idle player never marks rows that have no id.
+    func isCurrent(_ playableId: String?) -> Bool {
+        guard let playableId, let current = currentItem?.playableId else { return false }
+        return current == playableId
+    }
 }
 
 @MainActor
@@ -24,6 +31,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var currentItem: QueueItem?
     @Published var queue: [QueueItem] = []
+    /// Position of the playing track within `queue`. Rows are identified by position, so
+    /// a duplicated song can't light up the wrong row.
+    @Published private(set) var currentIndex = 0
     @Published var repeatMode: RepeatMode = .off
     @Published var shuffleMode: ShuffleMode = .off
     @Published var lyrics = ""
@@ -51,7 +61,7 @@ final class PlayerViewModel: ObservableObject {
             self?.currentItem = item
             self?.nowPlaying.currentItem = item
             self?.progress.duration = impl.duration
-            self?.queue = impl.queue
+            self?.syncQueue()
             self?.repeatMode = impl.repeatMode
             self?.shuffleMode = impl.shuffleMode
         }.store(in: &cancellables)
@@ -70,7 +80,7 @@ final class PlayerViewModel: ObservableObject {
         }.store(in: &cancellables)
         impl.$lyrics.receive(on: DispatchQueue.main).assign(to: &$lyrics)
         impl.$statusMessage.receive(on: DispatchQueue.main).assign(to: &$statusMessage)
-        queue = impl.queue
+        syncQueue()
         let user = SettingsStore.shared.loadUserSettings()
         equalizerBands = user.equalizerBands
         equalizerEnabled = user.equalizerEnabled
@@ -80,21 +90,42 @@ final class PlayerViewModel: ObservableObject {
         impl.setEqualizerBands(equalizerBands)
     }
 
-    func play(items: [QueueItem], startAt index: Int = 0) {
+    /// - Parameters:
+    ///   - index: Track to start on. When nil, shuffled playback starts on a random
+    ///     track and ordered playback starts on the first one.
+    ///   - shuffle: Explicit shuffle state for the new context; nil keeps the current one.
+    func play(items: [QueueItem], startAt index: Int? = nil, shuffle: Bool? = nil) {
         guard !items.isEmpty else {
             PlayTrace.error("PlayerViewModel.play — empty items")
             return
         }
-        let startIndex = items.indices.contains(index) ? index : 0
+        let mode: ShuffleMode? = shuffle.map { $0 ? .on : .off }
+        let startIndex: Int
+        if let index, items.indices.contains(index) {
+            startIndex = index
+        } else if mode == .on || (mode == nil && shuffleMode == .on) {
+            // Prefer the song already playing when it belongs to this context — shuffling
+            // an album mid-track should keep that track as the queue head instead of
+            // jumping to a random one and flashing the wrong now-playing info.
+            if let currentId = currentItem?.id,
+               let currentInItems = items.firstIndex(where: { $0.id == currentId }) {
+                startIndex = currentInItems
+            } else {
+                startIndex = items.indices.randomElement() ?? 0
+            }
+        } else {
+            startIndex = 0
+        }
         PlayTrace.mark(
             "PlayerViewModel.play → Task",
             details: "count=\(items.count) startAt=\(startIndex) title=\(items[startIndex].title)"
         )
         Task(priority: .userInitiated) {
             PlayTrace.mark("PlayerViewModel Task running (await facade)")
-            await facade?.play(items: items, startAt: startIndex)
-            queue = facade?.queue ?? items
+            await facade?.play(items: items, startAt: startIndex, shuffle: mode)
+            syncQueue(fallback: items)
             currentItem = facade?.currentItem
+            shuffleMode = facade?.shuffleMode ?? shuffleMode
             progress.duration = facade?.duration ?? items[startIndex].duration
             PlayTrace.mark("PlayerViewModel UI state updated after facade")
         }
@@ -102,7 +133,13 @@ final class PlayerViewModel: ObservableObject {
 
     func playNext(_ items: [QueueItem]) {
         facade?.enqueueNext(items)
-        queue = facade?.queue ?? queue
+        syncQueue()
+    }
+
+    /// Mirrors the player's queue snapshot into the state the UI observes.
+    private func syncQueue(fallback: [QueueItem]? = nil) {
+        queue = facade?.queue ?? fallback ?? queue
+        currentIndex = facade?.currentIndex ?? currentIndex
     }
 
     func playPause() {
@@ -111,7 +148,7 @@ final class PlayerViewModel: ObservableObject {
 
     func skipForward() {
         facade?.next()
-        queue = facade?.queue ?? queue
+        syncQueue()
         currentItem = facade?.currentItem
     }
 
@@ -119,7 +156,7 @@ final class PlayerViewModel: ObservableObject {
         // The restart-vs-previous-track decision lives in the player, which also knows
         // whether the engine can still seek at all.
         facade?.previous()
-        queue = facade?.queue ?? queue
+        syncQueue()
         currentItem = facade?.currentItem
     }
 
@@ -143,14 +180,21 @@ final class PlayerViewModel: ObservableObject {
         progress.currentTime = clamped
     }
 
+    /// Reordering is offered only for a shuffled queue — played in order, the queue is the
+    /// album / playlist exactly as the user asked for it.
     func moveQueue(from source: IndexSet, to destination: Int) {
+        guard shuffleMode == .on else { return }
         facade?.move(from: source, to: destination)
-        queue = facade?.queue ?? queue
+        syncQueue()
     }
 
+    /// Only songs the user queued themselves ("Play Next") can be taken back out.
     func removeFromQueue(at offsets: IndexSet) {
-        facade?.remove(at: offsets)
-        queue = facade?.queue ?? queue
+        guard shuffleMode == .on else { return }
+        let removable = offsets.filter { queue.indices.contains($0) && queue[$0].isUserQueued }
+        guard !removable.isEmpty else { return }
+        facade?.remove(at: IndexSet(removable))
+        syncQueue()
     }
 
     func toggleRepeat() {
@@ -165,9 +209,15 @@ final class PlayerViewModel: ObservableObject {
     func toggleShuffle() {
         facade?.toggleShuffle()
         shuffleMode = facade?.shuffleMode ?? shuffleMode
-        queue = facade?.queue ?? queue
-        // Keep displayed now-playing in sync; shuffle must not change the playing track.
-        currentItem = facade?.currentItem ?? currentItem
+        syncQueue()
+        // Title / artwork follow `currentItem`, while the queue highlight follows
+        // `currentIndex`. Re-anchor from the queue pointer so a stale facade publish
+        // from mid-shuffle cannot leave the player showing a different song.
+        if queue.indices.contains(currentIndex) {
+            let item = queue[currentIndex]
+            currentItem = item
+            nowPlaying.currentItem = item
+        }
     }
 
     func toggleOfflineMode() {

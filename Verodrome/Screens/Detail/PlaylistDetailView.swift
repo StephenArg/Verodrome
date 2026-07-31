@@ -76,9 +76,7 @@ struct PlaylistDetailView: View {
     }
 
     private func play(shuffle: Bool) {
-        var items = songs.map(QueueItem.from)
-        if shuffle { items.shuffle() }
-        player.play(items: items)
+        player.play(items: songs.map(QueueItem.from), shuffle: shuffle)
     }
 
     private func playSong(_ song: Song) {

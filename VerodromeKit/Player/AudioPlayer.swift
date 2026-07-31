@@ -28,6 +28,10 @@ public final class AudioPlayer: ObservableObject {
     private var consecutivePlayFailures = 0
     private var stalled: StalledTrack?
     private var deferredWorkTask: Task<Void, Never>?
+    /// Item the engine was last asked to preload for a gapless / crossfade join, so a
+    /// queue edit can tell whether the preloaded track is still the one coming up.
+    private var preloadedNextItemId: String?
+    private var preloadInvalidationTask: Task<Void, Never>?
 
     public init(queueHandler: PlayQueueHandler, backend: BackendAudioPlayer, settings: @escaping () -> UserSettings) {
         self.queueHandler = queueHandler
@@ -42,11 +46,17 @@ public final class AudioPlayer: ObservableObject {
             guard let self, let item = self.nowPlaying, !item.isLiveStream else { return }
             self.scrobbleSyncer?.trackProgress(item: item, elapsed: elapsed, duration: duration)
         }
-        queueHandler.$currentIndex.sink { [weak self] _ in
+        // Use the *emitted* index, not `queueHandler.currentItem`. `@Published` can
+        // deliver to subscribers before the stored property updates, and during shuffle
+        // the queue has already been swapped — reading the stale index picks the wrong
+        // song and sticks it on the player title while audio keeps playing the original.
+        queueHandler.$currentIndex.sink { [weak self] newIndex in
             guard let self else { return }
-            let item = self.queueHandler.currentItem
+            let queue = self.queueHandler.activeQueue
+            guard queue.indices.contains(newIndex) else { return }
+            let item = queue[newIndex]
             // Ignore index-only reshuffles of the same track (e.g. toggle shuffle).
-            guard item?.id != self.nowPlaying?.id else { return }
+            guard item.id != self.nowPlaying?.id else { return }
             self.nowPlaying = item
         }.store(in: &cancellables)
         NetworkMonitor.shared.$isConnected
@@ -62,6 +72,11 @@ public final class AudioPlayer: ObservableObject {
                     guard let self, !self.settings().isOfflineMode else { return }
                     self.retryStalledPlayback(trigger: "offline mode disabled")
                 }
+            }
+        )
+        observers.append(
+            NotificationCenter.default.addObserver(forName: .verodromeQueueChanged, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handleQueueChanged() }
             }
         )
     }
@@ -82,6 +97,10 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("AudioPlayer.playCurrent enter", details: "\(item.title) id=\(item.playableId) startAt=\(Int(startAt)) paused=\(paused)")
         nowPlaying = item
         lyrics = ""
+        // `backend.play` drops any pending next entry, and this track's own preload is
+        // scheduled below — a queue-edit repreload from the old track must not land now.
+        preloadInvalidationTask?.cancel()
+        preloadedNextItemId = nil
         let user = settings()
         let bitrate = NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi
         let format = user.cacheTranscodingFormat.streamFormat ?? .original
@@ -334,6 +353,10 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("handleEngineAdvance", details: "\(item.title) id=\(item.playableId)")
         nowPlaying = item
         lyrics = ""
+        // The engine consumed the preloaded entry; the following one is preloaded by the
+        // deferred work below.
+        preloadInvalidationTask?.cancel()
+        preloadedNextItemId = nil
         backend.adoptEngineAdvancedTrack(duration: item.isLiveStream ? 0 : item.duration)
         scheduleDeferredWork(for: item)
     }
@@ -428,13 +451,40 @@ public final class AudioPlayer: ObservableObject {
     private func preloadUpcoming(bitrate: Int, format: StreamFormat) async {
         // Never queue the next song while repeating one track.
         guard queueHandler.repeatMode != .one else { return }
+        guard let next = upcomingItem else { return }
+        preloadedNextItemId = next.id
+        await backend.preloadNext(item: next, maxBitrate: bitrate, format: format)
+    }
+
+    /// The track that would play after the current one, as the queue stands right now.
+    private var upcomingItem: QueueItem? {
         let window = queueHandler.windowItems(
             previous: 0,
             next: QueueCachePolicyManager.nextKeepCount
         )
-        guard window.count > 1 else { return }
-        let next = window[1]
-        await backend.preloadNext(item: next, maxBitrate: bitrate, format: format)
+        guard window.count > 1 else { return nil }
+        return window[1]
+    }
+
+    /// A queue edit can put a different track up next after the engine has already been
+    /// handed one to play gaplessly. Drop the stale entry and preload the new next track,
+    /// debounced so dragging several rows doesn't start a download per intermediate order.
+    private func handleQueueChanged() {
+        guard preloadedNextItemId != nil || backend.hasPendingNext else { return }
+        guard upcomingItem?.id != preloadedNextItemId else { return }
+        preloadInvalidationTask?.cancel()
+        preloadInvalidationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            guard self.upcomingItem?.id != self.preloadedNextItemId else { return }
+            PlayTrace.mark("queue reordered — repreloading next", details: self.upcomingItem?.title ?? "none")
+            self.backend.clearPendingNext()
+            self.preloadedNextItemId = nil
+            guard self.backend.isPlaying else { return }
+            let user = self.settings()
+            let bitrate = NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi
+            await self.preloadUpcoming(bitrate: bitrate, format: user.cacheTranscodingFormat.streamFormat ?? .original)
+        }
     }
 
     private func reportNowPlaying(for item: QueueItem) async {

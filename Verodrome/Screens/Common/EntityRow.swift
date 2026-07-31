@@ -10,7 +10,7 @@ struct PlayIndicator: View {
             .font(.system(size: size, weight: .semibold))
             .foregroundStyle(.tint)
             .symbolEffect(.variableColor.iterative, isActive: isPlaying)
-            .frame(width: size + 6)
+            .accessibilityLabel("Now playing")
     }
 }
 
@@ -31,9 +31,14 @@ struct EntityRow: View {
             leadingAccessory
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if isPlaying {
+                        PlayIndicator(isPlaying: true, size: 13)
+                    }
+                    Text(title)
+                        .font(.body)
+                        .lineLimit(1)
+                }
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -42,9 +47,7 @@ struct EntityRow: View {
 
             Spacer(minLength: 8)
 
-            if isPlaying, trackNumber == nil {
-                PlayIndicator(isPlaying: true)
-            } else if let trailing {
+            if let trailing {
                 Text(trailing)
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -56,16 +59,10 @@ struct EntityRow: View {
     @ViewBuilder
     private var leadingAccessory: some View {
         if let trackNumber {
-            Group {
-                if isPlaying {
-                    PlayIndicator(isPlaying: true, size: 16)
-                } else {
-                    Text("\(trackNumber)")
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 28, alignment: .trailing)
+            Text("\(trackNumber)")
+                .font(.body.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 28, alignment: .trailing)
         } else {
             Group {
                 if compactArtwork {

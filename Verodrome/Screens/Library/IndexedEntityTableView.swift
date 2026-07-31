@@ -11,6 +11,13 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
     var artworkToken: String? { get }
     var symbol: String { get }
     var trailingText: String? { get }
+    /// Player identity, for rows that represent something playable. Distinct from
+    /// `id`, which is the compound library id and never matches a queue item.
+    var playableId: String? { get }
+}
+
+extension LibraryRow {
+    var playableId: String? { nil }
 }
 
 struct LibraryRowSection<Item: LibraryRow>: Identifiable, Sendable, Hashable {
@@ -33,6 +40,7 @@ struct LibraryRowSnapshot: LibraryRow {
     let artworkToken: String?
     let symbol: String
     let trailingText: String?
+    let playableId: String?
 
     init(
         id: String,
@@ -41,7 +49,8 @@ struct LibraryRowSnapshot: LibraryRow {
         subtitle: String,
         artworkToken: String?,
         symbol: String = "music.note",
-        trailingText: String? = nil
+        trailingText: String? = nil,
+        playableId: String? = nil
     ) {
         self.id = id
         self.sectionKey = sectionKey
@@ -50,6 +59,7 @@ struct LibraryRowSnapshot: LibraryRow {
         self.artworkToken = artworkToken
         self.symbol = symbol
         self.trailingText = trailingText
+        self.playableId = playableId
     }
 }
 
@@ -140,11 +150,16 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             tableView.reloadData()
         } else if playingChanged {
             for case let cell as EntityTableCell in tableView.visibleCells {
-                guard let indexPath = tableView.indexPath(for: cell) else { continue }
-                let item = sections[indexPath.section].items[indexPath.row]
-                cell.setPlaying(item.id == playingId)
+                guard let indexPath = tableView.indexPath(for: cell),
+                      let item = item(at: indexPath) else { continue }
+                cell.setPlaying(isPlaying(item))
             }
         }
+    }
+
+    private func isPlaying(_ item: Item) -> Bool {
+        guard let playingId, let rowId = item.playableId else { return false }
+        return rowId == playingId
     }
 
     private func cancelAllPrefetchTasks() {
@@ -186,7 +201,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             trailingText: item.trailingText,
             artworkToken: item.artworkToken,
             symbol: item.symbol,
-            isPlaying: item.id == playingId
+            isPlaying: isPlaying(item)
         )
         return cell
     }
@@ -307,11 +322,20 @@ final class EntityTableCell: UITableViewCell {
         subtitleLabel.numberOfLines = 1
         trailingLabel.font = .monospacedDigitSystemFont(ofSize: subtitleSize, weight: .regular)
         trailingLabel.textColor = .secondaryLabel
+        trailingLabel.setContentHuggingPriority(.required, for: .horizontal)
+        trailingLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         playingView.tintColor = .tintColor
         playingView.isHidden = true
         playingView.contentMode = .scaleAspectFit
+        playingView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        playingView.accessibilityLabel = "Now playing"
 
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        let titleRow = UIStackView(arrangedSubviews: [playingView, titleLabel])
+        titleRow.axis = .horizontal
+        titleRow.spacing = 5
+        titleRow.alignment = .center
+
+        let textStack = UIStackView(arrangedSubviews: [titleRow, subtitleLabel])
         textStack.axis = .vertical
         textStack.spacing = 2
         textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -319,18 +343,11 @@ final class EntityTableCell: UITableViewCell {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let trailingStack = UIStackView(arrangedSubviews: [playingView, trailingLabel])
-        trailingStack.axis = .horizontal
-        trailingStack.spacing = 8
-        trailingStack.alignment = .center
-        trailingStack.setContentHuggingPriority(.required, for: .horizontal)
-        trailingStack.setContentCompressionResistancePriority(.required, for: .horizontal)
-
         let spacer = UIView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let hStack = UIStackView(arrangedSubviews: [artworkView, textStack, spacer, trailingStack])
+        let hStack = UIStackView(arrangedSubviews: [artworkView, textStack, spacer, trailingLabel])
         hStack.translatesAutoresizingMaskIntoConstraints = false
         hStack.axis = .horizontal
         hStack.spacing = 12
@@ -340,8 +357,8 @@ final class EntityTableCell: UITableViewCell {
         NSLayoutConstraint.activate([
             artworkView.widthAnchor.constraint(equalToConstant: 44),
             artworkView.heightAnchor.constraint(equalToConstant: 44),
-            playingView.widthAnchor.constraint(equalToConstant: 18),
-            playingView.heightAnchor.constraint(equalToConstant: 18),
+            playingView.widthAnchor.constraint(equalToConstant: 16),
+            playingView.heightAnchor.constraint(equalToConstant: 16),
             hStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             hStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -28),
             hStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
@@ -356,7 +373,7 @@ final class EntityTableCell: UITableViewCell {
         cancelArtworkLoad()
         artworkToken = nil
         artworkView.image = nil
-        playingView.isHidden = true
+        setPlaying(false)
         trailingLabel.isHidden = false
     }
 
@@ -383,8 +400,15 @@ final class EntityTableCell: UITableViewCell {
     }
 
     func setPlaying(_ isPlaying: Bool) {
+        // Re-adding the effect on every reconfigure restarts the animation, so
+        // only touch it when the state actually flips.
+        guard playingView.isHidden == isPlaying else { return }
         playingView.isHidden = !isPlaying
-        if isPlaying { trailingLabel.isHidden = true }
+        if isPlaying {
+            playingView.addSymbolEffect(.variableColor.iterative, options: .repeating, animated: false)
+        } else {
+            playingView.removeAllSymbolEffects()
+        }
     }
 
     func beginArtworkLoadIfNeeded(token: String?, symbol: String, priority: TaskPriority) {

@@ -13,6 +13,8 @@ public protocol PlayerControlling: AnyObject {
     var repeatMode: RepeatMode { get set }
     var shuffleMode: ShuffleMode { get }
     func play(items: [QueueItem], startAt: Int) async
+    /// `shuffle == nil` keeps the current shuffle state.
+    func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?) async
     func play()
     func pause()
     func togglePlayPause()
@@ -26,6 +28,7 @@ public protocol PlayerControlling: AnyObject {
     func move(from: IndexSet, to: Int)
     func jump(to index: Int)
     func toggleShuffle()
+    func setShuffleMode(_ mode: ShuffleMode)
     func setRepeatMode(_ mode: RepeatMode)
 }
 
@@ -125,6 +128,16 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         PlayTrace.mark("PlayerFacade.refreshPublished done")
     }
 
+    /// Starts a new context with an explicit shuffle state. The mode is recorded
+    /// before the context is replaced so the queue handler shuffles the incoming
+    /// items itself and remembers their unshuffled order.
+    public func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?) async {
+        if let shuffle {
+            audioPlayer.queueHandler.setShuffle(shuffle, reorder: false)
+        }
+        await play(items: items, startAt: startAt)
+    }
+
     public func play() {
         if !isPlaying {
             audioPlayer.toggle()
@@ -199,9 +212,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.applyRepeatMode(mode)
     }
     public func setShuffleMode(_ mode: ShuffleMode) {
-        if audioPlayer.queueHandler.shuffleMode != mode {
-            audioPlayer.queueHandler.toggleShuffle()
-        }
+        audioPlayer.queueHandler.setShuffle(mode)
     }
 
     public func setEqualizerBands(_ bands: [Float]) {

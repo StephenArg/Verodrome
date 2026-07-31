@@ -81,18 +81,12 @@ struct MiniPlayerBar: View {
             .layoutPriority(1)
         }
         .padding(.horizontal, drawsChrome ? 14 : 12)
-        .padding(.vertical, drawsChrome ? 10 : 6)
+        .padding(.vertical, drawsChrome ? 6 : 2)
         .overlay(alignment: .bottom) {
             if !item.isLiveStream, progress.duration > 0 {
-                GeometryReader { geo in
-                    let fraction = min(max(progress.currentTime / progress.duration, 0), 1)
-                    Capsule()
-                        .fill(Color.accentColor.opacity(0.85))
-                        .frame(width: max(geo.size.width * fraction, 2), height: 2)
-                        .animation(nil, value: fraction)
-                }
-                .frame(height: 2)
-                .padding(.horizontal, drawsChrome ? 14 : 4)
+                progressBar
+                    .padding(.horizontal, drawsChrome ? 14 : 12)
+                    .padding(.bottom, 3)
             }
         }
 
@@ -116,6 +110,23 @@ struct MiniPlayerBar: View {
         }
     }
 
+    /// Thin, full-width playback progress indicator pinned to the bottom edge.
+    private var progressBar: some View {
+        GeometryReader { geo in
+            let fraction = min(max(progress.currentTime / progress.duration, 0), 1)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.15))
+
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.85))
+                    .frame(width: max(geo.size.width * fraction, 2))
+            }
+            .animation(nil, value: fraction)
+        }
+        .frame(height: 2)
+    }
+
     private func artwork(for item: QueueItem) -> some View {
         ArtworkView.thumbnail(
             item.artworkId,
@@ -124,6 +135,7 @@ struct MiniPlayerBar: View {
             .frame(width: 40, height: 40)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.vertical, 4)
     }
 
     private func openPlayer() {

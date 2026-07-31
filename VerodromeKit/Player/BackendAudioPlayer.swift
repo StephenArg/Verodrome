@@ -132,6 +132,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         }
     }
 
+    /// True while the engine is holding a track to play after the current one.
+    public var hasPendingNext: Bool { pendingNextURL != nil }
+
     public func clearPendingNext() {
         if let url = pendingNextURL {
             streamingPlayer.removeFromQueue(url: url)
@@ -243,6 +246,10 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             } else {
                 return
             }
+            guard url != pendingNextURL else { return }
+            // Drop whatever was queued before, otherwise a second preload stacks another
+            // entry behind the current track and the engine plays the stale one.
+            clearPendingNext()
             pendingNextURL = url
             if gaplessEnabled && crossfadeSeconds <= 0 {
                 streamingPlayer.queue(url: url)

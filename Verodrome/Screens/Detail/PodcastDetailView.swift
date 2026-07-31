@@ -65,10 +65,8 @@ struct PodcastDetailView: View {
         episodes = podcast.episodes.sorted { ($0.track ?? 0) > ($1.track ?? 0) }
     }
 
-    private func play(from index: Int = 0, shuffle: Bool = false) {
-        var items = episodes.map(QueueItem.from)
-        if shuffle { items.shuffle() }
-        player.play(items: items, startAt: shuffle ? 0 : index)
+    private func play(from index: Int? = nil, shuffle: Bool = false) {
+        player.play(items: episodes.map(QueueItem.from), startAt: index, shuffle: shuffle)
     }
 
     private func playEpisode(_ episode: PodcastEpisode) {
