@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
+  <artists>
+    <index name="A">
+      <artist id="ar1" name="Alpha" albumCount="2" coverArt="al-1"/>
+      <artist id="ar2" name="Beta" albumCount="1"/>
+    </index>
+  </artists>
+</subsonic-response>

@@ -1,0 +1,14 @@
+"app.name" = "Verodrome";
+"login.title" = "Connect to Server";
+"login.server_url" = "Server URL";
+"login.username" = "Username";
+"login.password" = "Password";
+"login.connect" = "Connect";
+"sync.title" = "Syncing Library";
+"tab.home" = "Home";
+"tab.search" = "Search";
+"tab.library" = "Library";
+"settings.title" = "Settings";
+"player.play" = "Play";
+"player.pause" = "Pause";
+"offline.mode" = "Offline Mode";

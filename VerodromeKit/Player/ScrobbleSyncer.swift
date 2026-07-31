@@ -1,0 +1,46 @@
+import Foundation
+
+public protocol ScrobbleUploading: AnyObject, Sendable {
+    func uploadScrobble(id: String, at date: Date, duration: TimeInterval?) async throws
+}
+
+@MainActor
+public final class ScrobbleSyncer {
+    private let uploader: any ScrobbleUploading
+    private var pending: [(String, Date, TimeInterval?)] = []
+    private var armedItemId: String?
+    private var hasScrobbledCurrent = false
+
+    public init(uploader: any ScrobbleUploading) { self.uploader = uploader }
+
+    public func trackProgress(item: QueueItem?, elapsed: TimeInterval, duration: TimeInterval) {
+        guard let item, duration > 0 else { return }
+        if armedItemId != item.playableId {
+            armedItemId = item.playableId
+            hasScrobbledCurrent = false
+        }
+        guard !hasScrobbledCurrent else { return }
+        if elapsed >= duration * 0.5 || elapsed >= 4 * 60 {
+            hasScrobbledCurrent = true
+            pending.append((item.playableId, Date(), duration))
+            Task { await flush() }
+        }
+    }
+
+    public func flush() async {
+        let batch = pending
+        pending.removeAll()
+        for (id, date, duration) in batch {
+            try? await uploader.uploadScrobble(id: id, at: date, duration: duration)
+        }
+    }
+}
+
+public final class LibrarySyncerScrobbleUploader: ScrobbleUploading, @unchecked Sendable {
+    private let syncer: any LibrarySyncer
+    public init(syncer: any LibrarySyncer) { self.syncer = syncer }
+
+    public func uploadScrobble(id: String, at date: Date, duration: TimeInterval?) async throws {
+        try await syncer.scrobble(playableId: id, timestamp: date, duration: duration)
+    }
+}

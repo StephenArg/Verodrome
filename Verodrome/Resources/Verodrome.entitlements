@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  CarPlay Audio (`com.apple.developer.carplay-audio`) requires Apple’s special entitlement
+	  approval and blocks Personal Team device installs. Re-add after Apple grants the
+	  entitlement on your paid developer account.
+	-->
+</dict>
+</plist>

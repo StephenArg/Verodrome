@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="1.16.1">
+  <lyrics artist="Alpha" title="Song One">
+Line one of the song
+Line two of the song
+  </lyrics>
+</subsonic-response>

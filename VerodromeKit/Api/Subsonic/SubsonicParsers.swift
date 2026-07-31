@@ -1,0 +1,411 @@
+import Foundation
+
+enum SubsonicParsers {
+    static func checkForError(data: Data) throws {
+        let parser = GenericXmlParser()
+        let root = try parser.parse(data: data)
+
+        guard root.name == "subsonic-response" else { return }
+
+        if root.attributes["status"] == "failed" {
+            if let errorNode = root.firstChild(named: "error") {
+                let code = Int(errorNode.attributes["code"] ?? "")
+                let message = errorNode.attributes["message"] ?? errorNode.text
+                throw XmlParseError.serverError(code: code, message: message)
+            }
+            throw XmlParseError.serverError(code: nil, message: "Subsonic request failed")
+        }
+    }
+
+    static func parseServerInfo(data: Data) throws -> ServerInfo {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let versionNode = root.firstChild(named: "version") ?? root.firstChild(named: "openSubsonic")
+        let version = versionNode?.text.nilIfEmpty ?? versionNode?.attributes["version"] ?? "unknown"
+        let typeNode = root.firstChild(named: "type")
+        let name = typeNode?.text.nilIfEmpty ?? "Subsonic"
+        return ServerInfo(name: name, version: version, apiVersion: SubsonicServerApi.apiVersion)
+    }
+
+    static func parseArtists(data: Data) throws -> [IngestArtist] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let indexes = root.descendants(named: "index")
+        let artistNodes: [XmlNode]
+        if indexes.isEmpty {
+            artistNodes = root.descendants(named: "artist")
+        } else {
+            artistNodes = indexes.flatMap { $0.descendants(named: "artist") }
+        }
+
+        return artistNodes.map { node in
+            IngestArtist(
+                id: node.attributes["id"] ?? "",
+                name: node.attributes["name"] ?? node.text,
+                albumCount: intValue(node.attributes["albumCount"]),
+                artId: node.attributes["coverArt"]
+            )
+        }
+    }
+
+    static func parseAlbumList(data: Data) throws -> [IngestAlbum] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let list = root.firstChild(named: "albumList2") ?? root.firstChild(named: "albumList")
+        let albums = list?.children(named: "album") ?? root.descendants(named: "album")
+
+        return albums.map { node in
+            IngestAlbum(
+                id: node.attributes["id"] ?? "",
+                name: node.attributes["name"] ?? node.attributes["title"] ?? "",
+                artistId: node.attributes["artistId"],
+                artistName: node.attributes["artist"],
+                year: intValue(node.attributes["year"]),
+                songCount: intValue(node.attributes["songCount"]),
+                artId: node.attributes["coverArt"],
+                genreIds: [],
+                genreName: node.attributes["genre"]
+            )
+        }
+        .filter { !$0.id.isEmpty }
+    }
+
+    /// Albums from `getStarred2` / `getStarred`.
+    static func parseStarredAlbums(data: Data) throws -> [IngestAlbum] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let starred = root.firstChild(named: "starred2") ?? root.firstChild(named: "starred")
+        let albums = starred?.children(named: "album") ?? []
+        return albums.map { node in
+            IngestAlbum(
+                id: node.attributes["id"] ?? "",
+                name: node.attributes["name"] ?? node.attributes["title"] ?? "",
+                artistId: node.attributes["artistId"],
+                artistName: node.attributes["artist"],
+                year: intValue(node.attributes["year"]),
+                songCount: intValue(node.attributes["songCount"]),
+                artId: node.attributes["coverArt"],
+                genreIds: [],
+                genreName: node.attributes["genre"]
+            )
+        }
+        .filter { !$0.id.isEmpty }
+    }
+
+    static func parseAlbumDetail(data: Data) throws -> (albums: [IngestAlbum], songs: [IngestSong]) {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let albumNode = root.firstChild(named: "album") else {
+            return ([], [])
+        }
+
+        let album = IngestAlbum(
+            id: albumNode.attributes["id"] ?? "",
+            name: albumNode.attributes["name"] ?? albumNode.attributes["title"] ?? "",
+            artistId: albumNode.attributes["artistId"],
+            artistName: albumNode.attributes["artist"],
+            year: intValue(albumNode.attributes["year"]),
+            songCount: intValue(albumNode.attributes["songCount"]),
+            artId: albumNode.attributes["coverArt"],
+            genreName: albumNode.attributes["genre"]
+        )
+
+        let songs = albumNode.children(named: "song").map { songNode in
+            IngestSong(
+                id: songNode.attributes["id"] ?? "",
+                title: songNode.attributes["title"] ?? "",
+                albumId: album.id,
+                albumName: album.name,
+                artistId: songNode.attributes["artistId"] ?? album.artistId,
+                artistName: songNode.attributes["artist"] ?? album.artistName,
+                trackNumber: intValue(songNode.attributes["track"]),
+                discNumber: intValue(songNode.attributes["discNumber"]),
+                duration: timeInterval(songNode.attributes["duration"]),
+                artId: songNode.attributes["coverArt"] ?? album.artId,
+                bitrate: intValue(songNode.attributes["bitRate"]),
+                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+            )
+        }
+
+        return ([album], songs)
+    }
+
+    static func parsePlaylists(data: Data) throws -> [IngestPlaylist] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let playlistsNode = root.firstChild(named: "playlists")
+        let playlistNodes = playlistsNode?.children(named: "playlist") ?? root.descendants(named: "playlist")
+
+        return playlistNodes.map { node in
+            let entries = node.children(named: "entry").compactMap { $0.attributes["id"] }
+            return IngestPlaylist(
+                id: node.attributes["id"] ?? "",
+                name: node.attributes["name"] ?? "",
+                songCount: intValue(node.attributes["songCount"]) ?? entries.count,
+                owner: node.attributes["owner"],
+                isPublic: node.attributes["public"] == "true",
+                songIds: entries,
+                artId: node.attributes["coverArt"]
+            )
+        }
+    }
+
+    static func parsePlaylistDetail(data: Data) throws -> [IngestPlaylist] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let playlistNode = root.firstChild(named: "playlist") else { return [] }
+        let songIds = playlistNode.children(named: "entry").compactMap { $0.attributes["id"] }
+        return [
+            IngestPlaylist(
+                id: playlistNode.attributes["id"] ?? "",
+                name: playlistNode.attributes["name"] ?? "",
+                songCount: songIds.count,
+                owner: playlistNode.attributes["owner"],
+                isPublic: playlistNode.attributes["public"] == "true",
+                songIds: songIds,
+                artId: playlistNode.attributes["coverArt"]
+            )
+        ]
+    }
+
+    /// Songs embedded as `<entry>` nodes inside a playlist detail response (includes coverArt).
+    static func parsePlaylistSongs(data: Data) throws -> [IngestSong] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let playlistNode = root.firstChild(named: "playlist") else { return [] }
+        return playlistNode.children(named: "entry").map { songNode in
+            IngestSong(
+                id: songNode.attributes["id"] ?? "",
+                title: songNode.attributes["title"] ?? "",
+                albumId: songNode.attributes["albumId"],
+                albumName: songNode.attributes["album"],
+                artistId: songNode.attributes["artistId"],
+                artistName: songNode.attributes["artist"],
+                trackNumber: intValue(songNode.attributes["track"]),
+                discNumber: intValue(songNode.attributes["discNumber"]),
+                duration: timeInterval(songNode.attributes["duration"]),
+                artId: songNode.attributes["coverArt"],
+                bitrate: intValue(songNode.attributes["bitRate"]),
+                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+            )
+        }
+    }
+
+    static func parseSearch(data: Data) throws -> (artists: [SearchArtist], albums: [SearchAlbum], songs: [SearchSong]) {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let result = root.firstChild(named: "searchResult3") ?? root.firstChild(named: "searchResult") else {
+            return ([], [], [])
+        }
+
+        let artists = result.children(named: "artist").map {
+            SearchArtist(id: $0.attributes["id"] ?? "", name: $0.attributes["name"] ?? "")
+        }
+        let albums = result.children(named: "album").map {
+            SearchAlbum(id: $0.attributes["id"] ?? "", name: $0.attributes["name"] ?? "", artistName: $0.attributes["artist"])
+        }
+        let songs = result.children(named: "song").map {
+            SearchSong(
+                id: $0.attributes["id"] ?? "",
+                title: $0.attributes["title"] ?? "",
+                artistName: $0.attributes["artist"],
+                albumName: $0.attributes["album"]
+            )
+        }
+        return (artists, albums, songs)
+    }
+
+    static func parsePodcasts(data: Data) throws -> [IngestPodcast] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let channels = root.firstChild(named: "podcasts")?.children(named: "channel") ?? root.descendants(named: "channel")
+        return channels.compactMap { node in
+            if let status = node.attributes["status"], status == "error" { return nil }
+            let id = node.attributes["id"] ?? ""
+            guard !id.isEmpty else { return nil }
+            return IngestPodcast(
+                id: id,
+                title: node.attributes["title"] ?? node.text,
+                description: node.attributes["description"],
+                artId: firstNonEmpty(
+                    node.attributes["coverArt"],
+                    node.attributes["originalImageUrl"]
+                )
+            )
+        }
+    }
+
+    static func parsePodcastEpisodes(data: Data, podcastId: String) throws -> [IngestPodcastEpisode] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let episodes = root.firstChild(named: "episodes")?.children(named: "episode") ?? root.descendants(named: "episode")
+        return episodes.map { node in
+            IngestPodcastEpisode(
+                id: node.attributes["id"] ?? "",
+                podcastId: podcastId,
+                title: node.attributes["title"] ?? "",
+                publishDate: dateValue(node.attributes["publishDate"] ?? node.attributes["created"]),
+                duration: timeInterval(node.attributes["duration"]),
+                artId: firstNonEmpty(
+                    node.attributes["coverArt"],
+                    node.attributes["originalImageUrl"]
+                )
+            )
+        }
+    }
+
+    static func parseRadios(data: Data) throws -> [IngestRadio] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let stations = root.firstChild(named: "internetRadioStations")?.children(named: "internetRadioStation")
+            ?? root.descendants(named: "internetRadioStation")
+        return stations.map { node in
+            IngestRadio(
+                id: node.attributes["id"] ?? "",
+                name: node.attributes["name"] ?? "",
+                streamURL: node.attributes["streamUrl"],
+                homepageURL: node.attributes["homePageUrl"],
+                artId: node.attributes["coverArt"]
+            )
+        }
+        .filter { !$0.id.isEmpty }
+    }
+
+    static func parseMusicFolders(data: Data) throws -> [RemoteMusicFolder] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let folders = root.firstChild(named: "musicFolders")?.children(named: "musicFolder") ?? []
+        return folders.map { RemoteMusicFolder(id: $0.attributes["id"] ?? "", name: $0.attributes["name"] ?? "") }
+    }
+
+    static func parseMusicDirectory(data: Data) throws -> [DirectoryEntry] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let directory = root.firstChild(named: "directory") else { return [] }
+
+        let childNodes = directory.children
+        return childNodes.compactMap { node in
+            if node.name == "child" {
+                let isDir = node.attributes["isDir"] == "true"
+                return DirectoryEntry(
+                    id: node.attributes["id"] ?? "",
+                    name: node.attributes["title"] ?? node.attributes["name"] ?? "",
+                    kind: isDir ? .folder : .song,
+                    coverArtId: node.attributes["coverArt"],
+                    artistName: node.attributes["artist"],
+                    albumName: node.attributes["album"],
+                    duration: timeInterval(node.attributes["duration"])
+                )
+            }
+
+            let kind: DirectoryEntryKind?
+            switch node.name {
+            case "artist": kind = .artist
+            case "album": kind = .album
+            case "song": kind = .song
+            case "directory", "folder": kind = .folder
+            default: kind = nil
+            }
+            guard let kind else { return nil }
+            return DirectoryEntry(
+                id: node.attributes["id"] ?? node.attributes["name"] ?? node.text,
+                name: node.attributes["name"] ?? node.attributes["title"] ?? node.text,
+                kind: kind,
+                coverArtId: node.attributes["coverArt"],
+                artistName: node.attributes["artist"],
+                albumName: node.attributes["album"],
+                duration: timeInterval(node.attributes["duration"])
+            )
+        }
+    }
+
+    static func parseCreatedPlaylistId(data: Data) throws -> String {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        if let playlist = root.firstChild(named: "playlist"), let id = playlist.attributes["id"] {
+            return id
+        }
+        throw XmlParseError.unexpectedStructure("createPlaylist response missing id")
+    }
+
+    /// Parses classic `getLyrics` or OpenSubsonic `getLyricsBySongId` / structured lyrics.
+    static func parseLyrics(data: Data) throws -> String? {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+
+        if let lyricsNode = root.firstChild(named: "lyrics") {
+            let text = lyricsNode.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return text }
+        }
+
+        // OpenSubsonic structured lyrics: <lyricsList><structuredLyrics><line>...</line></structuredLyrics></lyricsList>
+        if let list = root.firstChild(named: "lyricsList") {
+            let structured = list.descendants(named: "structuredLyrics")
+            var lines: [String] = []
+            for block in structured {
+                let blockLines = block.children(named: "line").map { $0.text }
+                if !blockLines.isEmpty {
+                    lines.append(contentsOf: blockLines)
+                } else {
+                    let text = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty { lines.append(text) }
+                }
+            }
+            let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { return joined }
+        }
+
+        return nil
+    }
+
+    static func parseSong(data: Data) throws -> IngestSong? {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        guard let songNode = root.firstChild(named: "song") else { return nil }
+        return IngestSong(
+            id: songNode.attributes["id"] ?? "",
+            title: songNode.attributes["title"] ?? "",
+            albumId: songNode.attributes["albumId"],
+            albumName: songNode.attributes["album"],
+            artistId: songNode.attributes["artistId"],
+            artistName: songNode.attributes["artist"],
+            trackNumber: intValue(songNode.attributes["track"]),
+            discNumber: intValue(songNode.attributes["discNumber"]),
+            duration: timeInterval(songNode.attributes["duration"]),
+            artId: songNode.attributes["coverArt"],
+            bitrate: intValue(songNode.attributes["bitRate"]),
+            format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+        )
+    }
+
+    private static func intValue(_ raw: String?) -> Int? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return Int(raw)
+    }
+
+    private static func timeInterval(_ raw: String?) -> TimeInterval? {
+        guard let raw, let value = Double(raw) else { return nil }
+        return value
+    }
+
+    private static func firstNonEmpty(_ values: String?...) -> String? {
+        for value in values {
+            if let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func dateValue(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        return formatter.date(from: raw)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}

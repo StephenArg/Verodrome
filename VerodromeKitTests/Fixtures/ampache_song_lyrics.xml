@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <song id="42">
+    <title>Song One</title>
+    <artist id="1">Alpha</artist>
+    <album id="2">Debut</album>
+    <lyrics>Ampache line one
+Ampache line two</lyrics>
+  </song>
+</root>

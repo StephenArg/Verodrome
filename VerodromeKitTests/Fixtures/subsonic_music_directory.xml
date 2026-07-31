@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="1.16.1">
+  <directory id="11" name="Absolute Beginner">
+    <child id="12" parent="11" title="Songs From Da Hood" isDir="true" coverArt="22"/>
+    <child id="13" parent="11" title="Song Name" isDir="false" album="Debut" artist="Alpha" duration="240" coverArt="33"/>
+  </directory>
+</subsonic-response>
