@@ -277,99 +277,319 @@ struct RepeatControlIcon: View {
     }
 }
 
-// MARK: - Shuffle icon (tall crossing arrows)
+// MARK: - Shuffle icon (crossing arrows glyph)
 
-/// Spotify-style shuffle: two smooth crossing S-curves with horizontal stubs and
-/// arrowheads. The under path uses trimmed segments of one continuous curve so the
-/// weave gap doesn't break into disconnected hooks.
+/// Shuffle glyph rendered from SVG path data (16×16 viewBox): an unbroken
+/// diagonal with a top-right arrow, and a broken under-line whose right half
+/// hooks into a second arrow. The active-state dot is drawn by the caller.
 struct ShuffleControlIcon: View {
-    var lineWidthFraction: CGFloat = 0.11
+    /// Main diagonal (bottom-left → top-right arrow) + top-left stub of the under-line.
+    private static let glyphMain = "M13.151.922a.75.75 0 1 0-1.06 1.06L13.109 3H11.16a3.75 3.75 0 0 0-2.873 1.34l-6.173 7.356A2.25 2.25 0 0 1 .39 12.5H0V14h.391a3.75 3.75 0 0 0 2.873-1.34l6.173-7.356a2.25 2.25 0 0 1 1.724-.804h1.947l-1.017 1.018a.75.75 0 0 0 1.06 1.06L15.98 3.75 13.15.922z"
+    /// Right half of the under-line hooking into the lower-right arrow.
+    private static let glyphHook = "m7.5 10.723.98-1.167.957 1.14a2.25 2.25 0 0 0 1.724.804h1.947l-1.017-1.018a.75.75 0 1 1 1.06-1.06l2.829 2.828-2.829 2.828a.75.75 0 1 1-1.06-1.06L13.109 13H11.16a3.75 3.75 0 0 1-2.873-1.34l-.787-.937z"
+    /// Top-left tail stub of the under-line (before the weave gap).
+    private static let glyphStub = "M.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .39 3.5z"
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let lineWidth = max(1.5, h * lineWidthFraction)
-            let stroke = StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+        SVGGlyphShape(
+            pathData: [Self.glyphMain, Self.glyphHook, Self.glyphStub],
+            viewBox: CGRect(x: 0, y: 0, width: 16, height: 16)
+        )
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
 
-            let yTop = h * 0.18
-            let yBot = h * 0.82
+/// Fills SVG path-data strings, scaled to fit the view preserving aspect ratio.
+struct SVGGlyphShape: Shape {
+    var pathData: [String]
+    var viewBox: CGRect
 
-            // Left horizontal stubs → S-curve → right horizontal stubs → arrow.
-            let xLeft0 = w * 0.01
-            let xLeft1 = w * 0.26
-            let xRight0 = w * 0.74
-            let xRight1 = w * 0.84
-            let xTip = w * 0.99
+    func path(in rect: CGRect) -> Path {
+        var combined = Path()
+        for data in pathData {
+            combined.addPath(SVGPathParser.parse(data))
+        }
+        let scale = min(rect.width / viewBox.width, rect.height / viewBox.height)
+        let offsetX = rect.midX - (viewBox.midX * scale)
+        let offsetY = rect.midY - (viewBox.midY * scale)
+        return combined.applying(
+            CGAffineTransform(translationX: offsetX, y: offsetY).scaledBy(x: scale, y: scale)
+        )
+    }
+}
 
-            let under = makePath(
-                from: CGPoint(x: xLeft0, y: yTop),
-                stubEnd: CGPoint(x: xLeft1, y: yTop),
-                curveEnd: CGPoint(x: xRight0, y: yBot),
-                stemEnd: CGPoint(x: xRight1, y: yBot)
-            )
-            let over = makePath(
-                from: CGPoint(x: xLeft0, y: yBot),
-                stubEnd: CGPoint(x: xLeft1, y: yBot),
-                curveEnd: CGPoint(x: xRight0, y: yTop),
-                stemEnd: CGPoint(x: xRight1, y: yTop)
-            )
+/// Minimal SVG path-data parser (M/L/H/V/C/S/Q/T/A/Z, absolute and relative),
+/// enough for embedded icon glyphs.
+enum SVGPathParser {
+    static func parse(_ data: String) -> Path {
+        var path = Path()
+        var scanner = Tokenizer(data)
+        var command: Character = " "
+        var current = CGPoint.zero
+        var subpathStart = CGPoint.zero
+        var lastControl: CGPoint?
+        var lastCommandWasCurve = false
+        var lastCommandWasQuad = false
 
-            // Gap around the midpoint of the under curve (keeps both halves on the
-            // same bezier so they read as one interrupted stroke, not two shapes).
-            let gap: CGFloat = 0.07
+        while let token = scanner.nextCommandOrNumber() {
+            if case .command(let c) = token {
+                command = c
+            } else if case .number(let n) = token {
+                // Implicit command repetition: push the number back.
+                scanner.pushBack(n)
+            }
 
-            ZStack {
-                under.trimmedPath(from: 0, to: 0.5 - gap)
-                    .stroke(style: stroke)
-                under.trimmedPath(from: 0.5 + gap, to: 1)
-                    .stroke(style: stroke)
-                over
-                    .stroke(style: stroke)
+            let isRelative = command.isLowercase
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                isRelative ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+            }
 
-                arrowhead(
-                    tip: CGPoint(x: xTip, y: yBot),
-                    halfH: lineWidth * 1.25,
-                    depth: w * 0.12
+            switch Character(command.uppercased()) {
+            case "M":
+                guard let x = scanner.number(), let y = scanner.number() else { return path }
+                current = point(x, y)
+                subpathStart = current
+                path.move(to: current)
+                // Subsequent pairs are implicit LineTos.
+                command = isRelative ? "l" : "L"
+            case "L":
+                guard let x = scanner.number(), let y = scanner.number() else { return path }
+                current = point(x, y)
+                path.addLine(to: current)
+            case "H":
+                guard let x = scanner.number() else { return path }
+                current = CGPoint(x: isRelative ? current.x + x : x, y: current.y)
+                path.addLine(to: current)
+            case "V":
+                guard let y = scanner.number() else { return path }
+                current = CGPoint(x: current.x, y: isRelative ? current.y + y : y)
+                path.addLine(to: current)
+            case "C":
+                guard let x1 = scanner.number(), let y1 = scanner.number(),
+                      let x2 = scanner.number(), let y2 = scanner.number(),
+                      let x = scanner.number(), let y = scanner.number() else { return path }
+                let c1 = point(x1, y1), c2 = point(x2, y2), end = point(x, y)
+                path.addCurve(to: end, control1: c1, control2: c2)
+                lastControl = c2
+                current = end
+            case "S":
+                guard let x2 = scanner.number(), let y2 = scanner.number(),
+                      let x = scanner.number(), let y = scanner.number() else { return path }
+                let c1 = lastCommandWasCurve && lastControl != nil
+                    ? CGPoint(x: 2 * current.x - lastControl!.x, y: 2 * current.y - lastControl!.y)
+                    : current
+                let c2 = point(x2, y2), end = point(x, y)
+                path.addCurve(to: end, control1: c1, control2: c2)
+                lastControl = c2
+                current = end
+            case "Q":
+                guard let x1 = scanner.number(), let y1 = scanner.number(),
+                      let x = scanner.number(), let y = scanner.number() else { return path }
+                let c = point(x1, y1), end = point(x, y)
+                path.addQuadCurve(to: end, control: c)
+                lastControl = c
+                current = end
+            case "T":
+                guard let x = scanner.number(), let y = scanner.number() else { return path }
+                let c = lastCommandWasQuad && lastControl != nil
+                    ? CGPoint(x: 2 * current.x - lastControl!.x, y: 2 * current.y - lastControl!.y)
+                    : current
+                let end = point(x, y)
+                path.addQuadCurve(to: end, control: c)
+                lastControl = c
+                current = end
+            case "A":
+                guard let rx = scanner.number(), let ry = scanner.number(),
+                      let rotation = scanner.number(),
+                      let largeArc = scanner.number(), let sweep = scanner.number(),
+                      let x = scanner.number(), let y = scanner.number() else { return path }
+                let end = point(x, y)
+                addArc(
+                    to: &path, from: current, to: end,
+                    rx: rx, ry: ry, rotationDegrees: rotation,
+                    largeArc: largeArc != 0, sweep: sweep != 0
                 )
-                arrowhead(
-                    tip: CGPoint(x: xTip, y: yTop),
-                    halfH: lineWidth * 1.25,
-                    depth: w * 0.12
+                current = end
+            case "Z":
+                path.closeSubpath()
+                current = subpathStart
+            default:
+                return path
+            }
+
+            lastCommandWasCurve = "CcSs".contains(command)
+            lastCommandWasQuad = "QqTt".contains(command)
+            if !lastCommandWasCurve && !lastCommandWasQuad { lastControl = nil }
+        }
+        return path
+    }
+
+    /// SVG endpoint arc → cubic bezier segments (W3C implementation notes B.2.4).
+    private static func addArc(
+        to path: inout Path, from start: CGPoint, to end: CGPoint,
+        rx: CGFloat, ry: CGFloat, rotationDegrees: CGFloat,
+        largeArc: Bool, sweep: Bool
+    ) {
+        var rx = abs(rx), ry = abs(ry)
+        guard rx > 0, ry > 0, start != end else {
+            path.addLine(to: end)
+            return
+        }
+        let phi = rotationDegrees * .pi / 180
+        let cosPhi = cos(phi), sinPhi = sin(phi)
+
+        let dx2 = (start.x - end.x) / 2, dy2 = (start.y - end.y) / 2
+        let x1p = cosPhi * dx2 + sinPhi * dy2
+        let y1p = -sinPhi * dx2 + cosPhi * dy2
+
+        // Scale radii up if the endpoints cannot be reached.
+        let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+        if lambda > 1 {
+            let s = sqrt(lambda)
+            rx *= s
+            ry *= s
+        }
+
+        let rxSq = rx * rx, rySq = ry * ry
+        let numerator = max(0, rxSq * rySq - rxSq * y1p * y1p - rySq * x1p * x1p)
+        let denominator = rxSq * y1p * y1p + rySq * x1p * x1p
+        var coefficient = sqrt(numerator / denominator)
+        if largeArc == sweep { coefficient = -coefficient }
+
+        let cxp = coefficient * rx * y1p / ry
+        let cyp = -coefficient * ry * x1p / rx
+        let cx = cosPhi * cxp - sinPhi * cyp + (start.x + end.x) / 2
+        let cy = sinPhi * cxp + cosPhi * cyp + (start.y + end.y) / 2
+
+        func angle(_ ux: CGFloat, _ uy: CGFloat, _ vx: CGFloat, _ vy: CGFloat) -> CGFloat {
+            let dot = ux * vx + uy * vy
+            let len = sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy))
+            var a = acos(min(max(dot / len, -1), 1))
+            if ux * vy - uy * vx < 0 { a = -a }
+            return a
+        }
+
+        let theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+        var deltaTheta = angle(
+            (x1p - cxp) / rx, (y1p - cyp) / ry,
+            (-x1p - cxp) / rx, (-y1p - cyp) / ry
+        )
+        if !sweep, deltaTheta > 0 { deltaTheta -= 2 * .pi }
+        if sweep, deltaTheta < 0 { deltaTheta += 2 * .pi }
+
+        // Split into segments of at most 90°.
+        let segments = max(1, Int(ceil(abs(deltaTheta) / (.pi / 2))))
+        let delta = deltaTheta / CGFloat(segments)
+        let t = 4 / 3 * tan(delta / 4)
+
+        var theta = theta1
+        var from = start
+        for _ in 0..<segments {
+            let thetaNext = theta + delta
+            let cosT = cos(theta), sinT = sin(theta)
+            let cosN = cos(thetaNext), sinN = sin(thetaNext)
+
+            func onEllipse(_ c: CGFloat, _ s: CGFloat) -> CGPoint {
+                CGPoint(
+                    x: cx + rx * cosPhi * c - ry * sinPhi * s,
+                    y: cy + rx * sinPhi * c + ry * cosPhi * s
                 )
             }
+            // Derivative direction at angle for control points.
+            func derivative(_ c: CGFloat, _ s: CGFloat) -> CGPoint {
+                CGPoint(
+                    x: -rx * cosPhi * s - ry * sinPhi * c,
+                    y: -rx * sinPhi * s + ry * cosPhi * c
+                )
+            }
+
+            let to = onEllipse(cosN, sinN)
+            let d1 = derivative(cosT, sinT)
+            let d2 = derivative(cosN, sinN)
+            path.addCurve(
+                to: to,
+                control1: CGPoint(x: from.x + t * d1.x, y: from.y + t * d1.y),
+                control2: CGPoint(x: to.x - t * d2.x, y: to.y - t * d2.y)
+            )
+            from = to
+            theta = thetaNext
         }
-        .aspectRatio(1.3, contentMode: .fit)
     }
 
-    /// Horizontal stub → cubic with horizontal end tangents → horizontal stem.
-    private func makePath(
-        from: CGPoint,
-        stubEnd: CGPoint,
-        curveEnd: CGPoint,
-        stemEnd: CGPoint
-    ) -> Path {
-        let dx = curveEnd.x - stubEnd.x
-        var p = Path()
-        p.move(to: from)
-        p.addLine(to: stubEnd)
-        p.addCurve(
-            to: curveEnd,
-            control1: CGPoint(x: stubEnd.x + dx * 0.45, y: stubEnd.y),
-            control2: CGPoint(x: curveEnd.x - dx * 0.45, y: curveEnd.y)
-        )
-        p.addLine(to: stemEnd)
-        return p
-    }
-
-    private func arrowhead(tip: CGPoint, halfH: CGFloat, depth: CGFloat) -> some View {
-        Path { p in
-            p.move(to: tip)
-            p.addLine(to: CGPoint(x: tip.x - depth, y: tip.y - halfH))
-            p.addLine(to: CGPoint(x: tip.x - depth, y: tip.y + halfH))
-            p.closeSubpath()
+    /// Lexer for SVG path data: commands are single letters; numbers may be
+    /// separated by spaces/commas, run together with '-', or share decimals (".75.75").
+    private struct Tokenizer {
+        enum Token {
+            case command(Character)
+            case number(CGFloat)
         }
-        .fill()
+
+        private let chars: [Character]
+        private var index = 0
+        private var pushedBack: CGFloat?
+
+        init(_ data: String) {
+            chars = Array(data)
+        }
+
+        mutating func pushBack(_ n: CGFloat) {
+            pushedBack = n
+        }
+
+        mutating func nextCommandOrNumber() -> Token? {
+            if let n = pushedBack {
+                pushedBack = nil
+                return .number(n)
+            }
+            skipSeparators()
+            guard index < chars.count else { return nil }
+            let c = chars[index]
+            if c.isLetter {
+                index += 1
+                return .command(c)
+            }
+            return number().map { .number($0) }
+        }
+
+        mutating func number() -> CGFloat? {
+            if let n = pushedBack {
+                pushedBack = nil
+                return n
+            }
+            skipSeparators()
+            guard index < chars.count else { return nil }
+
+            var text = ""
+            var seenDot = false
+            var seenExponent = false
+            while index < chars.count {
+                let c = chars[index]
+                if c == "-" || c == "+" {
+                    // Sign is only part of the number at the start or right after 'e'.
+                    let prev = text.last
+                    guard text.isEmpty || prev == "e" || prev == "E" else { break }
+                } else if c == "." {
+                    // Second dot starts a new number (".75.75").
+                    if seenDot { break }
+                    seenDot = true
+                } else if c == "e" || c == "E" {
+                    if seenExponent { break }
+                    seenExponent = true
+                } else if !c.isNumber {
+                    break
+                }
+                text.append(c)
+                index += 1
+            }
+            guard let value = Double(text) else { return nil }
+            return CGFloat(value)
+        }
+
+        private mutating func skipSeparators() {
+            while index < chars.count, chars[index] == " " || chars[index] == "," || chars[index] == "\n" || chars[index] == "\t" {
+                index += 1
+            }
+        }
     }
 }
 
