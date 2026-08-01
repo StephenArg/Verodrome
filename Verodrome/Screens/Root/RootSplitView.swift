@@ -1,34 +1,21 @@
 import SwiftUI
+import VerodromeKit
 
 struct RootSplitView: View {
-    enum SidebarItem: String, CaseIterable, Identifiable {
-        case home, search, library, settings
-
-        var id: String { rawValue }
-
-        var title: String {
-            rawValue.capitalized
-        }
-
-        var symbol: String {
-            switch self {
-            case .home: "house.fill"
-            case .search: "magnifyingglass"
-            case .library: "square.stack.fill"
-            case .settings: "gearshape.fill"
-            }
-        }
-    }
-
-    @State private var selection: SidebarItem? = .home
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var selection: RootTabItem? = .home
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selection) { item in
-                Label(item.title, systemImage: item.symbol)
+            List(settings.enabledRootTabs, selection: $selection) { item in
+                Label(item.title, systemImage: item.systemImage)
                     .tag(item)
             }
             .navigationTitle("Verodrome")
+            .onAppear { ensureValidSelection() }
+            .onChange(of: settings.enabledRootTabs) { _, _ in
+                ensureValidSelection()
+            }
         } content: {
             detailView
                 .safeAreaInset(edge: .bottom) {
@@ -41,15 +28,47 @@ struct RootSplitView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        switch selection ?? .home {
-        case .home:
-            HomeView()
+        switch selection ?? fallbackSelection {
         case .search:
             SearchView()
+        case .home:
+            HomeView()
         case .library:
             LibraryHubView()
         case .settings:
             SettingsHostView()
+        case .artists:
+            ArtistsView()
+        case .albums:
+            AlbumsView()
+        case .songs:
+            SongsView()
+        case .genres:
+            GenresView()
+        case .playlists:
+            PlaylistsView()
+        case .podcasts:
+            PodcastsView()
+        case .radios:
+            RadiosView()
+        case .downloads:
+            DownloadsView()
+        case .directories:
+            DirectoriesView()
+        case .favorites:
+            FavoritesView()
         }
+    }
+
+    private var fallbackSelection: RootTabItem {
+        settings.enabledRootTabs.first ?? .home
+    }
+
+    private func ensureValidSelection() {
+        let tabs = settings.enabledRootTabs
+        guard !tabs.isEmpty else { return }
+        // Only move selection when the active item was removed; reorder/add keep it.
+        if let selection, tabs.contains(selection) { return }
+        self.selection = fallbackSelection
     }
 }

@@ -23,6 +23,7 @@ public final class SettingsStore: ObservableObject {
     @Published public var themePreference: ThemePreference = .system
     @Published public var isLibrarySynced: Bool = false
     @Published public var libraryDisplayType: LibraryDisplayType = .list
+    @Published public var librarySort: LibrarySortSelection = .default
     @Published public var playerDisplayStyle: PlayerDisplayStyle = .standard
     @Published public var showMiniLyrics: Bool = true
     /// Whether the full-screen player shows lyrics in place of the artwork.
@@ -38,11 +39,13 @@ public final class SettingsStore: ObservableObject {
     @Published public var swipeRightAction: String = "download"
     @Published public var developerWindowSizes: Bool = false
     @Published public var enabledHomeSections: [HomeSection] = HomeSection.allCases
+    @Published public var enabledRootTabs: [RootTabItem] = RootTabItem.defaultVisible
 
     private struct Snapshot: Codable {
         var themePreference: ThemePreference
         var isLibrarySynced: Bool
         var libraryDisplayType: LibraryDisplayType
+        var librarySort: LibrarySortSelection
         var playerDisplayStyle: PlayerDisplayStyle
         var showMiniLyrics: Bool
         var showLyricsInPlayer: Bool
@@ -57,11 +60,13 @@ public final class SettingsStore: ObservableObject {
         var swipeRightAction: String
         var developerWindowSizes: Bool
         var enabledHomeSections: [HomeSection]
+        var enabledRootTabs: [RootTabItem]
 
         init(
             themePreference: ThemePreference,
             isLibrarySynced: Bool,
             libraryDisplayType: LibraryDisplayType,
+            librarySort: LibrarySortSelection,
             playerDisplayStyle: PlayerDisplayStyle,
             showMiniLyrics: Bool,
             showLyricsInPlayer: Bool,
@@ -75,11 +80,13 @@ public final class SettingsStore: ObservableObject {
             swipeLeftAction: String,
             swipeRightAction: String,
             developerWindowSizes: Bool,
-            enabledHomeSections: [HomeSection]
+            enabledHomeSections: [HomeSection],
+            enabledRootTabs: [RootTabItem]
         ) {
             self.themePreference = themePreference
             self.isLibrarySynced = isLibrarySynced
             self.libraryDisplayType = libraryDisplayType
+            self.librarySort = librarySort
             self.playerDisplayStyle = playerDisplayStyle
             self.showMiniLyrics = showMiniLyrics
             self.showLyricsInPlayer = showLyricsInPlayer
@@ -94,6 +101,7 @@ public final class SettingsStore: ObservableObject {
             self.swipeRightAction = swipeRightAction
             self.developerWindowSizes = developerWindowSizes
             self.enabledHomeSections = enabledHomeSections
+            self.enabledRootTabs = enabledRootTabs
         }
 
         init(from decoder: Decoder) throws {
@@ -101,6 +109,7 @@ public final class SettingsStore: ObservableObject {
             themePreference = try c.decode(ThemePreference.self, forKey: .themePreference)
             isLibrarySynced = try c.decode(Bool.self, forKey: .isLibrarySynced)
             libraryDisplayType = try c.decode(LibraryDisplayType.self, forKey: .libraryDisplayType)
+            librarySort = try c.decodeIfPresent(LibrarySortSelection.self, forKey: .librarySort) ?? .default
             playerDisplayStyle = try c.decode(PlayerDisplayStyle.self, forKey: .playerDisplayStyle)
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
             showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
@@ -115,6 +124,9 @@ public final class SettingsStore: ObservableObject {
             swipeRightAction = try c.decode(String.self, forKey: .swipeRightAction)
             developerWindowSizes = try c.decode(Bool.self, forKey: .developerWindowSizes)
             enabledHomeSections = try c.decode([HomeSection].self, forKey: .enabledHomeSections)
+            enabledRootTabs = RootTabItem.normalized(
+                try c.decodeIfPresent([RootTabItem].self, forKey: .enabledRootTabs) ?? RootTabItem.defaultVisible
+            )
         }
     }
 
@@ -129,6 +141,7 @@ public final class SettingsStore: ObservableObject {
             themePreference: themePreference,
             isLibrarySynced: isLibrarySynced,
             libraryDisplayType: libraryDisplayType,
+            librarySort: librarySort,
             playerDisplayStyle: playerDisplayStyle,
             showMiniLyrics: showMiniLyrics,
             showLyricsInPlayer: showLyricsInPlayer,
@@ -142,7 +155,8 @@ public final class SettingsStore: ObservableObject {
             swipeLeftAction: swipeLeftAction,
             swipeRightAction: swipeRightAction,
             developerWindowSizes: developerWindowSizes,
-            enabledHomeSections: enabledHomeSections
+            enabledHomeSections: enabledHomeSections,
+            enabledRootTabs: RootTabItem.normalized(enabledRootTabs)
         )
         save(key: Keys.snapshot, value: snapshot)
         syncTypedStoresFromPublished()
@@ -222,6 +236,7 @@ public final class SettingsStore: ObservableObject {
             themePreference = snapshot.themePreference
             isLibrarySynced = snapshot.isLibrarySynced
             libraryDisplayType = snapshot.libraryDisplayType
+            librarySort = snapshot.librarySort
             playerDisplayStyle = snapshot.playerDisplayStyle
             showMiniLyrics = snapshot.showMiniLyrics
             showLyricsInPlayer = snapshot.showLyricsInPlayer
@@ -236,6 +251,7 @@ public final class SettingsStore: ObservableObject {
             swipeRightAction = snapshot.swipeRightAction
             developerWindowSizes = snapshot.developerWindowSizes
             enabledHomeSections = snapshot.enabledHomeSections
+            enabledRootTabs = RootTabItem.normalized(snapshot.enabledRootTabs)
             return
         }
         let app = loadAppSettings()

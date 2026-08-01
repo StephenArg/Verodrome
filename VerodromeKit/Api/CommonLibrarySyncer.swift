@@ -44,7 +44,34 @@ public enum CommonLibrarySyncer {
         return all
     }
 
-    public static func report(_ progress: (@Sendable (String) -> Void)?, _ message: String) {
-        progress?(message)
+    public static func report(
+        _ progress: LibrarySyncProgressHandler?,
+        _ message: String,
+        fraction: Double? = nil
+    ) {
+        progress?(LibrarySyncProgress(message: message, fraction: fraction))
+    }
+
+    public static func report(
+        _ progress: LibrarySyncProgressHandler?,
+        _ message: String,
+        stage: LibrarySyncCatalogStage
+    ) {
+        report(progress, message, fraction: stage.fraction)
+    }
+
+    /// Reports the track crawl. `total` is nil until the server tells us how much
+    /// there is, which leaves the bar where it was rather than guessing.
+    public static func report(
+        _ progress: LibrarySyncProgressHandler?,
+        _ message: String,
+        tracksCompleted completed: Int,
+        of total: Int?
+    ) {
+        guard let total, total > 0 else {
+            report(progress, message)
+            return
+        }
+        report(progress, message, fraction: LibrarySyncPhase.tracks.overall(Double(completed) / Double(total)))
     }
 }

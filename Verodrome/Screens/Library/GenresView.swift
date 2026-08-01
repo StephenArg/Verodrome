@@ -3,20 +3,31 @@ import SwiftData
 import VerodromeKit
 
 struct GenresView: View {
+    @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
-    @State private var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
-    @State private var rowCount = 0
-    @State private var loadGeneration = 0
     @State private var selectedId: String?
+    // No head page: `Genre.name` is the sort column and isn't case-folded, so a
+    // limited fetch isn't a reliable prefix of the displayed order. Genre lists are
+    // short enough that a single pass is fast anyway.
+    @State private var model = LibraryListModel<LibraryRowSnapshot>(
+        cacheKey: "genres",
+        supportsHeadPage: false
+    ) { request in
+        await GenresView.fetchPage(request)
+    }
+
+    private var sort: LibrarySortOption { settings.librarySort.genres }
 
     var body: some View {
         IndexedEntityTableView(
-            sections: sections,
+            sections: model.sections,
             playingId: nowPlaying.currentItem?.playableId,
+            isPartial: model.isPartial,
+            isSectioned: model.isSectioned,
             onSelect: { item, _ in selectedId = item.id }
         )
         .navigationTitle("Genres")
@@ -27,62 +38,36 @@ struct GenresView: View {
         .navigationDestination(item: $selectedId) { id in
             GenreDetailView(genreID: id)
         }
-        .perfAppear("Genres", details: "count=\(rowCount)")
-        .task {
-            await reload(reason: "appear")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                LibrarySortMenu(
+                    selection: $settings.librarySort.genres,
+                    options: LibrarySortOption.titleOptions
+                )
+            }
         }
-        .task(id: debouncedSearch) {
-            await reload(reason: "search")
-        }
-        .task(id: librarySync.isSyncing) {
-            if !librarySync.isSyncing {
-                await reload(reason: "syncFinished")
+        .perfAppear("Genres", details: "count=\(model.rowCount)")
+        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
+            await model.load(search: debouncedSearch, sort: sort)
+            if await LibraryCountRepair.repairGenreCounts() {
+                await model.load(search: debouncedSearch, sort: sort)
             }
         }
         .refreshable {
-            await reload(reason: "pullToRefresh")
+            await model.load(search: debouncedSearch, sort: sort)
         }
     }
 
-    private func reload(reason: String) async {
-        loadGeneration += 1
-        let generation = loadGeneration
-        let search = debouncedSearch
-        let built = await Self.fetchSections(searchText: search)
-        guard generation == loadGeneration else { return }
-        sections = built.sections
-        rowCount = built.count
-    }
-
-    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibraryRowSnapshot>], count: Int) {
+    private static func fetchPage(_ request: LibraryFetchRequest) async -> LibraryListPage<LibraryRowSnapshot> {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
-                let genres = try context.fetch(
-                    FetchDescriptor<Genre>(sortBy: [SortDescriptor(\Genre.name)])
+                let genres = try LibraryFetch.rows(
+                    context,
+                    sortBy: sortDescriptors(for: request.sort),
+                    limit: request.limit,
+                    matching: predicate(for: request)
                 )
-                // Repair zeroed counts from album tags (older syncs wiped these).
-                // Leave non-zero server-provided counts alone.
-                let localCounts = Self.localGenreCounts(in: context)
-                var didRepair = false
-                for genre in genres {
-                    if genre.albumCount == 0, let albums = localCounts.albums[genre.name], albums > 0 {
-                        genre.albumCount = albums
-                        didRepair = true
-                    }
-                    if genre.songCount == 0, let songs = localCounts.songs[genre.name], songs > 0 {
-                        genre.songCount = songs
-                        didRepair = true
-                    }
-                }
-                if didRepair { try? context.save() }
-
-                let filtered: [Genre]
-                if searchText.isEmpty {
-                    filtered = genres
-                } else {
-                    filtered = genres.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-                }
-                let snapshots = filtered.map { genre in
+                let snapshots = genres.map { genre in
                     LibraryRowSnapshot(
                         id: genre.compoundRemoteId,
                         sectionKey: genre.name.sectionInitial,
@@ -92,26 +77,25 @@ struct GenresView: View {
                         symbol: "guitars.fill"
                     )
                 }
-                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
-                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
-                return (sections, snapshots.count)
+                return LibraryListPage(
+                    sections: AlphabetSectioning.sections(snapshots, sort: request.sort),
+                    count: snapshots.count
+                )
             }
         } catch {
-            return ([], 0)
+            return .empty
         }
     }
 
-    private static func localGenreCounts(in context: ModelContext) -> (albums: [String: Int], songs: [String: Int]) {
-        let albums = (try? context.fetch(FetchDescriptor<Album>())) ?? []
-        var albumCounts: [String: Int] = [:]
-        var songCounts: [String: Int] = [:]
-        for album in albums {
-            guard let name = album.genreName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty else { continue }
-            albumCounts[name, default: 0] += 1
-            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
-            songCounts[name, default: 0] += tracks
-        }
-        return (albumCounts, songCounts)
+    /// No head-pass branch: this screen opts out of the head page, so every pass is a
+    /// full one.
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Genre>? {
+        let search = request.search
+        guard !search.isEmpty else { return nil }
+        return #Predicate<Genre> { $0.name.localizedStandardContains(search) }
+    }
+
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Genre>] {
+        [SortDescriptor(\Genre.name, order: sort.sortsTitleDescending ? .reverse : .forward)]
     }
 }

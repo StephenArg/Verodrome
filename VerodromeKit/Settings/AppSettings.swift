@@ -21,6 +21,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public static let `default` = AppSettings()
 
+    /// The backfill the current build expects a library to have completed.
+    ///
+    /// Bump this whenever the track crawl starts reading a field it didn't before:
+    /// the crawl is the only bulk path that writes song ratings and play counts, so
+    /// libraries stuck on an older version would otherwise never see them.
+    ///
+    /// - 1: the original full-track backfill.
+    /// - 2: adds server-side play counts and ratings.
+    public static let currentTracksBackfillVersion = 2
+
     enum CodingKeys: String, CodingKey {
         case isLibrarySynced, librarySyncVersion, hasReadSyncInfo, tracksBackfillVersion
     }

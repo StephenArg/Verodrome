@@ -23,10 +23,19 @@ struct RootLaunchView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: router.launchPhase)
         .onAppear {
-            PreviewSeeder.seedIfNeeded(in: modelContext)
+            if account.isLoggedIn {
+                PreviewSeeder.purgeDemoDataIfNeeded(in: modelContext)
+            } else {
+                PreviewSeeder.seedIfNeeded(in: modelContext)
+            }
             refreshLaunchPhase()
         }
-        .onChange(of: account.isLoggedIn) { _, _ in refreshLaunchPhase() }
+        .onChange(of: account.isLoggedIn) { _, loggedIn in
+            if loggedIn {
+                PreviewSeeder.purgeDemoDataIfNeeded(in: modelContext)
+            }
+            refreshLaunchPhase()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .librarySynced)) { _ in
             settings.isLibrarySynced = true
         }

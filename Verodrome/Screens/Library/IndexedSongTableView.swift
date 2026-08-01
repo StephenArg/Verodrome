@@ -13,14 +13,14 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
     let albumTitle: String
     let artworkToken: String?
     let duration: TimeInterval
-    let durationText: String
+    let trailingText: String?
+    let trailingRating: Int?
 
     var subtitle: String { "\(artistName) · \(albumTitle)" }
     var symbol: String { "music.note" }
-    var trailingText: String? { durationText }
     var playableId: String? { remoteId }
 
-    init(song: Song) {
+    init(song: Song, sort: LibrarySortOption) {
         id = song.compoundRemoteId
         remoteId = song.remoteId
         title = song.title
@@ -30,9 +30,22 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
         albumTitle = song.albumTitle ?? "Unknown Album"
         artworkToken = song.artworkToken
         duration = song.playDuration
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        durationText = String(format: "%d:%02d", minutes, seconds)
+        trailingRating = sort == .ratingHighest ? song.rating : nil
+        trailingText = trailingRating == nil ? Self.trailingText(for: song, sort: sort) : nil
+    }
+
+    /// Ordering by plays or rating sorts on a value the row otherwise never shows, so
+    /// it takes the duration's place — an ordering you can't see the key for reads as
+    /// arbitrary. Rating is the exception: it's drawn as tinted stars instead.
+    private static func trailingText(for song: Song, sort: LibrarySortOption) -> String {
+        switch sort {
+        case .playsMost:
+            return song.playCount == 1 ? "1 play" : "\(song.playCount) plays"
+        default:
+            let minutes = Int(song.playDuration) / 60
+            let seconds = Int(song.playDuration) % 60
+            return String(format: "%d:%02d", minutes, seconds)
+        }
     }
 
     var queueItem: QueueItem {

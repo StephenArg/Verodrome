@@ -9,20 +9,24 @@ struct AlbumsView: View {
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
-    @State private var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
-    @State private var rowCount = 0
-    @State private var loadGeneration = 0
     @State private var selectedId: String?
+    @State private var model = LibraryListModel<LibraryRowSnapshot>(cacheKey: "albums") { request in
+        await AlbumsView.fetchPage(request)
+    }
+
+    private var sort: LibrarySortOption { settings.librarySort.albums }
 
     var body: some View {
         Group {
             switch settings.libraryDisplayType {
             case .grid:
-                AlbumsGridView(albums: filteredGridAlbums)
+                AlbumsGridView(albums: gridAlbums)
             case .list, .table:
                 IndexedEntityTableView(
-                    sections: sections,
+                    sections: model.sections,
                     playingId: nowPlaying.currentItem?.playableId,
+                    isPartial: model.isPartial,
+                    isSectioned: model.isSectioned,
                     onSelect: { item, _ in selectedId = item.id }
                 )
             }
@@ -37,6 +41,12 @@ struct AlbumsView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                LibrarySortMenu(
+                    selection: $settings.librarySort.albums,
+                    options: LibrarySortOption.albumOptions
+                )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Picker("Display", selection: $settings.libraryDisplayType) {
                     ForEach(LibraryDisplayType.allCases, id: \.self) { type in
                         Text(type.rawValue.capitalized).tag(type)
@@ -45,76 +55,83 @@ struct AlbumsView: View {
                 .pickerStyle(.menu)
             }
         }
-        .perfAppear("Albums", details: "rows=\(rowCount) display=\(settings.libraryDisplayType.rawValue)")
-        .task {
-            await reload(reason: "appear")
+        .onChange(of: settings.libraryDisplayType) { _, _ in
+            settings.save()
         }
-        .task(id: debouncedSearch) {
-            await reload(reason: "search")
-        }
-        .task(id: librarySync.isSyncing) {
-            if !librarySync.isSyncing {
-                await reload(reason: "syncFinished")
-            }
+        .perfAppear("Albums", details: "rows=\(model.rowCount) display=\(settings.libraryDisplayType.rawValue)")
+        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
+            await model.load(search: debouncedSearch, sort: sort)
         }
         .refreshable {
-            await reload(reason: "pullToRefresh")
+            await model.load(search: debouncedSearch, sort: sort)
         }
     }
 
-    /// Grid mode filters the flat list of all loaded albums by the (debounced) search text.
-    private var filteredGridAlbums: [AlbumGridSnapshot] {
-        let all = sections.flatMap(\.items)
-        let search = debouncedSearch
-        guard !search.isEmpty else { return all.map(AlbumGridSnapshot.init) }
-        return all
-            .filter {
-                $0.title.localizedCaseInsensitiveContains(search)
-                    || $0.subtitle.localizedCaseInsensitiveContains(search)
-            }
-            .map(AlbumGridSnapshot.init)
+    private var gridAlbums: [AlbumGridSnapshot] {
+        model.sections.flatMap(\.items).map(AlbumGridSnapshot.init)
     }
 
-    private func reload(reason: String) async {
-        loadGeneration += 1
-        let generation = loadGeneration
-        let search = debouncedSearch
-        let built = await Self.fetchSections(searchText: search)
-        guard generation == loadGeneration else { return }
-        sections = built.sections
-        rowCount = built.count
-    }
-
-    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibraryRowSnapshot>], count: Int) {
+    private static func fetchPage(_ request: LibraryFetchRequest) async -> LibraryListPage<LibraryRowSnapshot> {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
-                let albums = try context.fetch(
-                    FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.sortTitle)])
+                let albums = try LibraryFetch.rows(
+                    context,
+                    sortBy: sortDescriptors(for: request.sort),
+                    limit: request.limit,
+                    matching: predicate(for: request)
                 )
-                let filtered: [Album]
-                if searchText.isEmpty {
-                    filtered = albums
-                } else {
-                    filtered = albums.filter {
-                        $0.title.localizedCaseInsensitiveContains(searchText)
-                            || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
-                    }
-                }
-                let snapshots = filtered.map { album in
+                let snapshots = albums.map { album in
                     LibraryRowSnapshot(
                         id: album.compoundRemoteId,
                         sectionKey: (album.sortTitle.isEmpty ? album.title : album.sortTitle).sectionInitial,
                         title: album.title,
-                        subtitle: album.displayArtist,
-                        artworkToken: album.artworkToken
+                        // Deliberately not `displayArtist`: its `artist?.name` fallback
+                        // faults the relationship once per album. `LibraryRepository`
+                        // keeps the denormalized column filled.
+                        subtitle: album.artistName ?? "Unknown Artist",
+                        artworkToken: album.artworkToken,
+                        // Ordering by rating sorts on a value the row otherwise never
+                        // shows, which reads as arbitrary without the key on screen.
+                        trailingRating: request.sort == .ratingHighest ? album.rating : nil
                     )
                 }
-                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
-                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
-                return (sections, snapshots.count)
+                return LibraryListPage(
+                    sections: AlphabetSectioning.sections(snapshots, sort: request.sort),
+                    count: snapshots.count
+                )
             }
         } catch {
-            return ([], 0)
+            return .empty
+        }
+    }
+
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Album>] {
+        switch sort {
+        case .ratingHighest:
+            [SortDescriptor(\Album.rating, order: .reverse), SortDescriptor(\Album.sortTitle)]
+        default:
+            [SortDescriptor(\Album.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
+        }
+    }
+
+    /// A head pass filters to the leading section group instead of the search text; the
+    /// two never overlap because head passes only run while the search is empty.
+    ///
+    /// The letter range is bounded to ASCII because `sortTitle` is case-folded, and
+    /// anything folding above "z" sections as "?" and renders with the symbols.
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Album>? {
+        if request.isHeadPass {
+            guard request.sort.isAlphabetical else { return nil }
+            if request.sort.showsSymbolsFirst {
+                return #Predicate<Album> { $0.sortTitle < "a" }
+            }
+            return #Predicate<Album> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
+        }
+        let search = request.search
+        guard !search.isEmpty else { return nil }
+        return #Predicate<Album> { album in
+            album.title.localizedStandardContains(search)
+                || album.artistName?.localizedStandardContains(search) == true
         }
     }
 }

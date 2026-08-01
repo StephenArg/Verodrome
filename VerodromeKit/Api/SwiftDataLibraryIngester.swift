@@ -136,6 +136,7 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 year: item.year
             )
             if let songCount = item.songCount { album.trackCount = songCount }
+            if let rating = item.rating { album.rating = rating }
             if let artId = item.artId { album.artworkToken = artId }
             if let artistName = item.artistName, !artistName.isEmpty {
                 album.artistName = artistName
@@ -196,6 +197,10 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 track: item.trackNumber
             )
             if let duration = item.duration { song.playDuration = duration }
+            // Only when the response carried a value: a parser that doesn't supply one
+            // must not reset plays counted locally or a rating set from this device.
+            if let playCount = item.playCount { song.playCount = playCount }
+            if let rating = item.rating { song.rating = rating }
             if let bitrate = item.bitrate { song.bitrate = bitrate }
             song.contentType = item.format
             song.artistName = item.artistName

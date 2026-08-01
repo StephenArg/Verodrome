@@ -1,36 +1,17 @@
 import SwiftUI
 import VerodromeKit
 
-enum RootTab: String, CaseIterable, Identifiable {
-    case search
-    case home
-    case library
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .search: "Search"
-        case .home: "Home"
-        case .library: "Library"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .search: "magnifyingglass"
-        case .home: "house.fill"
-        case .library: "square.stack.fill"
-        }
-    }
-}
-
 struct RootTabView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
-    @State private var selection: RootTab = .home
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var selection: RootTabItem = .home
 
     var body: some View {
         tabRoot
+            .onAppear { ensureValidSelection() }
+            .onChange(of: settings.enabledRootTabs) { _, _ in
+                ensureValidSelection()
+            }
             .onChange(of: selection) { _, tab in
                 PerfTrace.event("Tab.select", details: tab.rawValue)
             }
@@ -38,11 +19,13 @@ struct RootTabView: View {
 
     @ViewBuilder
     private var tabRoot: some View {
+        // Keep a stable TabView identity so add/remove/reorder only updates the
+        // tab bar — NavigationStacks and the selected tab stay put.
         let tabs = TabView(selection: $selection) {
-            ForEach(RootTab.allCases) { tab in
+            ForEach(settings.enabledRootTabs) { tab in
                 tabContent(for: tab)
                     .tabItem {
-                        Label(tab.title, systemImage: tab.symbol)
+                        Label(tab.title, systemImage: tab.systemImage)
                     }
                     .tag(tab)
             }
@@ -63,14 +46,47 @@ struct RootTabView: View {
     }
 
     @ViewBuilder
-    private func tabContent(for tab: RootTab) -> some View {
-        switch tab {
-        case .search:
-            NavigationStack { SearchView() }
-        case .home:
-            NavigationStack { HomeView() }
-        case .library:
-            NavigationStack { LibraryHubView() }
+    private func tabContent(for tab: RootTabItem) -> some View {
+        NavigationStack {
+            switch tab {
+            case .search:
+                SearchView()
+            case .home:
+                HomeView()
+            case .library:
+                LibraryHubView()
+            case .settings:
+                SettingsHostView()
+            case .artists:
+                ArtistsView()
+            case .albums:
+                AlbumsView()
+            case .songs:
+                SongsView()
+            case .genres:
+                GenresView()
+            case .playlists:
+                PlaylistsView()
+            case .podcasts:
+                PodcastsView()
+            case .radios:
+                RadiosView()
+            case .downloads:
+                DownloadsView()
+            case .directories:
+                DirectoriesView()
+            case .favorites:
+                FavoritesView()
+            }
+        }
+    }
+
+    private func ensureValidSelection() {
+        let tabs = settings.enabledRootTabs
+        guard !tabs.isEmpty else { return }
+        // Only move selection when the active tab was removed; reorder/add keep it.
+        if !tabs.contains(selection) {
+            selection = tabs[0]
         }
     }
 }

@@ -49,6 +49,10 @@ public struct IngestAlbum: Sendable, Hashable {
     public let genreIds: [String]
     /// Subsonic-style genre name when no genre id is provided.
     public let genreName: String?
+    /// The signed-in user's 0–5 rating. Nil when the response doesn't carry one, which
+    /// has to stay distinct from an explicit 0 so a partial response can't wipe a
+    /// rating a prior sync stored.
+    public let rating: Int?
 
     public init(
         id: String,
@@ -59,7 +63,8 @@ public struct IngestAlbum: Sendable, Hashable {
         songCount: Int? = nil,
         artId: String? = nil,
         genreIds: [String] = [],
-        genreName: String? = nil
+        genreName: String? = nil,
+        rating: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -70,6 +75,7 @@ public struct IngestAlbum: Sendable, Hashable {
         self.artId = artId
         self.genreIds = genreIds
         self.genreName = genreName
+        self.rating = rating
     }
 }
 
@@ -86,6 +92,12 @@ public struct IngestSong: Sendable, Hashable {
     public let artId: String?
     public let bitrate: Int?
     public let format: String?
+    /// Server-side play count. Nil when the response doesn't carry one, which has to
+    /// stay distinct from an explicit 0 so a partial response can't wipe plays counted
+    /// locally or by a prior sync.
+    public let playCount: Int?
+    /// The signed-in user's 0–5 rating, nil when absent, for the same reason.
+    public let rating: Int?
 
     public init(
         id: String,
@@ -99,7 +111,9 @@ public struct IngestSong: Sendable, Hashable {
         duration: TimeInterval? = nil,
         artId: String? = nil,
         bitrate: Int? = nil,
-        format: String? = nil
+        format: String? = nil,
+        playCount: Int? = nil,
+        rating: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -113,6 +127,8 @@ public struct IngestSong: Sendable, Hashable {
         self.artId = artId
         self.bitrate = bitrate
         self.format = format
+        self.playCount = playCount
+        self.rating = rating
     }
 }
 

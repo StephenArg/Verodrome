@@ -1,0 +1,52 @@
+[
+  {
+    "id": "mf-1",
+    "title": "Opening",
+    "album": "First Light",
+    "albumId": "al-1",
+    "artist": "Alpha",
+    "artistId": "ar-1",
+    "albumArtist": "Alpha",
+    "albumArtistId": "ar-1",
+    "trackNumber": 1,
+    "discNumber": 1,
+    "duration": 245.32,
+    "bitRate": 320,
+    "suffix": "mp3",
+    "genre": "Electronic",
+    "year": 2021,
+    "size": 9814215,
+    "hasCoverArt": true,
+    "missing": false,
+    "playCount": 17,
+    "rating": 4,
+    "starred": true,
+    "createdAt": "2026-07-30T11:02:11.4021Z",
+    "updatedAt": "2026-08-01T01:32:44.1155Z"
+  },
+  {
+    "id": "mf-2",
+    "title": "Second Light",
+    "album": "First Light",
+    "albumId": "al-1",
+    "artist": "Alpha",
+    "artistId": "ar-1",
+    "trackNumber": 2,
+    "discNumber": 1,
+    "duration": 198.5,
+    "bitRate": 320,
+    "suffix": "mp3",
+    "hasCoverArt": true,
+    "missing": false,
+    "createdAt": "2026-07-30T11:02:11.4022Z",
+    "updatedAt": "2026-07-30T11:02:11.4022Z"
+  },
+  {
+    "id": "mf-3",
+    "title": "Untitled",
+    "duration": 12,
+    "missing": true,
+    "createdAt": "2026-07-30T11:02:11.4023Z",
+    "updatedAt": "2026-07-30T11:02:11.4023Z"
+  }
+]

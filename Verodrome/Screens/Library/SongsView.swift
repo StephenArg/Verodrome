@@ -3,6 +3,7 @@ import SwiftData
 import VerodromeKit
 
 struct SongsView: View {
+    @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
@@ -10,44 +11,54 @@ struct SongsView: View {
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
-    @State private var sections: [LibraryRowSection<LibrarySongRowSnapshot>] = []
-    @State private var rowCount = 0
     @State private var actionsSong: Song?
     @State private var showActions = false
-    @State private var loadGeneration = 0
+    @State private var model = LibraryListModel<LibrarySongRowSnapshot>(cacheKey: "songs") { request in
+        await SongsView.fetchPage(request)
+    }
+
+    private var sort: LibrarySortOption { settings.librarySort.songs }
 
     var body: some View {
-        IndexedEntityTableView(
-            sections: sections,
-            playingId: nowPlaying.currentItem?.playableId,
-            onSelect: play,
-            onPlayNext: { item in
-                player.playNext([item.queueItem])
-            },
-            onRequestActions: { compoundId in
-                actionsSong = resolveSong(compoundRemoteId: compoundId)
-                showActions = actionsSong != nil
-            }
-        )
+        VStack(spacing: 0) {
+            LibraryFilterBar(
+                prompt: "Filter songs",
+                text: $searchText,
+                onShuffle: shuffleAll
+            )
+            IndexedEntityTableView(
+                sections: model.sections,
+                playingId: nowPlaying.currentItem?.playableId,
+                isPartial: model.isPartial,
+                isSectioned: model.isSectioned,
+                onSelect: play,
+                onPlayNext: { item in
+                    player.playNext([item.queueItem])
+                },
+                onRequestActions: { compoundId in
+                    actionsSong = resolveSong(compoundRemoteId: compoundId)
+                    showActions = actionsSong != nil
+                }
+            )
+        }
         .navigationTitle("Songs")
-        .searchable(text: $searchText, prompt: "Filter songs")
         .debouncedSearch(text: $searchText) { newValue in
             debouncedSearch = newValue
         }
-        .perfAppear("Songs", details: "rows=\(rowCount) search=\(searchText.isEmpty ? "off" : "on")")
-        .task {
-            await reload(reason: "appear")
-        }
-        .task(id: debouncedSearch) {
-            await reload(reason: "search")
-        }
-        .task(id: librarySync.isSyncing) {
-            if !librarySync.isSyncing {
-                await reload(reason: "syncFinished")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                LibrarySortMenu(
+                    selection: $settings.librarySort.songs,
+                    options: LibrarySortOption.songOptions
+                )
             }
         }
+        .perfAppear("Songs", details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on")")
+        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
+            await model.load(search: debouncedSearch, sort: sort)
+        }
         .refreshable {
-            await reload(reason: "pullToRefresh")
+            await model.load(search: debouncedSearch, sort: sort)
         }
         .sheet(isPresented: $showActions) {
             if let song = actionsSong {
@@ -66,6 +77,9 @@ struct SongsView: View {
                 .presentationDetents([.medium])
             }
         }
+    }
+
+    private func shuffleAll() {
     }
 
     private func play(item: LibrarySongRowSnapshot, allItems: [LibrarySongRowSnapshot]) {
@@ -90,68 +104,75 @@ struct SongsView: View {
         return try? modelContext.fetch(descriptor).first
     }
 
-    private func reload(reason: String) async {
-        loadGeneration += 1
-        let generation = loadGeneration
-        let search = debouncedSearch
-        let token = PerfTrace.begin("Songs.reload", details: reason)
-
-        let built = await PerfTrace.measureAsync(
-            "Songs.backgroundFetch",
-            details: "search=\(search.isEmpty ? "off" : "on")"
-        ) {
-            await Self.fetchSections(searchText: search)
-        }
-
-        guard generation == loadGeneration else {
-            PerfTrace.event("Songs.reload.cancelled", details: reason)
-            return
-        }
-
-        sections = built.sections
-        rowCount = built.count
-        PerfTrace.end(token, details: "rows=\(built.count) sections=\(built.sections.count)")
-    }
-
     /// Fetch + map + section off the main actor so opening Songs stays responsive.
-    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibrarySongRowSnapshot>], count: Int) {
+    private static func fetchPage(_ request: LibraryFetchRequest) async -> LibraryListPage<LibrarySongRowSnapshot> {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 let t0 = CFAbsoluteTimeGetCurrent()
-                let descriptor = FetchDescriptor<Song>(
-                    sortBy: [SortDescriptor(\Song.sortTitle)]
+                let songs = try LibraryFetch.rows(
+                    context,
+                    sortBy: sortDescriptors(for: request.sort),
+                    limit: request.limit,
+                    matching: predicate(for: request)
                 )
-                let songs = try context.fetch(descriptor)
                 let fetchMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
 
                 let t1 = CFAbsoluteTimeGetCurrent()
-                let filtered: [Song]
-                if searchText.isEmpty {
-                    filtered = songs
-                } else {
-                    filtered = songs.filter {
-                        $0.title.localizedCaseInsensitiveContains(searchText)
-                            || ($0.artistName?.localizedCaseInsensitiveContains(searchText) ?? false)
-                            || ($0.albumTitle?.localizedCaseInsensitiveContains(searchText) ?? false)
-                    }
-                }
-                let snapshots = filtered.map(LibrarySongRowSnapshot.init)
+                let snapshots = songs.map { LibrarySongRowSnapshot(song: $0, sort: request.sort) }
                 let mapMs = Int(((CFAbsoluteTimeGetCurrent() - t1) * 1000).rounded())
 
                 let t2 = CFAbsoluteTimeGetCurrent()
-                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
-                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
+                let sections = AlphabetSectioning.sections(snapshots, sort: request.sort)
                 let sectionMs = Int(((CFAbsoluteTimeGetCurrent() - t2) * 1000).rounded())
 
                 PerfTrace.event(
                     "Songs.backgroundBreakdown",
-                    details: "fetch=\(fetchMs)ms map=\(mapMs)ms section=\(sectionMs)ms rows=\(snapshots.count)"
+                    details: "fetch=\(fetchMs)ms map=\(mapMs)ms section=\(sectionMs)ms rows=\(snapshots.count) limit=\(request.limit.map(String.init) ?? "none")"
                 )
-                return (sections, snapshots.count)
+                return LibraryListPage(sections: sections, count: snapshots.count)
             }
         } catch {
             PerfTrace.event("Songs.backgroundFetch.failed", details: error.localizedDescription)
-            return ([], 0)
+            return .empty
+        }
+    }
+
+    /// Secondary title sort so equal durations, ratings and play counts stay alphabetical
+    /// instead of coming back in whatever order the store happens to produce.
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Song>] {
+        switch sort {
+        case .titleAZ, .titleZA, .titleSymbolsFirst:
+            [SortDescriptor(\Song.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
+        case .durationLongest:
+            [SortDescriptor(\Song.playDuration, order: .reverse), SortDescriptor(\Song.sortTitle)]
+        case .durationShortest:
+            [SortDescriptor(\Song.playDuration), SortDescriptor(\Song.sortTitle)]
+        case .ratingHighest:
+            [SortDescriptor(\Song.rating, order: .reverse), SortDescriptor(\Song.sortTitle)]
+        case .playsMost:
+            [SortDescriptor(\Song.playCount, order: .reverse), SortDescriptor(\Song.sortTitle)]
+        }
+    }
+
+    /// A head pass filters to the leading section group instead of the search text; the
+    /// two never overlap because head passes only run while the search is empty.
+    ///
+    /// The letter range is bounded to ASCII because `sortTitle` is case-folded, and
+    /// anything folding above "z" sections as "?" and renders with the symbols.
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Song>? {
+        if request.isHeadPass {
+            guard request.sort.isAlphabetical else { return nil }
+            if request.sort.showsSymbolsFirst {
+                return #Predicate<Song> { $0.sortTitle < "a" }
+            }
+            return #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
+        }
+        let search = request.search
+        guard !search.isEmpty else { return nil }
+        return #Predicate<Song> { song in
+            song.title.localizedStandardContains(search)
+                || song.artistName?.localizedStandardContains(search) == true
+                || song.albumTitle?.localizedStandardContains(search) == true
         }
     }
 }

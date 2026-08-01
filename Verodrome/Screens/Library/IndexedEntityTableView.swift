@@ -11,9 +11,16 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
     var artworkToken: String? { get }
     var symbol: String { get }
     var trailingText: String? { get }
+    /// A 0–5 star rating drawn in place of `trailingText`, so the filled stars can carry
+    /// the tint colour instead of being flattened into a plain string.
+    var trailingRating: Int? { get }
     /// Player identity, for rows that represent something playable. Distinct from
     /// `id`, which is the compound library id and never matches a queue item.
     var playableId: String? { get }
+}
+
+extension LibraryRow {
+    var trailingRating: Int? { nil }
 }
 
 extension LibraryRow {
@@ -40,6 +47,7 @@ struct LibraryRowSnapshot: LibraryRow {
     let artworkToken: String?
     let symbol: String
     let trailingText: String?
+    let trailingRating: Int?
     let playableId: String?
 
     init(
@@ -50,6 +58,7 @@ struct LibraryRowSnapshot: LibraryRow {
         artworkToken: String?,
         symbol: String = "music.note",
         trailingText: String? = nil,
+        trailingRating: Int? = nil,
         playableId: String? = nil
     ) {
         self.id = id
@@ -59,6 +68,7 @@ struct LibraryRowSnapshot: LibraryRow {
         self.artworkToken = artworkToken
         self.symbol = symbol
         self.trailingText = trailingText
+        self.trailingRating = trailingRating
         self.playableId = playableId
     }
 }
@@ -69,6 +79,11 @@ struct LibraryRowSnapshot: LibraryRow {
 struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     let sections: [LibraryRowSection<Item>]
     var playingId: String?
+    /// Set while `sections` holds only the first screenful of a two-phase load.
+    var isPartial: Bool = false
+    /// False when the rows are ordered by something other than title, which makes
+    /// letter headers and the A–Z scrubber meaningless.
+    var isSectioned: Bool = true
     var onSelect: (Item, [Item]) -> Void
     var onPlayNext: ((Item) -> Void)?
     var onRequestActions: ((String) -> Void)?
@@ -76,12 +91,16 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     init(
         sections: [LibraryRowSection<Item>],
         playingId: String? = nil,
+        isPartial: Bool = false,
+        isSectioned: Bool = true,
         onSelect: @escaping (Item, [Item]) -> Void,
         onPlayNext: ((Item) -> Void)? = nil,
         onRequestActions: ((String) -> Void)? = nil
     ) {
         self.sections = sections
         self.playingId = playingId
+        self.isPartial = isPartial
+        self.isSectioned = isSectioned
         self.onSelect = onSelect
         self.onPlayNext = onPlayNext
         self.onRequestActions = onRequestActions
@@ -99,7 +118,12 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         controller.onSelect = onSelect
         controller.onPlayNext = onPlayNext
         controller.onRequestActions = onRequestActions
-        controller.apply(sections: sections, playingId: playingId)
+        controller.apply(
+            sections: sections,
+            playingId: playingId,
+            isPartial: isPartial,
+            isSectioned: isSectioned
+        )
     }
 }
 
@@ -112,6 +136,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var sections: [LibraryRowSection<Item>] = []
     private var playingId: String?
+    private var isPartial = false
+    private var isSectioned = true
     private var flatItems: [Item] = []
     private var appliedFingerprint = ""
     private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
@@ -124,7 +150,6 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         tableView.delegate = self
         tableView.prefetchDataSource = self
         tableView.rowHeight = 60
-        tableView.sectionHeaderTopPadding = 4
         tableView.register(EntityTableCell.self, forCellReuseIdentifier: EntityTableCell.reuseID)
         tableView.sectionIndexColor = .secondaryLabel
         tableView.sectionIndexBackgroundColor = .clear
@@ -137,18 +162,38 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         ])
     }
 
-    func apply(sections: [LibraryRowSection<Item>], playingId: String?) {
-        let fingerprint = "\(sections.count)|\(sections.first?.items.first?.id ?? "")|\(sections.last?.items.last?.id ?? "")|\(sections.reduce(0) { $0 + $1.items.count })"
+    func apply(
+        sections: [LibraryRowSection<Item>],
+        playingId: String?,
+        isPartial: Bool,
+        isSectioned: Bool
+    ) {
+        // `isSectioned` belongs in the fingerprint: it changes whether headers render at
+        // all, which needs a reload even if the rows themselves are untouched.
+        let fingerprint = "\(sections.count)|\(sections.first?.items.first?.id ?? "")|\(sections.last?.items.last?.id ?? "")|\(sections.reduce(0) { $0 + $1.items.count })|\(isSectioned)"
         let playingChanged = self.playingId != playingId
+        let partialChanged = self.isPartial != isPartial
         self.playingId = playingId
+        self.isPartial = isPartial
+        self.isSectioned = isSectioned
 
         if fingerprint != appliedFingerprint {
             appliedFingerprint = fingerprint
             self.sections = sections
             flatItems = sections.flatMap(\.items)
+            // Padding is reserved per section even where the header itself is empty, so
+            // it has to come off with the headers or short lists get unexplained gaps.
+            tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
             cancelAllPrefetchTasks()
             tableView.reloadData()
-        } else if playingChanged {
+            return
+        }
+        // A head page that already held every row leaves the content identical, so
+        // only the scrubber needs to catch up.
+        if partialChanged {
+            tableView.reloadSectionIndexTitles()
+        }
+        if playingChanged {
             for case let cell as EntityTableCell in tableView.visibleCells {
                 guard let indexPath = tableView.indexPath(for: cell),
                       let item = item(at: indexPath) else { continue }
@@ -173,6 +218,14 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         return sections[indexPath.section].items[indexPath.row]
     }
 
+    /// Letter grouping only earns its keep on a list too long to scan in one flick.
+    /// Below this, both the headers and the A–Z scrubber are clutter.
+    private static var letterSectionRowThreshold: Int { 100 }
+
+    private var showsLetterSections: Bool {
+        isSectioned && sections.count > 1 && flatItems.count >= Self.letterSectionRowThreshold
+    }
+
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -180,12 +233,16 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        sections[section].letter
+        guard showsLetterSections else { return nil }
+        return sections[section].letter
     }
 
     func sectionIndexTitles(for tableView: UITableView) -> [String]? {
-        // Short lists don't need the A–Z scrubber — it just crowds the trailing edge.
-        guard sections.count > 1, flatItems.count >= 100 else { return nil }
+        // A head page holds only the leading letters, so wait for the full list rather
+        // than showing a scrubber that grows from two entries to the whole alphabet.
+        // Headers don't need the same wait: the head page is a prefix, so the headers it
+        // shows are the ones that stay.
+        guard showsLetterSections, !isPartial else { return nil }
         return sections.map(\.letter)
     }
 
@@ -200,6 +257,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             title: item.title,
             subtitle: item.subtitle,
             trailingText: item.trailingText,
+            trailingRating: item.trailingRating,
             artworkToken: item.artworkToken,
             symbol: item.symbol,
             isPlaying: isPlaying(item)
@@ -369,20 +427,53 @@ final class EntityTableCell: UITableViewCell {
 
     required init?(coder: NSCoder) { nil }
 
+    /// Filled stars take the tint so the rating reads at a glance; the empty ones stay
+    /// quiet enough not to compete with the title.
+    private func ratingStars(_ rating: Int) -> NSAttributedString {
+        let filled = max(0, min(5, rating))
+        let font = trailingLabel.font ?? .preferredFont(forTextStyle: .subheadline)
+        let stars = NSMutableAttributedString(
+            string: String(repeating: "★", count: filled),
+            attributes: [.font: font, .foregroundColor: UIColor.tintColor]
+        )
+        stars.append(NSAttributedString(
+            string: String(repeating: "☆", count: 5 - filled),
+            attributes: [.font: font, .foregroundColor: UIColor.tertiaryLabel]
+        ))
+        return stars
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
         cancelArtworkLoad()
         artworkToken = nil
         artworkView.image = nil
         setPlaying(false)
+        trailingLabel.attributedText = nil
         trailingLabel.isHidden = false
     }
 
-    func configure(title: String, subtitle: String, trailingText: String?, artworkToken: String?, symbol: String, isPlaying: Bool) {
+    func configure(
+        title: String,
+        subtitle: String,
+        trailingText: String?,
+        trailingRating: Int?,
+        artworkToken: String?,
+        symbol: String,
+        isPlaying: Bool
+    ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
-        trailingLabel.text = trailingText
-        trailingLabel.isHidden = trailingText == nil
+        if let trailingRating {
+            trailingLabel.attributedText = ratingStars(trailingRating)
+            trailingLabel.isHidden = false
+        } else {
+            // Assigning `text` after `attributedText` leaves the old attributes behind on
+            // a reused cell, so the attributed value has to be cleared first.
+            trailingLabel.attributedText = nil
+            trailingLabel.text = trailingText
+            trailingLabel.isHidden = trailingText == nil
+        }
         setPlaying(isPlaying)
         self.artworkToken = artworkToken
         if let token = artworkToken,

@@ -35,6 +35,9 @@ Carthage/Build/
 .idea/
 .vscode/
 
+# Throwaway probes / scratch scripts
+Tools/
+
 # Secrets
 *.pem
 Secrets.xcconfig

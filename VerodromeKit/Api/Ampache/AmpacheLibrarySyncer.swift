@@ -15,45 +15,45 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         self.isConnected = isConnected
     }
 
-    public func syncInitial(progress: @escaping @Sendable (String) -> Void) async throws {
+    public func syncInitial(progress: @escaping LibrarySyncProgressHandler) async throws {
         try await syncCatalog(progress: progress)
         try await syncAllSongs(progress: progress)
-        CommonLibrarySyncer.report(progress, "Library sync complete.")
+        CommonLibrarySyncer.report(progress, "Library sync complete.", fraction: 1)
     }
 
-    public func syncCatalog(progress: @escaping @Sendable (String) -> Void) async throws {
+    public func syncCatalog(progress: @escaping LibrarySyncProgressHandler) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         try await ingestor.beginSync()
 
-        CommonLibrarySyncer.report(progress, "Fetching genres…")
+        CommonLibrarySyncer.report(progress, "Fetching genres…", stage: .genres)
         let genres = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getGenres(limit: limit, offset: offset)
             return try AmpacheParsers.parseGenres(data: data)
         }
         try await ingestor.ingest(genres: genres)
 
-        CommonLibrarySyncer.report(progress, "Fetching artists…")
+        CommonLibrarySyncer.report(progress, "Fetching artists…", stage: .artists)
         let artists = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getArtists(limit: limit, offset: offset)
             return try AmpacheParsers.parseArtists(data: data)
         }
         try await ingestor.ingest(artists: artists)
 
-        CommonLibrarySyncer.report(progress, "Fetching albums…")
+        CommonLibrarySyncer.report(progress, "Fetching albums…", stage: .albums)
         let albums = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getAlbums(limit: limit, offset: offset)
             return try AmpacheParsers.parseAlbums(data: data)
         }
         try await ingestor.ingest(albums: albums)
 
-        CommonLibrarySyncer.report(progress, "Fetching playlists…")
+        CommonLibrarySyncer.report(progress, "Fetching playlists…", stage: .playlists)
         let playlists = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getPlaylists(limit: limit, offset: offset)
             return try AmpacheParsers.parsePlaylists(data: data)
         }
         try await ingestor.ingest(playlists: playlists)
 
-        CommonLibrarySyncer.report(progress, "Fetching podcasts…")
+        CommonLibrarySyncer.report(progress, "Fetching podcasts…", stage: .podcasts)
         do {
             let podcasts = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
                 let data = try await self.server.getPodcasts(limit: limit, offset: offset)
@@ -64,7 +64,7 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
             CommonLibrarySyncer.report(progress, "Podcasts not supported by server (skipped).")
         }
 
-        CommonLibrarySyncer.report(progress, "Fetching radios…")
+        CommonLibrarySyncer.report(progress, "Fetching radios…", stage: .radios)
         do {
             let radios = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
                 let data = try await self.server.getRadios(limit: limit, offset: offset)
@@ -76,19 +76,46 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         }
 
         try await ingestor.finishSync()
-        CommonLibrarySyncer.report(progress, "Catalog sync complete.")
+        CommonLibrarySyncer.report(progress, "Catalog sync complete.", fraction: LibrarySyncPhase.catalog.overall(1))
     }
 
-    public func syncAllSongs(progress: @escaping @Sendable (String) -> Void) async throws {
+    /// Pages the song list by hand rather than through `fetchAllPages`, so it can read
+    /// the server's `total_count` for the progress bar and ingest each page as it
+    /// arrives instead of holding the whole library in memory first.
+    public func syncAllSongs(progress: @escaping LibrarySyncProgressHandler) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
 
-        CommonLibrarySyncer.report(progress, "Backfilling songs…")
-        let songs = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
-            let data = try await self.server.getSongs(limit: limit, offset: offset)
-            return try AmpacheParsers.parseSongs(data: data)
+        CommonLibrarySyncer.report(progress, "Backfilling songs…", tracksCompleted: 0, of: nil)
+
+        let pageSize = CommonLibrarySyncer.defaultPageSize
+        var offset = 0
+        var ingested = 0
+        var total: Int?
+
+        while true {
+            let data = try await server.getSongs(limit: pageSize, offset: offset)
+            if total == nil {
+                total = try? AmpacheParsers.parseTotalCount(data: data)
+            }
+            let page = try AmpacheParsers.parseSongs(data: data)
+            try await ingestor.ingest(songs: page)
+            ingested += page.count
+
+            // Servers that don't return total_count leave the running tally as the only
+            // honest thing to show.
+            let counted = total.map { "\(ingested) of \($0) songs" } ?? "\(ingested) songs"
+            CommonLibrarySyncer.report(
+                progress,
+                "Backfilling tracks… \(counted)",
+                tracksCompleted: ingested,
+                of: total
+            )
+
+            guard page.count >= pageSize else { break }
+            offset += pageSize
         }
-        try await ingestor.ingest(songs: songs)
-        CommonLibrarySyncer.report(progress, "Track backfill complete.")
+
+        CommonLibrarySyncer.report(progress, "Track backfill complete.", fraction: 1)
     }
 
     public func sync(albumId: String) async throws {

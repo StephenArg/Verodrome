@@ -11,6 +11,10 @@ public final class ScrobbleSyncer {
     private var armedItemId: String?
     private var hasScrobbledCurrent = false
 
+    /// Called the moment a play qualifies, before and regardless of the upload, so an
+    /// offline listen still counts locally.
+    public var onScrobble: (@MainActor (String) -> Void)?
+
     public init(uploader: any ScrobbleUploading) { self.uploader = uploader }
 
     public func trackProgress(item: QueueItem?, elapsed: TimeInterval, duration: TimeInterval) {
@@ -23,6 +27,7 @@ public final class ScrobbleSyncer {
         if elapsed >= duration * 0.5 || elapsed >= 4 * 60 {
             hasScrobbledCurrent = true
             pending.append((item.playableId, Date(), duration))
+            onScrobble?(item.playableId)
             Task { await flush() }
         }
     }

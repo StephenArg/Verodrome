@@ -10,6 +10,13 @@ public final class SubsonicApi: BackendApi, @unchecked Sendable {
     private let server: SubsonicServerApi
     private let mode: Mode
 
+    /// Kept from the last successful ping so the track backfill can tell whether this
+    /// server is a Navidrome, which has a much cheaper bulk endpoint than Subsonic.
+    private var credentials: LoginCredentials?
+    private var serverType: String?
+
+    private var isNavidrome: Bool { serverType?.caseInsensitiveCompare("navidrome") == .orderedSame }
+
     public var apiType: BackendApiType {
         switch mode {
         case .token: return .subsonic
@@ -29,13 +36,15 @@ public final class SubsonicApi: BackendApi, @unchecked Sendable {
     }
 
     public func authenticate(credentials: LoginCredentials) async throws {
-        server.configure(credentials: credentials)
-        _ = try await server.authenticate()
+        _ = try await login(credentials: credentials)
     }
 
     public func login(credentials: LoginCredentials) async throws -> ServerInfo {
         server.configure(credentials: credentials)
-        return try await server.authenticate()
+        let info = try await server.authenticate()
+        self.credentials = credentials
+        serverType = info.name
+        return info
     }
 
     public func generateStreamURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL? {
@@ -55,7 +64,17 @@ public final class SubsonicApi: BackendApi, @unchecked Sendable {
     }
 
     public func createLibrarySyncer(ingestor: LibraryIngesting) -> LibrarySyncer {
-        SubsonicLibrarySyncer(server: server, ingestor: ingestor)
+        SubsonicLibrarySyncer(server: server, ingestor: ingestor, native: makeNativeApi())
+    }
+
+    /// Only built for Navidrome, and only ever used for the track backfill.
+    private func makeNativeApi() -> NavidromeNativeApi? {
+        guard isNavidrome, let credentials else { return nil }
+        return NavidromeNativeApi(
+            baseURL: credentials.normalizedBaseURL,
+            username: credentials.username,
+            password: credentials.password
+        )
     }
 
     public func serverInfo() async throws -> ServerInfo {

@@ -3,29 +3,32 @@ import Foundation
 public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     private let server: SubsonicServerApi
     private let ingestor: LibraryIngesting
+    private let native: NavidromeNativeApi?
     private var isConnected: () -> Bool
 
     public init(
         server: SubsonicServerApi,
         ingestor: LibraryIngesting,
+        native: NavidromeNativeApi? = nil,
         isConnected: @escaping @Sendable () -> Bool = { true }
     ) {
         self.server = server
         self.ingestor = ingestor
+        self.native = native
         self.isConnected = isConnected
     }
 
-    public func syncInitial(progress: @escaping @Sendable (String) -> Void) async throws {
+    public func syncInitial(progress: @escaping LibrarySyncProgressHandler) async throws {
         try await syncCatalog(progress: progress)
         try await syncAllSongs(progress: progress)
-        CommonLibrarySyncer.report(progress, "Library sync complete.")
+        CommonLibrarySyncer.report(progress, "Library sync complete.", fraction: 1)
     }
 
-    public func syncCatalog(progress: @escaping @Sendable (String) -> Void) async throws {
+    public func syncCatalog(progress: @escaping LibrarySyncProgressHandler) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         try await ingestor.beginSync()
 
-        CommonLibrarySyncer.report(progress, "Fetching genres…")
+        CommonLibrarySyncer.report(progress, "Fetching genres…", stage: .genres)
         do {
             let genresData = try await server.getGenres()
             let genres = try SubsonicParsers.parseGenres(data: genresData)
@@ -34,25 +37,25 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
             CommonLibrarySyncer.report(progress, "Genres not supported by server (skipped).")
         }
 
-        CommonLibrarySyncer.report(progress, "Fetching artists…")
+        CommonLibrarySyncer.report(progress, "Fetching artists…", stage: .artists)
         let artistsData = try await server.getArtists()
         let artists = try SubsonicParsers.parseArtists(data: artistsData)
         try await ingestor.ingest(artists: artists)
 
-        CommonLibrarySyncer.report(progress, "Fetching albums…")
+        CommonLibrarySyncer.report(progress, "Fetching albums…", stage: .albums)
         let albums = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getAlbumList(size: limit, offset: offset)
             return try SubsonicParsers.parseAlbumList(data: data)
         }
         try await ingestor.ingest(albums: albums)
 
-        CommonLibrarySyncer.report(progress, "Fetching playlists…")
+        CommonLibrarySyncer.report(progress, "Fetching playlists…", stage: .playlists)
         let playlistsData = try await server.getPlaylists()
         let playlists = try SubsonicParsers.parsePlaylists(data: playlistsData)
         try await ingestor.ingest(playlists: playlists)
 
         // Navidrome (and some other servers) return HTTP 501 for podcast endpoints.
-        CommonLibrarySyncer.report(progress, "Fetching podcasts…")
+        CommonLibrarySyncer.report(progress, "Fetching podcasts…", stage: .podcasts)
         do {
             let podcastsData = try await server.getPodcasts()
             let podcasts = try SubsonicParsers.parsePodcasts(data: podcastsData)
@@ -61,7 +64,7 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
             CommonLibrarySyncer.report(progress, "Podcasts not supported by server (skipped).")
         }
 
-        CommonLibrarySyncer.report(progress, "Fetching radios…")
+        CommonLibrarySyncer.report(progress, "Fetching radios…", stage: .radios)
         do {
             let radiosData = try await server.getInternetRadioStations()
             let radios = try SubsonicParsers.parseRadios(data: radiosData)
@@ -71,13 +74,66 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         }
 
         try await ingestor.finishSync()
-        CommonLibrarySyncer.report(progress, "Catalog sync complete.")
+        CommonLibrarySyncer.report(progress, "Catalog sync complete.", fraction: LibrarySyncPhase.catalog.overall(1))
     }
 
-    public func syncAllSongs(progress: @escaping @Sendable (String) -> Void) async throws {
+    public func syncAllSongs(progress: @escaping LibrarySyncProgressHandler) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
 
-        CommonLibrarySyncer.report(progress, "Backfilling album tracks…")
+        if let native {
+            do {
+                try await syncAllSongsInBulk(native, progress: progress)
+                return
+            } catch {
+                // The native API is undocumented and can change under us, so anything
+                // unexpected drops to the album crawl rather than failing the sync.
+                await EventLogger.shared.warning(
+                    "sync",
+                    "Navidrome bulk song sync failed, falling back to album crawl: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        try await syncAllSongsByAlbum(progress: progress)
+    }
+
+    /// Pages Navidrome's native `/api/song`, which returns whole song rows in bulk.
+    private func syncAllSongsInBulk(
+        _ native: NavidromeNativeApi,
+        progress: @escaping LibrarySyncProgressHandler
+    ) async throws {
+        CommonLibrarySyncer.report(progress, "Fetching tracks…", tracksCompleted: 0, of: nil)
+        try await native.authenticate()
+
+        let pageSize = CommonLibrarySyncer.defaultPageSize
+        var ingested = 0
+        var total: Int?
+
+        while true {
+            let page = try await native.songs(offset: ingested, limit: pageSize)
+            if page.songs.isEmpty { break }
+
+            try await ingestor.ingest(songs: page.songs)
+            ingested += page.songs.count
+            total = page.total ?? total
+
+            let counted = total.map { "\(ingested) of \($0) songs" } ?? "\(ingested) songs"
+            CommonLibrarySyncer.report(
+                progress,
+                "Fetching tracks… \(counted)",
+                tracksCompleted: ingested,
+                of: total
+            )
+
+            if let total, ingested >= total { break }
+            if page.songs.count < pageSize { break }
+        }
+
+        CommonLibrarySyncer.report(progress, "Track sync complete.", fraction: 1)
+    }
+
+    private func syncAllSongsByAlbum(progress: @escaping LibrarySyncProgressHandler) async throws {
+        CommonLibrarySyncer.report(progress, "Backfilling album tracks…", tracksCompleted: 0, of: nil)
         let albums = try await CommonLibrarySyncer.fetchAllPages { offset, limit in
             let data = try await self.server.getAlbumList(size: limit, offset: offset)
             return try SubsonicParsers.parseAlbumList(data: data)
@@ -89,12 +145,19 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
             let parsed = try SubsonicParsers.parseAlbumDetail(data: detail)
             try await ingestor.ingest(songs: parsed.songs)
             completed += 1
-            if completed == 1 || completed % 25 == 0 || completed == albums.count {
-                CommonLibrarySyncer.report(progress, "Backfilling tracks… \(completed)/\(albums.count)")
+            // One report per album would republish faster than the UI can use; every
+            // fifth still moves the number often enough to read as progress.
+            if completed == 1 || completed % 5 == 0 || completed == albums.count {
+                CommonLibrarySyncer.report(
+                    progress,
+                    "Backfilling tracks… \(completed) of \(albums.count) albums",
+                    tracksCompleted: completed,
+                    of: albums.count
+                )
             }
         }
 
-        CommonLibrarySyncer.report(progress, "Track backfill complete.")
+        CommonLibrarySyncer.report(progress, "Track backfill complete.", fraction: 1)
     }
 
     public func sync(albumId: String) async throws {

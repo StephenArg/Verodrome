@@ -25,6 +25,22 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(genres[1].songCount, 4)
     }
 
+    /// Plays and rating drive the Songs and Albums sort options, so they have to survive
+    /// parsing. Absent values must stay nil rather than becoming 0, or a response
+    /// without them wipes what an earlier sync stored.
+    func testAlbumDetailParserReadsPlayCountAndRating() throws {
+        let data = try fixture("subsonic_album_detail.xml")
+        let (albums, songs) = try SubsonicParsers.parseAlbumDetail(data: data)
+        XCTAssertEqual(albums.first?.rating, 5)
+        XCTAssertEqual(songs.count, 3)
+        XCTAssertEqual(songs[0].playCount, 17)
+        XCTAssertEqual(songs[0].rating, 4)
+        XCTAssertNil(songs[1].playCount)
+        XCTAssertNil(songs[1].rating)
+        // Most servers send "3", a few send "3.0", which `Int(_:)` alone rejects.
+        XCTAssertEqual(songs[2].rating, 3)
+    }
+
     func testPingStatus() throws {
         let data = try fixture("subsonic_ping.xml")
         XCTAssertNoThrow(try SubsonicParsers.checkForError(data: data))
@@ -52,6 +68,23 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(entries[1].kind, .song)
         XCTAssertEqual(entries[1].duration, 240)
         XCTAssertEqual(entries[1].artistName, "Alpha")
+    }
+
+    /// The server type decides whether the track sync can use Navidrome's bulk endpoint
+    /// instead of crawling every album, and it arrives as a root attribute — a ping
+    /// response has no child elements to read it from.
+    func testServerInfoParserReadsRootAttributes() throws {
+        let navidrome = try SubsonicParsers.parseServerInfo(data: fixture("subsonic_ping_navidrome.xml"))
+        XCTAssertEqual(navidrome.name, "navidrome")
+        XCTAssertEqual(navidrome.version, "0.61.2 (aa84e645)")
+        XCTAssertEqual(navidrome.apiVersion, "1.16.1")
+    }
+
+    /// Servers that report no type at all still have to parse.
+    func testServerInfoParserFallsBackWithoutAType() throws {
+        let plain = try SubsonicParsers.parseServerInfo(data: fixture("subsonic_ping.xml"))
+        XCTAssertEqual(plain.name, "Subsonic")
+        XCTAssertEqual(plain.version, "1.16.1")
     }
 
     private func fixture(_ name: String) throws -> Data {

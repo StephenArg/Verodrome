@@ -3,20 +3,25 @@ import SwiftData
 import VerodromeKit
 
 struct ArtistsView: View {
+    @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
-    @State private var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
-    @State private var rowCount = 0
-    @State private var loadGeneration = 0
     @State private var selectedId: String?
+    @State private var model = LibraryListModel<LibraryRowSnapshot>(cacheKey: "artists") { request in
+        await ArtistsView.fetchPage(request)
+    }
+
+    private var sort: LibrarySortOption { settings.librarySort.artists }
 
     var body: some View {
         IndexedEntityTableView(
-            sections: sections,
+            sections: model.sections,
             playingId: nowPlaying.currentItem?.playableId,
+            isPartial: model.isPartial,
+            isSectioned: model.isSectioned,
             onSelect: { item, _ in selectedId = item.id }
         )
         .navigationTitle("Artists")
@@ -27,63 +32,37 @@ struct ArtistsView: View {
         .navigationDestination(item: $selectedId) { id in
             ArtistDetailView(artistID: id)
         }
-        .perfAppear("Artists", details: "rows=\(rowCount) search=\(searchText.isEmpty ? "off" : "on")")
-        .task {
-            await reload(reason: "appear")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                LibrarySortMenu(
+                    selection: $settings.librarySort.artists,
+                    options: LibrarySortOption.titleOptions
+                )
+            }
         }
-        .task(id: debouncedSearch) {
-            await reload(reason: "search")
-        }
-        .task(id: librarySync.isSyncing) {
-            if !librarySync.isSyncing {
-                await reload(reason: "syncFinished")
+        .perfAppear("Artists", details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on")")
+        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
+            await model.load(search: debouncedSearch, sort: sort)
+            if await LibraryCountRepair.repairArtistCounts() {
+                await model.load(search: debouncedSearch, sort: sort)
             }
         }
         .refreshable {
-            await reload(reason: "pullToRefresh")
+            await model.load(search: debouncedSearch, sort: sort)
         }
     }
 
-    private func reload(reason: String) async {
-        loadGeneration += 1
-        let generation = loadGeneration
-        let search = debouncedSearch
-        let built = await Self.fetchSections(searchText: search)
-        guard generation == loadGeneration else { return }
-        sections = built.sections
-        rowCount = built.count
-    }
-
     /// Fetch + map + section off the main actor so opening Artists stays responsive.
-    private static func fetchSections(searchText: String) async -> (sections: [LibraryRowSection<LibraryRowSnapshot>], count: Int) {
+    private static func fetchPage(_ request: LibraryFetchRequest) async -> LibraryListPage<LibraryRowSnapshot> {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
-                let artists = try context.fetch(
-                    FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.sortName)])
+                let artists = try LibraryFetch.rows(
+                    context,
+                    sortBy: sortDescriptors(for: request.sort),
+                    limit: request.limit,
+                    matching: predicate(for: request)
                 )
-                // Subsonic never ships artist songCount; repair zeros from album track totals.
-                let localCounts = Self.localArtistCounts(in: context)
-                var didRepair = false
-                for artist in artists {
-                    let key = artist.compoundRemoteId
-                    if artist.songCount == 0, let songs = localCounts.songs[key], songs > 0 {
-                        artist.songCount = songs
-                        didRepair = true
-                    }
-                    if artist.albumCount == 0, let albums = localCounts.albums[key], albums > 0 {
-                        artist.albumCount = albums
-                        didRepair = true
-                    }
-                }
-                if didRepair { try? context.save() }
-
-                let filtered: [Artist]
-                if searchText.isEmpty {
-                    filtered = artists
-                } else {
-                    filtered = artists.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-                }
-                let snapshots = filtered.map { artist in
+                let snapshots = artists.map { artist in
                     LibraryRowSnapshot(
                         id: artist.compoundRemoteId,
                         sectionKey: (artist.sortName.isEmpty ? artist.name : artist.sortName).sectionInitial,
@@ -93,25 +72,35 @@ struct ArtistsView: View {
                         symbol: "person.fill"
                     )
                 }
-                let grouped = AlphabetSectioning.group(snapshots) { $0.sectionKey }
-                let sections = grouped.map { LibraryRowSection(letter: $0.letter, items: $0.items) }
-                return (sections, snapshots.count)
+                return LibraryListPage(
+                    sections: AlphabetSectioning.sections(snapshots, sort: request.sort),
+                    count: snapshots.count
+                )
             }
         } catch {
-            return ([], 0)
+            return .empty
         }
     }
 
-    private static func localArtistCounts(in context: ModelContext) -> (albums: [String: Int], songs: [String: Int]) {
-        let albums = (try? context.fetch(FetchDescriptor<Album>())) ?? []
-        var albumCounts: [String: Int] = [:]
-        var songCounts: [String: Int] = [:]
-        for album in albums {
-            guard let key = album.artist?.compoundRemoteId else { continue }
-            albumCounts[key, default: 0] += 1
-            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
-            songCounts[key, default: 0] += tracks
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Artist>] {
+        [SortDescriptor(\Artist.sortName, order: sort.sortsTitleDescending ? .reverse : .forward)]
+    }
+
+    /// A head pass filters to the leading section group instead of the search text; the
+    /// two never overlap because head passes only run while the search is empty.
+    ///
+    /// The letter range is bounded to ASCII because `sortName` is case-folded, and
+    /// anything folding above "z" sections as "?" and renders with the symbols.
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Artist>? {
+        if request.isHeadPass {
+            guard request.sort.isAlphabetical else { return nil }
+            if request.sort.showsSymbolsFirst {
+                return #Predicate<Artist> { $0.sortName < "a" }
+            }
+            return #Predicate<Artist> { $0.sortName >= "a" && $0.sortName < "{" }
         }
-        return (albumCounts, songCounts)
+        let search = request.search
+        guard !search.isEmpty else { return nil }
+        return #Predicate<Artist> { $0.name.localizedStandardContains(search) }
     }
 }

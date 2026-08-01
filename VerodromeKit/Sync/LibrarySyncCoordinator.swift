@@ -6,12 +6,13 @@ public final class LibrarySyncCoordinator: ObservableObject {
     public static let shared = LibrarySyncCoordinator()
 
     @Published public private(set) var isSyncing = false
-    /// Only updated for *manual* Sync Now — background sync stays silent in the UI.
+    /// The step a sync is on, manual or background. Nothing shows this on its own —
+    /// Library settings is the only screen that surfaces it, so a background sync
+    /// still doesn't interrupt anyone.
     @Published public private(set) var syncProgressText = ""
+    /// Overall completion, 0...1. Nil until the first step that can size itself.
+    @Published public private(set) var syncFraction: Double?
     @Published public private(set) var lastError: String?
-
-    /// When false, progress callbacks do not publish to `syncProgressText`.
-    private var publishesProgress = false
 
     public init() {}
 
@@ -19,16 +20,14 @@ public final class LibrarySyncCoordinator: ObservableObject {
     public func syncLibrary() async throws {
         guard !isSyncing else { return }
         isSyncing = true
-        publishesProgress = true
         lastError = nil
         syncProgressText = "Starting…"
-        defer {
-            isSyncing = false
-            publishesProgress = false
-        }
+        syncFraction = nil
+        defer { isSyncing = false }
         do {
             try await VerodromeKit.shared.performInitialSync()
             syncProgressText = "Done"
+            syncFraction = 1
         } catch {
             lastError = error.localizedDescription
             syncProgressText = error.localizedDescription
@@ -42,9 +41,9 @@ public final class LibrarySyncCoordinator: ObservableObject {
         guard !isSyncing else { return }
         Task {
             isSyncing = true
-            publishesProgress = false
             lastError = nil
-            syncProgressText = ""
+            syncProgressText = "Starting…"
+            syncFraction = nil
             defer { isSyncing = false }
             do {
                 // Ingest runs on its own background ModelActor now; this pause just keeps
@@ -61,11 +60,15 @@ public final class LibrarySyncCoordinator: ObservableObject {
     public func cancelSync() {
         isSyncing = false
         syncProgressText = "Cancelled"
-        publishesProgress = false
     }
 
-    public func updateProgress(_ text: String) {
-        guard publishesProgress else { return }
-        syncProgressText = text
+    public func updateProgress(_ progress: LibrarySyncProgress) {
+        syncProgressText = progress.message
+        // Steps that can't size themselves leave the bar where it is. Clearing it would
+        // drop back to indeterminate every time a skipped phase or an ingest count
+        // lands between two measured steps.
+        if let fraction = progress.fraction {
+            syncFraction = fraction
+        }
     }
 }

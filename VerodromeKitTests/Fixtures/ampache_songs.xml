@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <song id="331">
+    <title>Blue Line</title>
+    <artist id="10">Portico</artist>
+    <album id="55">Living Fields</album>
+    <track>3</track>
+    <time>214</time>
+    <type>flac</type>
+    <playcount>17</playcount>
+    <rating>4</rating>
+    <averagerating>2.5</averagerating>
+  </song>
+  <song id="332">
+    <title>Second Track</title>
+    <artist id="10">Portico</artist>
+    <album id="55">Living Fields</album>
+    <time>180</time>
+    <type>mp3</type>
+    <preciserating>2.6</preciserating>
+  </song>
+  <song id="333">
+    <title>Third Track</title>
+    <artist id="10">Portico</artist>
+    <album id="55">Living Fields</album>
+    <time>95</time>
+    <type>mp3</type>
+  </song>
+</root>

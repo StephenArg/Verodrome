@@ -74,9 +74,8 @@ struct DownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
-        .task {
-            await reload()
-        }
+        // One trigger, not two: a plain `.task` alongside `.task(id:)` runs the
+        // whole fetch twice on appear.
         .task(id: downloadCenter.completedIds.count) {
             await reload()
         }

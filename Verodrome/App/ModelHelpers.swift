@@ -3,6 +3,9 @@ import SwiftData
 import VerodromeKit
 
 enum PreviewSeeder {
+    /// Stable id for the DEBUG login-screen account. Never used for a real server.
+    static let demoServerHash = "demo-server"
+
     /// Demo data is DEBUG-only and never seeded when a real account is active,
     /// so it cannot mask live sync results.
     @MainActor
@@ -19,7 +22,7 @@ enum PreviewSeeder {
 
         let account = Account(
             serverUrl: "https://demo.verodrome.app",
-            serverHash: "demo-server",
+            serverHash: demoServerHash,
             userHash: "demo-user",
             userName: "demo",
             apiType: .subsonic
@@ -78,6 +81,21 @@ enum PreviewSeeder {
 
         try? context.save()
         #endif
+    }
+
+    /// Drops leftover DEBUG demo rows after a real login. Cascade deletes playlists,
+    /// artists, albums, and the rest attached to the demo account.
+    @MainActor
+    static func purgeDemoDataIfNeeded(in context: ModelContext) {
+        let demoHash = demoServerHash
+        let descriptor = FetchDescriptor<Account>(
+            predicate: #Predicate { $0.serverHash == demoHash }
+        )
+        guard let demos = try? context.fetch(descriptor), !demos.isEmpty else { return }
+        for account in demos {
+            context.delete(account)
+        }
+        try? context.save()
     }
 }
 

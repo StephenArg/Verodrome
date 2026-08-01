@@ -38,6 +38,22 @@ public final class LibraryActions {
         try repository?.save()
     }
 
+    /// Counts a play locally as soon as it scrobbles.
+    ///
+    /// Servers report `playCount` back on the next library sync, which can be hours
+    /// away, and some backends never report it at all — so without this the Plays
+    /// ordering sorts a column that stays at zero.
+    public func recordPlay(playableId: String) {
+        guard let repository,
+              let account = try? kit.activeAccount(),
+              let song = try? repository.resolveSong(remoteId: playableId, account: account)
+        else { return }
+        song.playCount += 1
+        song.lastPlayedDate = .now
+        song.updatedAt = .now
+        try? repository.save()
+    }
+
     // MARK: - Download
 
     public func download(song: Song) async {

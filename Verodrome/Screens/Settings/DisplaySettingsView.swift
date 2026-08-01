@@ -6,6 +6,20 @@ struct DisplaySettingsView: View {
 
     var body: some View {
         Form {
+            Section("Navigation") {
+                NavigationLink {
+                    TabBarEditorView()
+                } label: {
+                    HStack {
+                        Text("Tab Bar")
+                        Spacer()
+                        Text(tabBarSummary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+
             Section("Library") {
                 Picker("Default Layout", selection: $settings.libraryDisplayType) {
                     ForEach(LibraryDisplayType.allCases, id: \.self) { type in
@@ -25,5 +39,9 @@ struct DisplaySettingsView: View {
             }
         }
         .navigationTitle("Display")
+    }
+
+    private var tabBarSummary: String {
+        settings.enabledRootTabs.map(\.title).joined(separator: ", ")
     }
 }

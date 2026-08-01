@@ -17,13 +17,27 @@ enum SubsonicParsers {
         }
     }
 
+    /// A ping response is a bare `<subsonic-response type="navidrome" serverVersion="…"/>`,
+    /// so everything worth reading is an attribute on the root. The child-element lookups
+    /// are kept as a fallback for servers that nest them instead.
+    ///
+    /// `serverVersion` is the product version ("0.61.2"); `version` is the Subsonic API
+    /// version, which `apiVersion` already carries.
     static func parseServerInfo(data: Data) throws -> ServerInfo {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
+
         let versionNode = root.firstChild(named: "version") ?? root.firstChild(named: "openSubsonic")
-        let version = versionNode?.text.nilIfEmpty ?? versionNode?.attributes["version"] ?? "unknown"
-        let typeNode = root.firstChild(named: "type")
-        let name = typeNode?.text.nilIfEmpty ?? "Subsonic"
+        let version = root.attributes["serverVersion"]
+            ?? versionNode?.text.nilIfEmpty
+            ?? versionNode?.attributes["version"]
+            ?? root.attributes["version"]
+            ?? "unknown"
+
+        let name = root.attributes["type"]
+            ?? root.firstChild(named: "type")?.text.nilIfEmpty
+            ?? "Subsonic"
+
         return ServerInfo(name: name, version: version, apiVersion: SubsonicServerApi.apiVersion)
     }
 
@@ -83,7 +97,8 @@ enum SubsonicParsers {
                 songCount: intValue(node.attributes["songCount"]),
                 artId: node.attributes["coverArt"],
                 genreIds: [],
-                genreName: node.attributes["genre"]
+                genreName: node.attributes["genre"],
+                rating: rating(node.attributes["userRating"])
             )
         }
         .filter { !$0.id.isEmpty }
@@ -105,7 +120,8 @@ enum SubsonicParsers {
                 songCount: intValue(node.attributes["songCount"]),
                 artId: node.attributes["coverArt"],
                 genreIds: [],
-                genreName: node.attributes["genre"]
+                genreName: node.attributes["genre"],
+                rating: rating(node.attributes["userRating"])
             )
         }
         .filter { !$0.id.isEmpty }
@@ -126,7 +142,8 @@ enum SubsonicParsers {
             year: intValue(albumNode.attributes["year"]),
             songCount: intValue(albumNode.attributes["songCount"]),
             artId: albumNode.attributes["coverArt"],
-            genreName: albumNode.attributes["genre"]
+            genreName: albumNode.attributes["genre"],
+            rating: rating(albumNode.attributes["userRating"])
         )
 
         let songs = albumNode.children(named: "song").map { songNode in
@@ -142,7 +159,9 @@ enum SubsonicParsers {
                 duration: timeInterval(songNode.attributes["duration"]),
                 artId: songNode.attributes["coverArt"] ?? album.artId,
                 bitrate: intValue(songNode.attributes["bitRate"]),
-                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
+                playCount: intValue(songNode.attributes["playCount"]),
+                rating: rating(songNode.attributes["userRating"])
             )
         }
 
@@ -205,7 +224,9 @@ enum SubsonicParsers {
                 duration: timeInterval(songNode.attributes["duration"]),
                 artId: songNode.attributes["coverArt"],
                 bitrate: intValue(songNode.attributes["bitRate"]),
-                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
+                playCount: intValue(songNode.attributes["playCount"]),
+                rating: rating(songNode.attributes["userRating"])
             )
         }
     }
@@ -404,8 +425,17 @@ enum SubsonicParsers {
             duration: timeInterval(songNode.attributes["duration"]),
             artId: songNode.attributes["coverArt"],
             bitrate: intValue(songNode.attributes["bitRate"]),
-            format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"]
+            format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
+            playCount: intValue(songNode.attributes["playCount"]),
+            rating: rating(songNode.attributes["userRating"])
         )
+    }
+
+    /// The signed-in user's 0–5 rating. Parsed as a double because most servers send
+    /// "4" but some send "4.0", which `Int(_:)` rejects outright.
+    private static func rating(_ raw: String?) -> Int? {
+        guard let raw, let value = Double(raw) else { return nil }
+        return max(0, min(5, Int(value.rounded())))
     }
 
     private static func intValue(_ raw: String?) -> Int? {

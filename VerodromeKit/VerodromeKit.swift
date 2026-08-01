@@ -158,10 +158,10 @@ public final class VerodromeKit: ObservableObject {
         let syncer = try await ensureActiveLibrarySyncer()
         guard let syncer else { throw BackendError.notAuthenticated }
 
-        let progress: @Sendable (String) -> Void = { [weak self] message in
+        let progress: LibrarySyncProgressHandler = { [weak self] update in
             Task { @MainActor in
-                self?.syncProgressMessage = message
-                self?.librarySync.updateProgress(message)
+                self?.syncProgressMessage = update.message
+                self?.librarySync.updateProgress(update)
             }
         }
 
@@ -177,12 +177,15 @@ public final class VerodromeKit: ObservableObject {
         launchPhase = .main
 
         // Populate Home section ranks (newest / recent / favorites) without blocking browse.
+        // Three unsized calls, so the bar holds at the end of the catalog phase rather
+        // than sitting under a stale stage name.
+        progress(LibrarySyncProgress(message: "Updating home…", fraction: LibrarySyncPhase.catalog.end))
         _ = try? await syncer.syncNewestAlbums(limit: 40)
         _ = try? await syncer.syncRecentAlbums(limit: 40)
         try? await syncer.syncFavoriteAlbums()
 
         let backfillVersion = settings.loadAppSettings().tracksBackfillVersion
-        guard backfillVersion < 1 else {
+        guard backfillVersion < AppSettings.currentTracksBackfillVersion else {
             return
         }
         guard networkMonitor.isConnected else {
@@ -195,9 +198,9 @@ public final class VerodromeKit: ObservableObject {
         do {
             try await syncer.syncAllSongs(progress: progress)
             await resolveDuplicatesInBackground()
-            observableSettings.updateApp { $0.tracksBackfillVersion = 1 }
+            observableSettings.updateApp { $0.tracksBackfillVersion = AppSettings.currentTracksBackfillVersion }
         } catch {
-            // Keep tracksBackfillVersion at 0 so the next cold launch / online period resumes.
+            // Leave tracksBackfillVersion behind so the next cold launch / online period resumes.
             await EventLogger.shared.warning("sync", "Track backfill paused: \(error.localizedDescription)")
         }
     }
@@ -208,23 +211,23 @@ public final class VerodromeKit: ObservableObject {
         let syncer = try await ensureActiveLibrarySyncer()
         guard let syncer else { throw BackendError.notAuthenticated }
 
-        let progress: @Sendable (String) -> Void = { [weak self] message in
+        let progress: LibrarySyncProgressHandler = { [weak self] update in
             Task { @MainActor in
-                self?.syncProgressMessage = message
-                self?.librarySync.updateProgress(message)
+                self?.syncProgressMessage = update.message
+                self?.librarySync.updateProgress(update)
             }
         }
 
         try await syncer.syncInitial(progress: progress)
 
         syncProgressMessage = "Resolving duplicates…"
-        librarySync.updateProgress("Resolving duplicates…")
+        librarySync.updateProgress(LibrarySyncProgress(message: "Resolving duplicates…", fraction: 1))
         await resolveDuplicatesInBackground()
 
         settings.isLibrarySynced = true
         settings.save()
         observableSettings.markLibrarySynced(version: 1)
-        observableSettings.updateApp { $0.tracksBackfillVersion = 1 }
+        observableSettings.updateApp { $0.tracksBackfillVersion = AppSettings.currentTracksBackfillVersion }
         launchPhase = .main
     }
 
@@ -348,16 +351,22 @@ public final class VerodromeKit: ObservableObject {
             modelContainer: storage.container,
             accountInfo: stored.info,
             apiType: ApiType(backendProxy.apiType),
+            // Batch sizes for whatever just hit the database ("Songs: 17"). Deliberately
+            // not forwarded to the coordinator: one lands per album during the track
+            // crawl, so it would overwrite the syncer's album counter with a number that
+            // jumps around and tracks nothing the user can follow.
             onProgress: { [weak self] message in
                 Task { @MainActor in
                     self?.syncProgressMessage = message
-                    self?.librarySync.updateProgress(message)
                 }
             }
         )
         let syncer = backendProxy.createLibrarySyncer(ingestor: ingester)
         activeLibrarySyncer = syncer
         let scrobble = ScrobbleSyncer(uploader: LibrarySyncerScrobbleUploader(syncer: syncer))
+        scrobble.onScrobble = { playableId in
+            LibraryActions.shared.recordPlay(playableId: playableId)
+        }
         scrobbleSyncer = scrobble
         audioOrchestrator?.attachScrobbleSyncer(scrobble)
         return syncer

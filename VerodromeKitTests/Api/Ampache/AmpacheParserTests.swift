@@ -26,6 +26,29 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertEqual(genres[1].songCount, 8)
     }
 
+    /// Plays and rating drive the Songs list's sort options, so they have to survive
+    /// parsing. Absent values must stay nil rather than becoming 0, or a response
+    /// without them wipes what an earlier sync stored.
+    func testSongParserReadsPlayCountAndRating() throws {
+        let data = try fixture("ampache_songs.xml")
+        let songs = try AmpacheParsers.parseSongs(data: data)
+        XCTAssertEqual(songs.count, 3)
+        XCTAssertEqual(songs[0].playCount, 17)
+        XCTAssertEqual(songs[0].rating, 4)
+        // `preciserating` stands in when `rating` is missing; `averagerating` never does.
+        XCTAssertNil(songs[1].playCount)
+        XCTAssertEqual(songs[1].rating, 3)
+        XCTAssertNil(songs[2].playCount)
+        XCTAssertNil(songs[2].rating)
+    }
+
+    /// The song crawl sizes its progress bar from the collection total the server
+    /// repeats on every page.
+    func testTotalCountParser() throws {
+        XCTAssertEqual(try AmpacheParsers.parseTotalCount(data: try fixture("ampache_genres.xml")), 2)
+        XCTAssertNil(try AmpacheParsers.parseTotalCount(data: try fixture("ampache_artists.xml")))
+    }
+
     func testSongLyricsParser() throws {
         let data = try fixture("ampache_song_lyrics.xml")
         let lyrics = try AmpacheParsers.parseSongLyrics(data: data)

@@ -24,8 +24,9 @@ struct SyncView: View {
                     .multilineTextAlignment(.center)
             }
 
-            ProgressView()
+            LibrarySyncProgressBar(fraction: librarySync.syncFraction)
                 .controlSize(.large)
+                .frame(maxWidth: 320)
 
             Spacer()
 

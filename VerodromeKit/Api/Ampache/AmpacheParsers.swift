@@ -43,6 +43,13 @@ enum AmpacheParsers {
         )
     }
 
+    /// Size of the whole collection a paged response is a window onto. Ampache repeats
+    /// it on every page; nil when the server omits it.
+    static func parseTotalCount(data: Data) throws -> Int? {
+        let root = try GenericXmlParser().parse(data: data)
+        return intValue(childText(root, "total_count"))
+    }
+
     static func parseGenres(data: Data) throws -> [IngestGenre] {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
@@ -103,7 +110,8 @@ enum AmpacheParsers {
                 year: intValue(childText(node, "year") ?? node.attributes["year"]),
                 songCount: intValue(childText(node, "songcount") ?? node.attributes["songcount"]),
                 artId: node.attributes["art"] ?? childText(node, "art"),
-                genreIds: node.children(named: "genre").compactMap { $0.attributes["id"] ?? $0.text.nilIfEmpty }
+                genreIds: node.children(named: "genre").compactMap { $0.attributes["id"] ?? $0.text.nilIfEmpty },
+                rating: rating(node)
             )
         }
     }
@@ -126,7 +134,9 @@ enum AmpacheParsers {
                 duration: timeInterval(childText(node, "time") ?? node.attributes["time"]),
                 artId: node.attributes["art"] ?? childText(node, "art"),
                 bitrate: intValue(childText(node, "bitrate") ?? node.attributes["bitrate"]),
-                format: childText(node, "type") ?? node.attributes["type"]
+                format: childText(node, "type") ?? node.attributes["type"],
+                playCount: intValue(childText(node, "playcount") ?? node.attributes["playcount"]),
+                rating: rating(node)
             )
         }
     }
@@ -168,7 +178,9 @@ enum AmpacheParsers {
                 duration: timeInterval(childText(node, "time") ?? node.attributes["time"]),
                 artId: node.attributes["art"] ?? childText(node, "art"),
                 bitrate: intValue(childText(node, "bitrate") ?? node.attributes["bitrate"]),
-                format: childText(node, "type") ?? node.attributes["type"]
+                format: childText(node, "type") ?? node.attributes["type"],
+                playCount: intValue(childText(node, "playcount") ?? node.attributes["playcount"]),
+                rating: rating(node)
             )
         }.filter { !$0.id.isEmpty }
     }
@@ -259,6 +271,18 @@ enum AmpacheParsers {
     private static func intValue(_ raw: String?) -> Int? {
         guard let raw, !raw.isEmpty else { return nil }
         return Int(raw)
+    }
+
+    /// The user's own 0–5 rating. `preciserating` is the same value as a decimal on
+    /// older servers; `averagerating` is deliberately ignored because it's everyone
+    /// else's opinion, not this user's.
+    private static func rating(_ node: XmlNode) -> Int? {
+        let raw = childText(node, "rating")
+            ?? node.attributes["rating"]
+            ?? childText(node, "preciserating")
+            ?? node.attributes["preciserating"]
+        guard let raw, let value = Double(raw) else { return nil }
+        return max(0, min(5, Int(value.rounded())))
     }
 
     private static func timeInterval(_ raw: String?) -> TimeInterval? {

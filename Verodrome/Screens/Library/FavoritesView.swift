@@ -40,18 +40,16 @@ struct FavoritesView: View {
         }
         .navigationTitle("Favorites")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
-        .task {
-            await reload()
-        }
+        // One trigger, not two: a plain `.task` alongside `.task(id:)` runs the
+        // whole fetch twice on appear.
         .task(id: librarySync.isSyncing) {
-            if !librarySync.isSyncing {
-                await reload()
-            }
+            await reload()
         }
     }
 
     private func reload() async {
         let built = await Self.fetch()
+        guard !Task.isCancelled else { return }
         albumRows = built.albums
         songRows = built.songs
     }

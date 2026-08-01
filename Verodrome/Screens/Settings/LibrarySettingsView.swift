@@ -15,6 +15,19 @@ struct LibrarySettingsView: View {
                 }
                 Button(isSyncing ? "Syncing…" : "Sync Now") { syncNow() }
                     .disabled(isSyncing || librarySync.isSyncing)
+                // Covers the background sync too, which holds the same lock and is what
+                // disables the button — without this it looked like nothing was happening.
+                if librarySync.isSyncing {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(librarySync.syncProgressText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        LibrarySyncProgressBar(fraction: librarySync.syncFraction)
+                        Text("This usually takes less than a minute.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
                 Button("Resolve Duplicates") {
                     let count = (try? VerodromeKit.shared.resolveDuplicates()) ?? 0
                     duplicateMessage = count == 0 ? "No duplicates found." : "Merged \(count) duplicates."
