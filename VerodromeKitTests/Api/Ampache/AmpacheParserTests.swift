@@ -7,6 +7,23 @@ final class AmpacheParserTests: XCTestCase {
         let artists = try AmpacheParsers.parseArtists(data: data)
         XCTAssertEqual(artists.count, 2)
         XCTAssertEqual(artists[0].id, "10")
+        XCTAssertEqual(artists[0].albumCount, 3)
+        XCTAssertEqual(artists[0].songCount, 42)
+        XCTAssertEqual(artists[1].albumCount, 1)
+        XCTAssertEqual(artists[1].songCount, 8)
+    }
+
+    func testGenreParser() throws {
+        let data = try fixture("ampache_genres.xml")
+        let genres = try AmpacheParsers.parseGenres(data: data)
+        XCTAssertEqual(genres.count, 2)
+        XCTAssertEqual(genres[0].id, "6")
+        XCTAssertEqual(genres[0].name, "Dance")
+        XCTAssertEqual(genres[0].albumCount, 1)
+        XCTAssertEqual(genres[0].songCount, 11)
+        XCTAssertEqual(genres[1].name, "Dark Ambient")
+        XCTAssertEqual(genres[1].albumCount, 2)
+        XCTAssertEqual(genres[1].songCount, 8)
     }
 
     func testSongLyricsParser() throws {

@@ -22,7 +22,7 @@ struct GenreDetailView: View {
                 Section {
                     DetailHeader(
                         title: genre.name,
-                        subtitle: "\(genreAlbums.count) albums · \(genreSongs.count) songs",
+                        subtitle: headerSubtitle(for: genre),
                         artworkURL: genre.artworkToken ?? genreAlbums.first?.artworkToken,
                         symbol: "guitars.fill",
                         onPlay: { play(shuffle: false, genre: genre) },
@@ -69,6 +69,17 @@ struct GenreDetailView: View {
         }
     }
 
+    /// Prefer stored counts (from sync/backfill) when loaded content is incomplete —
+    /// songs often lack `genreName`, so the song query alone under-counts.
+    private func headerSubtitle(for genre: Genre) -> String {
+        let albums = max(genre.albumCount, genreAlbums.count)
+        let fromAlbumTracks = genreAlbums.reduce(0) { partial, album in
+            partial + (album.trackCount > 0 ? album.trackCount : album.songs.count)
+        }
+        let songs = max(genre.songCount, genreSongs.count, fromAlbumTracks)
+        return "\(albums) albums · \(songs) songs"
+    }
+
     private func reloadGenreContent() {
         guard let genre = genres.first else {
             genreAlbums = []
@@ -89,8 +100,23 @@ struct GenreDetailView: View {
             },
             sortBy: [SortDescriptor(\Album.sortTitle)]
         )
-        genreSongs = (try? modelContext.fetch(songDescriptor)) ?? []
         genreAlbums = (try? modelContext.fetch(albumDescriptor)) ?? []
+
+        // Merge songs tagged with this genre and tracks on genre albums (many
+        // libraries only stamp genre on the album).
+        var byId: [String: Song] = [:]
+        for song in (try? modelContext.fetch(songDescriptor)) ?? [] {
+            byId[song.compoundRemoteId] = song
+        }
+        for album in genreAlbums {
+            for song in album.songs {
+                byId[song.compoundRemoteId] = song
+            }
+        }
+        genreSongs = byId.values.sorted {
+            ($0.albumTitle ?? "", $0.disc ?? 0, $0.track ?? 0)
+                < ($1.albumTitle ?? "", $1.disc ?? 0, $1.track ?? 0)
+        }
     }
 
     private func play(shuffle: Bool, genre: Genre) {

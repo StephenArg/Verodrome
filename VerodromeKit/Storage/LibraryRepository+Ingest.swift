@@ -3,17 +3,27 @@ import SwiftData
 
 public extension LibraryRepository {
     @discardableResult
-    func getOrCreateGenre(remoteId: String, name: String, account: Account, songCount: Int = 0) throws -> Genre {
+    func getOrCreateGenre(
+        remoteId: String,
+        name: String,
+        account: Account,
+        albumCount: Int? = nil,
+        songCount: Int? = nil
+    ) throws -> Genre {
         let compoundRemoteId = Genre.makeCompoundRemoteId(account: account, remoteId: remoteId)
         if let existing = try batch?.genres[compoundRemoteId] ?? fetchGenre(compoundRemoteId: compoundRemoteId) {
             existing.name = name
-            existing.songCount = songCount
+            // Only apply counts when the caller has them — album/song ingest creates
+            // genre stubs and must not wipe values from a prior genres sync.
+            if let albumCount { existing.albumCount = albumCount }
+            if let songCount { existing.songCount = songCount }
             batch?.genres[compoundRemoteId] = existing
             try saveIfNotBatching()
             return existing
         }
         let genre = Genre(remoteId: remoteId, name: name, account: account)
-        genre.songCount = songCount
+        if let albumCount { genre.albumCount = albumCount }
+        if let songCount { genre.songCount = songCount }
         context.insert(genre)
         batch?.genres[compoundRemoteId] = genre
         try saveIfNotBatching()

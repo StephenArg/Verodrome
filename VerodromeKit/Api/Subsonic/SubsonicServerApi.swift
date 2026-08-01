@@ -70,6 +70,10 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
     // MARK: - Library reads
 
+    public func getGenres() async throws -> Data {
+        try await request(method: "getGenres")
+    }
+
     public func getArtists() async throws -> Data {
         try await request(method: "getArtists")
     }

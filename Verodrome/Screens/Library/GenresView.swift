@@ -60,6 +60,22 @@ struct GenresView: View {
                 let genres = try context.fetch(
                     FetchDescriptor<Genre>(sortBy: [SortDescriptor(\Genre.name)])
                 )
+                // Repair zeroed counts from album tags (older syncs wiped these).
+                // Leave non-zero server-provided counts alone.
+                let localCounts = Self.localGenreCounts(in: context)
+                var didRepair = false
+                for genre in genres {
+                    if genre.albumCount == 0, let albums = localCounts.albums[genre.name], albums > 0 {
+                        genre.albumCount = albums
+                        didRepair = true
+                    }
+                    if genre.songCount == 0, let songs = localCounts.songs[genre.name], songs > 0 {
+                        genre.songCount = songs
+                        didRepair = true
+                    }
+                }
+                if didRepair { try? context.save() }
+
                 let filtered: [Genre]
                 if searchText.isEmpty {
                     filtered = genres
@@ -83,5 +99,19 @@ struct GenresView: View {
         } catch {
             return ([], 0)
         }
+    }
+
+    private static func localGenreCounts(in context: ModelContext) -> (albums: [String: Int], songs: [String: Int]) {
+        let albums = (try? context.fetch(FetchDescriptor<Album>())) ?? []
+        var albumCounts: [String: Int] = [:]
+        var songCounts: [String: Int] = [:]
+        for album in albums {
+            guard let name = album.genreName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { continue }
+            albumCounts[name, default: 0] += 1
+            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
+            songCounts[name, default: 0] += tracks
+        }
+        return (albumCounts, songCounts)
     }
 }

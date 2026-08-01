@@ -76,6 +76,8 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 onProgress?("Pruned \(prunedAlbums) albums, \(prunedPlaylists) playlists")
             }
         }
+        try backfillArtistCounts(repository: repository, account: account)
+        try backfillGenreCounts(repository: repository, account: account)
         try backfillGenreArtwork(repository: repository, account: account)
         isFullSync = false
         try repository.endBatch()
@@ -86,7 +88,13 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         try repository.beginBatch()
         defer { try? repository.endBatch() }
         for item in genres {
-            _ = try repository.getOrCreateGenre(remoteId: item.id, name: item.name, account: account)
+            _ = try repository.getOrCreateGenre(
+                remoteId: item.id,
+                name: item.name,
+                account: account,
+                albumCount: item.albumCount,
+                songCount: item.songCount
+            )
         }
         onProgress?("Genres: \(genres.count)")
     }
@@ -99,6 +107,7 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         for item in artists {
             let artist = try repository.getOrCreateArtist(remoteId: item.id, name: item.name, account: account)
             if let albumCount = item.albumCount { artist.albumCount = albumCount }
+            if let songCount = item.songCount { artist.songCount = songCount }
             if let artId = item.artId { artist.artworkToken = artId }
             processed += 1
             if processed % 200 == 0 {
@@ -197,6 +206,12 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 song.artworkToken = album?.artworkToken
             }
             if let disc = item.discNumber { song.disc = disc }
+            // Inherit album genre so genre detail can find tracks by genreName.
+            if (song.genreName == nil || song.genreName?.isEmpty == true),
+               let genreName = album?.genreName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !genreName.isEmpty {
+                song.genreName = genreName
+            }
 
             processed += 1
             if processed % 200 == 0 {
@@ -331,6 +346,61 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         guard genre.artworkToken == nil || genre.artworkToken?.isEmpty == true,
               let artId, !artId.isEmpty else { return }
         genre.artworkToken = artId
+    }
+
+    /// Subsonic `getArtists` has no songCount; Ampache sometimes omits it too.
+    /// Recompute from local albums so list rows stay accurate after catalog sync.
+    private func backfillArtistCounts(repository: LibraryRepository, account: Account) throws {
+        let artists = try repository.fetchArtists(account: account)
+        guard !artists.isEmpty else { return }
+
+        let albums = try repository.context.fetch(FetchDescriptor<Album>())
+        var albumCounts: [String: Int] = [:]
+        var songCounts: [String: Int] = [:]
+        for album in albums {
+            guard let artistKey = album.artist?.compoundRemoteId else { continue }
+            albumCounts[artistKey, default: 0] += 1
+            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
+            songCounts[artistKey, default: 0] += tracks
+        }
+
+        for artist in artists {
+            let key = artist.compoundRemoteId
+            // Prefer local album linkage when present; keep server values otherwise.
+            if let albums = albumCounts[key], albums > 0 {
+                artist.albumCount = albums
+            }
+            if let songs = songCounts[key], songs > 0 {
+                artist.songCount = songs
+            }
+        }
+    }
+
+    /// Derive album/song counts from locally tagged albums when the server omit-
+    /// ted them (or genres were created only as album-tag stubs).
+    private func backfillGenreCounts(repository: LibraryRepository, account: Account) throws {
+        let genres = try repository.fetchGenres(account: account)
+        guard !genres.isEmpty else { return }
+
+        let albums = try repository.context.fetch(FetchDescriptor<Album>())
+        var albumCounts: [String: Int] = [:]
+        var songCounts: [String: Int] = [:]
+        for album in albums {
+            guard let name = album.genreName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { continue }
+            albumCounts[name, default: 0] += 1
+            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
+            songCounts[name, default: 0] += tracks
+        }
+
+        for genre in genres {
+            if let albums = albumCounts[genre.name] {
+                genre.albumCount = albums
+            }
+            if let songs = songCounts[genre.name] {
+                genre.songCount = songs
+            }
+        }
     }
 
     /// Fill missing genre art from any album already tagged with that genre name.

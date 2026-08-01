@@ -25,6 +25,15 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         try await ingestor.beginSync()
 
+        CommonLibrarySyncer.report(progress, "Fetching genres…")
+        do {
+            let genresData = try await server.getGenres()
+            let genres = try SubsonicParsers.parseGenres(data: genresData)
+            try await ingestor.ingest(genres: genres)
+        } catch {
+            CommonLibrarySyncer.report(progress, "Genres not supported by server (skipped).")
+        }
+
         CommonLibrarySyncer.report(progress, "Fetching artists…")
         let artistsData = try await server.getArtists()
         let artists = try SubsonicParsers.parseArtists(data: artistsData)

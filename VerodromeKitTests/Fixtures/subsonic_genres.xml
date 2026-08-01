@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="1.16.1">
+  <genres>
+    <genre songCount="12" albumCount="2">Electronic</genre>
+    <genre songCount="4" albumCount="1">Ambient</genre>
+  </genres>
+</subsonic-response>

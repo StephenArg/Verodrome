@@ -5,10 +5,14 @@ import Foundation
 public struct IngestGenre: Sendable, Hashable {
     public let id: String
     public let name: String
+    public let albumCount: Int?
+    public let songCount: Int?
 
-    public init(id: String, name: String) {
+    public init(id: String, name: String, albumCount: Int? = nil, songCount: Int? = nil) {
         self.id = id
         self.name = name
+        self.albumCount = albumCount
+        self.songCount = songCount
     }
 }
 
@@ -16,12 +20,20 @@ public struct IngestArtist: Sendable, Hashable {
     public let id: String
     public let name: String
     public let albumCount: Int?
+    public let songCount: Int?
     public let artId: String?
 
-    public init(id: String, name: String, albumCount: Int? = nil, artId: String? = nil) {
+    public init(
+        id: String,
+        name: String,
+        albumCount: Int? = nil,
+        songCount: Int? = nil,
+        artId: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.albumCount = albumCount
+        self.songCount = songCount
         self.artId = artId
     }
 }

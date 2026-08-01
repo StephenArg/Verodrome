@@ -27,6 +27,23 @@ enum SubsonicParsers {
         return ServerInfo(name: name, version: version, apiVersion: SubsonicServerApi.apiVersion)
     }
 
+    static func parseGenres(data: Data) throws -> [IngestGenre] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let genres = root.firstChild(named: "genres")
+        let nodes = genres?.children(named: "genre") ?? root.descendants(named: "genre")
+        return nodes.compactMap { node in
+            let name = node.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            return IngestGenre(
+                id: name,
+                name: name,
+                albumCount: intValue(node.attributes["albumCount"]),
+                songCount: intValue(node.attributes["songCount"])
+            )
+        }
+    }
+
     static func parseArtists(data: Data) throws -> [IngestArtist] {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
@@ -43,6 +60,8 @@ enum SubsonicParsers {
                 id: node.attributes["id"] ?? "",
                 name: node.attributes["name"] ?? node.text,
                 albumCount: intValue(node.attributes["albumCount"]),
+                // Not in classic ArtistID3; some servers (and getArtist detail) expose it.
+                songCount: intValue(node.attributes["songCount"]),
                 artId: node.attributes["coverArt"]
             )
         }

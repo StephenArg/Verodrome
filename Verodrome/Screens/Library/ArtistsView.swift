@@ -61,6 +61,22 @@ struct ArtistsView: View {
                 let artists = try context.fetch(
                     FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.sortName)])
                 )
+                // Subsonic never ships artist songCount; repair zeros from album track totals.
+                let localCounts = Self.localArtistCounts(in: context)
+                var didRepair = false
+                for artist in artists {
+                    let key = artist.compoundRemoteId
+                    if artist.songCount == 0, let songs = localCounts.songs[key], songs > 0 {
+                        artist.songCount = songs
+                        didRepair = true
+                    }
+                    if artist.albumCount == 0, let albums = localCounts.albums[key], albums > 0 {
+                        artist.albumCount = albums
+                        didRepair = true
+                    }
+                }
+                if didRepair { try? context.save() }
+
                 let filtered: [Artist]
                 if searchText.isEmpty {
                     filtered = artists
@@ -84,5 +100,18 @@ struct ArtistsView: View {
         } catch {
             return ([], 0)
         }
+    }
+
+    private static func localArtistCounts(in context: ModelContext) -> (albums: [String: Int], songs: [String: Int]) {
+        let albums = (try? context.fetch(FetchDescriptor<Album>())) ?? []
+        var albumCounts: [String: Int] = [:]
+        var songCounts: [String: Int] = [:]
+        for album in albums {
+            guard let key = album.artist?.compoundRemoteId else { continue }
+            albumCounts[key, default: 0] += 1
+            let tracks = album.trackCount > 0 ? album.trackCount : album.songs.count
+            songCounts[key, default: 0] += tracks
+        }
+        return (albumCounts, songCounts)
     }
 }

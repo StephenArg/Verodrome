@@ -19,6 +19,8 @@
 		1551FB59B737569E2778D24C /* SubsonicApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA5890929E7D7460C7AD4BF /* SubsonicApi.swift */; };
 		169DEC4150F155EC35B467CF /* SongsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37DA8222B763ECCD3653183 /* SongsView.swift */; };
 		178EED71C90CBEAA33967078 /* ampache_song_lyrics.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2F4945FC7AB58124DF242D50 /* ampache_song_lyrics.xml */; };
+		1A2B3C4D5E6F708192A3B4C5 /* ampache_genres.xml in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C6 /* ampache_genres.xml */; };
+		1A2B3C4D5E6F708192A3B4C7 /* subsonic_genres.xml in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C8 /* subsonic_genres.xml */; };
 		19C92E50A91A08E5496A5FCF /* DownloadRequestManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAE0995E68B24D509982758 /* DownloadRequestManager.swift */; };
 		1DF6D4BC5DD490CF06FAD071 /* PersistentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFA9DE670F67FCB8BB97F17 /* PersistentStorage.swift */; };
 		1E07F4EF9AA9EE004BC142C3 /* ApiType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09150A48F54A2C37448E7DEE /* ApiType.swift */; };
@@ -263,6 +265,8 @@
 		1835CC372F690E59415CD64A /* SongActionsModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongActionsModifier.swift; sourceTree = "<group>"; };
 		18E8E9060A6CAA00B97DC3DF /* IndexedSongTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedSongTableView.swift; sourceTree = "<group>"; };
 		1AF9AC85E0065B96024A63B2 /* EqualizerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EqualizerSettingsView.swift; sourceTree = "<group>"; };
+		1A2B3C4D5E6F708192A3B4C6 /* ampache_genres.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ampache_genres.xml; sourceTree = "<group>"; };
+		1A2B3C4D5E6F708192A3B4C8 /* subsonic_genres.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = subsonic_genres.xml; sourceTree = "<group>"; };
 		1C79DD8D1B11D3EEE865A45C /* ampache_artists.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ampache_artists.xml; sourceTree = "<group>"; };
 		1E5E5EDDCCD1A91E7097A29C /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		21ECAD5E3AC90ACF785988FD /* AccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSettingsView.swift; sourceTree = "<group>"; };
@@ -782,8 +786,10 @@
 			isa = PBXGroup;
 			children = (
 				1C79DD8D1B11D3EEE865A45C /* ampache_artists.xml */,
+				1A2B3C4D5E6F708192A3B4C6 /* ampache_genres.xml */,
 				2F4945FC7AB58124DF242D50 /* ampache_song_lyrics.xml */,
 				18180AB9B7A63810632FED77 /* subsonic_artists.xml */,
+				1A2B3C4D5E6F708192A3B4C8 /* subsonic_genres.xml */,
 				B7939EB94265719290009919 /* subsonic_lyrics.xml */,
 				5E0C9D68A8442BB052CE19E7 /* subsonic_music_directory.xml */,
 				FC202A6292BC7EC2EFD4E037 /* subsonic_ping.xml */,
@@ -1110,8 +1116,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				798D969E953F2338F22D5035 /* ampache_artists.xml in Resources */,
+				1A2B3C4D5E6F708192A3B4C5 /* ampache_genres.xml in Resources */,
 				178EED71C90CBEAA33967078 /* ampache_song_lyrics.xml in Resources */,
 				D059C5C649074E1B849CC2D1 /* subsonic_artists.xml in Resources */,
+				1A2B3C4D5E6F708192A3B4C7 /* subsonic_genres.xml in Resources */,
 				7BECE8FC9501ED93A8D946E1 /* subsonic_lyrics.xml in Resources */,
 				29865CED55105FDE5D48FCFC /* subsonic_music_directory.xml in Resources */,
 				7ABCCA6C92720D3398E13137 /* subsonic_ping.xml in Resources */,

@@ -22,7 +22,7 @@ struct ArtistDetailView: View {
                 Section {
                     DetailHeader(
                         title: artist.name,
-                        subtitle: "\(artistAlbums.count) albums · \(artistSongs.count) songs",
+                        subtitle: headerSubtitle(for: artist),
                         artworkURL: artist.artworkToken,
                         tintToken: backgroundArtworkToken,
                         symbol: "person.fill",
@@ -81,6 +81,16 @@ struct ArtistDetailView: View {
     private var backgroundArtworkToken: String? {
         if let token = artists.first?.artworkToken, !token.isEmpty { return token }
         return artistAlbums.first?.artworkToken
+    }
+
+    /// Prefer stored counts when album tracks haven't been backfilled yet.
+    private func headerSubtitle(for artist: Artist) -> String {
+        let albums = max(artist.albumCount, artistAlbums.count)
+        let fromAlbumTracks = artistAlbums.reduce(0) { partial, album in
+            partial + (album.trackCount > 0 ? album.trackCount : album.songs.count)
+        }
+        let songs = max(artist.songCount, artistSongs.count, fromAlbumTracks)
+        return "\(albums) albums · \(songs) songs"
     }
 
     private func reloadArtistContent() {

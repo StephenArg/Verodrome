@@ -184,7 +184,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     }
 
     func sectionIndexTitles(for tableView: UITableView) -> [String]? {
-        guard sections.count > 1 else { return nil }
+        // Short lists don't need the A–Z scrubber — it just crowds the trailing edge.
+        guard sections.count > 1, flatItems.count >= 100 else { return nil }
         return sections.map(\.letter)
     }
 

@@ -7,6 +7,22 @@ final class SubsonicParserTests: XCTestCase {
         let artists = try SubsonicParsers.parseArtists(data: data)
         XCTAssertEqual(artists.count, 2)
         XCTAssertEqual(artists.first?.name, "Alpha")
+        XCTAssertEqual(artists[0].albumCount, 2)
+        XCTAssertEqual(artists[0].songCount, 24)
+        XCTAssertEqual(artists[1].albumCount, 1)
+        XCTAssertNil(artists[1].songCount)
+    }
+
+    func testGenreParser() throws {
+        let data = try fixture("subsonic_genres.xml")
+        let genres = try SubsonicParsers.parseGenres(data: data)
+        XCTAssertEqual(genres.count, 2)
+        XCTAssertEqual(genres[0].name, "Electronic")
+        XCTAssertEqual(genres[0].albumCount, 2)
+        XCTAssertEqual(genres[0].songCount, 12)
+        XCTAssertEqual(genres[1].name, "Ambient")
+        XCTAssertEqual(genres[1].albumCount, 1)
+        XCTAssertEqual(genres[1].songCount, 4)
     }
 
     func testPingStatus() throws {

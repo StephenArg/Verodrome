@@ -285,8 +285,6 @@ struct PopupPlayerView: View {
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
 
-            Spacer()
-
             Button {
                 toggleLyrics()
             } label: {
@@ -296,6 +294,8 @@ struct PopupPlayerView: View {
             }
             .disabled(!lyricsAvailable)
             .accessibilityLabel(showingLyrics ? "Show Artwork" : "Show Lyrics")
+
+            Spacer()
 
             Button {
                 presentShareSheet()

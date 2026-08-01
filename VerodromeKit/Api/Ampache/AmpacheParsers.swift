@@ -49,7 +49,19 @@ enum AmpacheParsers {
         return root.descendants(named: "genre").map { node in
             IngestGenre(
                 id: node.attributes["id"] ?? node.text,
-                name: childText(node, "name") ?? node.attributes["name"] ?? node.text
+                name: childText(node, "name") ?? node.attributes["name"] ?? node.text,
+                albumCount: intValue(
+                    childText(node, "albums")
+                        ?? childText(node, "albumcount")
+                        ?? node.attributes["albums"]
+                        ?? node.attributes["albumcount"]
+                ),
+                songCount: intValue(
+                    childText(node, "songs")
+                        ?? childText(node, "songcount")
+                        ?? node.attributes["songs"]
+                        ?? node.attributes["songcount"]
+                )
             )
         }
     }
@@ -61,7 +73,18 @@ enum AmpacheParsers {
             IngestArtist(
                 id: node.attributes["id"] ?? "",
                 name: childText(node, "name") ?? node.attributes["name"] ?? "",
-                albumCount: intValue(childText(node, "albumcount") ?? node.attributes["albumcount"]),
+                albumCount: intValue(
+                    childText(node, "albumcount")
+                        ?? childText(node, "albums")
+                        ?? node.attributes["albumcount"]
+                        ?? node.attributes["albums"]
+                ),
+                songCount: intValue(
+                    childText(node, "songcount")
+                        ?? childText(node, "songs")
+                        ?? node.attributes["songcount"]
+                        ?? node.attributes["songs"]
+                ),
                 artId: node.attributes["art"] ?? childText(node, "art")
             )
         }
