@@ -26,7 +26,10 @@ struct LargeArtworkView: View {
                     for: urlString,
                     size: ArtworkPixelSize.player
                 )
-                themeManager.updatePlayerTint(from: image)
+                // The track can change while the cover is still loading; without this the
+                // previous album's tint wins the race and stays behind the new one.
+                guard !Task.isCancelled else { return }
+                await themeManager.updatePlayerTint(from: image, token: urlString)
             }
     }
 }

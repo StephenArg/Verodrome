@@ -22,5 +22,9 @@ public protocol DownloadManaging: AnyObject, Sendable {
     func enqueue(playableId: String, kind: PlayableRef.Kind, reason: CacheReason) async
     func cancel(playableId: String) async
     func cancelAll() async
+    /// Drops pending downloads of the given reason whose `playableId` is not in `keep`.
+    /// Already-running downloads are left alone — they finish and the existing prune
+    /// loop deletes anything that landed outside the keep window.
+    func cancelPending(reason: CacheReason, except keep: Set<String>) async
     func retryFailed() async
 }

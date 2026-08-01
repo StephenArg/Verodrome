@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import VerodromeKit
-import DominantColors
 
 @MainActor
 final class ThemeManager: ObservableObject {
@@ -9,6 +8,8 @@ final class ThemeManager: ObservableObject {
     @Published var playerTintColor: Color?
 
     private let settings: SettingsStore
+    /// Player tints already sampled this launch, keyed by artwork token.
+    private var playerTintCache: [String: Color] = [:]
 
     init(settings: SettingsStore) {
         self.settings = settings
@@ -38,19 +39,28 @@ final class ThemeManager: ObservableObject {
         applyTheme()
     }
 
-    func updatePlayerTint(from image: UIImage?) {
+    /// Recolors the player background from `token`'s artwork.
+    ///
+    /// The sampling itself runs off the main actor, and each token is only ever measured
+    /// once per launch. This used to quantize the full 1200px hero image inline on the main
+    /// actor, which blocked every other main-actor continuation behind it — including the
+    /// one that hands the decoded artwork to `ArtworkView`, leaving the cover stuck on its
+    /// spinner while the rest of the UI stopped responding.
+    func updatePlayerTint(from image: UIImage?, token: String?) async {
         guard let image else {
             playerTintColor = nil
             return
         }
-        do {
-            let colors = try DominantColors.dominantColors(uiImage: image, maxCount: 1)
-            if let first = colors.first {
-                playerTintColor = Color(uiColor: first)
-            }
-        } catch {
-            playerTintColor = nil
+        if let token, let cached = playerTintCache[token] {
+            playerTintColor = cached
+            return
         }
+        guard let components = await DominantColorExtractor.dominantComponents(of: image) else {
+            return
+        }
+        let color = Color(red: components.red, green: components.green, blue: components.blue)
+        if let token { playerTintCache[token] = color }
+        playerTintColor = color
     }
 
     private func activeThemeHex() -> String? {

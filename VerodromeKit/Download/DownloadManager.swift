@@ -54,6 +54,10 @@ public actor DownloadManager: DownloadManaging {
         }
     }
 
+    public func cancelPending(reason: CacheReason, except keep: Set<String>) async {
+        pending.removeAll { $0.2 == reason && !keep.contains($0.0) }
+    }
+
     public func retryFailed() async {
         let failed = await MainActor.run { () -> Set<String> in
             let ids = DownloadCenter.shared.failedIds

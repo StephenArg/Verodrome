@@ -142,4 +142,95 @@ final class QueueCachePolicyTests: XCTestCase {
         XCTAssertNil(cache.files["song::old"])
         XCTAssertNotNil(cache.files["song::pinned"])
     }
+
+    /// A jump moves the prefetch window with the playing track: songs that became
+    /// upcoming are kept, songs that dropped out of the window are pruned.
+    func testWindowFollowsJump() {
+        let cache = MockCache()
+        let downloader = DownloadManager(urlProvider: MockURLProvider(), cache: cache)
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+        for item in items {
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        }
+
+        // Jump from index 5 to index 1; the window should re-center on 1.
+        queue.jump(to: 1)
+        XCTAssertEqual(queue.currentItem?.playableId, "1")
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.reevaluate()
+
+        // prev2 = 0,1,2 current=1 next5 = 2..6 → keep 0,1,2,3,4,5,6
+        for kept in ["0", "1", "2", "3", "4", "5", "6"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) should still be cached")
+        }
+        for pruned in ["7", "8", "9"] {
+            XCTAssertNil(cache.files["song::\(pruned)"], "\(pruned) fell outside the window after jump")
+        }
+    }
+
+    /// A spy downloader that records `enqueue` and `cancelPending` calls without
+    /// touching the network, so the prefetch-cancel side of a jump can be asserted.
+    final class SpyDownloader: DownloadManaging, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _enqueued: [String] = []
+        private var _cancelledExcept: Set<String>?
+
+        var enqueued: [String] { lock.withLock { _enqueued } }
+        var cancelledExcept: Set<String>? { lock.withLock { _cancelledExcept } }
+
+        func enqueue(playableId: String, kind: PlayableRef.Kind, reason: CacheReason) async {
+            lock.withLock { _enqueued.append(playableId) }
+        }
+        func cancel(playableId: String) async {}
+        func cancelAll() async {}
+        func cancelPending(reason: CacheReason, except keep: Set<String>) async {
+            guard reason == .queuePrefetch else { return }
+            lock.withLock { _cancelledExcept = keep }
+        }
+        func retryFailed() async {}
+    }
+
+    /// After a jump, pending `.queuePrefetch` downloads outside the new window are
+    /// cancelled so bandwidth isn't spent finishing tracks the user left behind.
+    func testJumpCancelsPendingPrefetchOutsideWindow() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        // First pass: nothing is cached, so all window neighbors get enqueued.
+        policy.reevaluate()
+        // reevaluate fires cancelPending in a detached Task; let it land.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        // After the initial pass the keep set was 3,4,5,6,7,8,9 (current=5 skipped from
+        // download but still part of the keep set passed to cancelPending).
+        let firstCancelled = downloader.cancelledExcept
+        XCTAssertNotNil(firstCancelled)
+        XCTAssertEqual(firstCancelled, ["3", "4", "5", "6", "7", "8", "9"])
+
+        // Jump to index 1; the window re-centers on 1.
+        queue.jump(to: 1)
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // New keep set is 0,1,2,3,4,5,6 — the old neighbors 7,8,9 are no longer kept.
+        let secondCancelled = downloader.cancelledExcept
+        XCTAssertNotNil(secondCancelled)
+        XCTAssertEqual(secondCancelled, ["0", "1", "2", "3", "4", "5", "6"])
+    }
 }

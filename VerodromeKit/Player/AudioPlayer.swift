@@ -22,12 +22,18 @@ public final class AudioPlayer: ObservableObject {
     private var scrobbleSyncer: ScrobbleSyncer?
     @Published public private(set) var nowPlaying: QueueItem?
     @Published public var lyrics: String = ""
+    /// True once a lyrics lookup for the current track has finished, whether or not it
+    /// found anything. Lets the UI tell "still searching" apart from "this track has none".
+    @Published public private(set) var lyricsLoaded = false
     /// Non-empty while playback is stalled and waiting on something the user can see.
     @Published public private(set) var statusMessage: String = ""
     private var isAdvancing = false
     private var consecutivePlayFailures = 0
     private var stalled: StalledTrack?
     private var deferredWorkTask: Task<Void, Never>?
+    /// Track a lyrics lookup is currently in flight for, so the deferred pass and an
+    /// on-demand request from the UI can't duplicate the work.
+    private var lyricsFetchItemId: String?
     /// Item the engine was last asked to preload for a gapless / crossfade join, so a
     /// queue edit can tell whether the preloaded track is still the one coming up.
     private var preloadedNextItemId: String?
@@ -97,6 +103,7 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("AudioPlayer.playCurrent enter", details: "\(item.title) id=\(item.playableId) startAt=\(Int(startAt)) paused=\(paused)")
         nowPlaying = item
         lyrics = ""
+        lyricsLoaded = false
         // `backend.play` drops any pending next entry, and this track's own preload is
         // scheduled below — a queue-edit repreload from the old track must not land now.
         preloadInvalidationTask?.cancel()
@@ -353,6 +360,7 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("handleEngineAdvance", details: "\(item.title) id=\(item.playableId)")
         nowPlaying = item
         lyrics = ""
+        lyricsLoaded = false
         // The engine consumed the preloaded entry; the following one is preloaded by the
         // deferred work below.
         preloadInvalidationTask?.cancel()
@@ -501,21 +509,38 @@ public final class AudioPlayer: ObservableObject {
         try? await syncer.reportNowPlaying(playableId: item.playableId, position: 0)
     }
 
+    /// Fetches lyrics for the current track on demand, so the player's lyrics panel
+    /// works even when the automatic lookup is disabled or hasn't run yet.
+    public func requestLyrics() {
+        guard let item = nowPlaying, lyrics.isEmpty, !lyricsLoaded else { return }
+        Task { await fetchLyrics(for: item) }
+    }
+
     private func fetchLyrics(for item: QueueItem) async {
-        guard !item.isLiveStream else { return }
+        guard !item.isLiveStream else {
+            lyricsLoaded = true
+            return
+        }
+        guard lyricsFetchItemId != item.playableId else { return }
+        lyricsFetchItemId = item.playableId
+        defer { if lyricsFetchItemId == item.playableId { lyricsFetchItemId = nil } }
+
+        var text: String?
         // Prefer any pending lyrics from the syncer; otherwise keep empty placeholder.
         if let syncer = VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding) {
-            if let text = try? await syncer.fetchLyrics(playableId: item.playableId) {
-                lyrics = text
-                return
-            }
+            text = try? await syncer.fetchLyrics(playableId: item.playableId)
         }
         // Fallback: embedded ID3 lyrics from a downloaded file.
-        if let cache = VerodromeKit.shared.playableCache,
-           let fileURL = cache.fileURL(forPlayableId: item.playableId, kind: item.kind),
-           let text = EmbeddedTagExtractor.lyrics(from: fileURL) {
-            lyrics = text
+        if text == nil,
+           let cache = VerodromeKit.shared.playableCache,
+           let fileURL = cache.fileURL(forPlayableId: item.playableId, kind: item.kind) {
+            text = EmbeddedTagExtractor.lyrics(from: fileURL)
         }
+
+        // The track may have changed while the lookup was in flight.
+        guard nowPlaying?.playableId == item.playableId else { return }
+        if let text { lyrics = text }
+        lyricsLoaded = true
     }
 }
 

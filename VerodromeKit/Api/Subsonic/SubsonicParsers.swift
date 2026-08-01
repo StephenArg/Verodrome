@@ -329,23 +329,29 @@ enum SubsonicParsers {
     }
 
     /// Parses classic `getLyrics` or OpenSubsonic `getLyricsBySongId` / structured lyrics.
+    /// Synced lines are rendered as LRC (`[mm:ss.xx]text`) so timestamps survive the
+    /// plain-text lyrics pipeline.
     static func parseLyrics(data: Data) throws -> String? {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
 
-        if let lyricsNode = root.firstChild(named: "lyrics") {
-            let text = lyricsNode.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { return text }
-        }
-
         // OpenSubsonic structured lyrics: <lyricsList><structuredLyrics><line>...</line></structuredLyrics></lyricsList>
+        // Preferred over the classic element because a response can carry both and
+        // only this one can be timestamped.
         if let list = root.firstChild(named: "lyricsList") {
             let structured = list.descendants(named: "structuredLyrics")
             var lines: [String] = []
             for block in structured {
-                let blockLines = block.children(named: "line").map { $0.text }
-                if !blockLines.isEmpty {
-                    lines.append(contentsOf: blockLines)
+                let offset = Int(block.attributes["offset"] ?? "") ?? 0
+                let lineNodes = block.children(named: "line")
+                if !lineNodes.isEmpty {
+                    for node in lineNodes {
+                        guard let start = node.attributes["start"], let milliseconds = Int(start) else {
+                            lines.append(node.text)
+                            continue
+                        }
+                        lines.append(LyricsParser.timestamp(forMilliseconds: milliseconds + offset) + node.text)
+                    }
                 } else {
                     let text = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty { lines.append(text) }
@@ -353,6 +359,11 @@ enum SubsonicParsers {
             }
             let joined = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             if !joined.isEmpty { return joined }
+        }
+
+        if let lyricsNode = root.firstChild(named: "lyrics") {
+            let text = lyricsNode.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return text }
         }
 
         return nil

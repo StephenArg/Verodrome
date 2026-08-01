@@ -36,7 +36,17 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var currentIndex = 0
     @Published var repeatMode: RepeatMode = .off
     @Published var shuffleMode: ShuffleMode = .off
-    @Published var lyrics = ""
+    @Published var lyrics = "" {
+        didSet {
+            guard lyrics != oldValue else { return }
+            lyricLines = LyricsParser.parse(lyrics)
+        }
+    }
+    /// Parsed form of `lyrics`, cached so the lyrics panel doesn't reparse on every
+    /// playback tick.
+    @Published private(set) var lyricLines: [LyricLine] = []
+    /// True once the lyrics lookup for the current track has finished, found or not.
+    @Published private(set) var lyricsLoaded = false
     /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
     @Published var statusMessage = ""
     @Published var equalizerBands: [Float] = Array(repeating: 0, count: 10)
@@ -78,7 +88,11 @@ final class PlayerViewModel: ObservableObject {
                 self.progress.duration = duration
             }
         }.store(in: &cancellables)
-        impl.$lyrics.receive(on: DispatchQueue.main).assign(to: &$lyrics)
+        // `sink` rather than `assign(to:)` so the `didSet` reparse actually runs.
+        impl.$lyrics.receive(on: DispatchQueue.main).sink { [weak self] text in
+            self?.lyrics = text
+        }.store(in: &cancellables)
+        impl.$lyricsLoaded.receive(on: DispatchQueue.main).assign(to: &$lyricsLoaded)
         impl.$statusMessage.receive(on: DispatchQueue.main).assign(to: &$statusMessage)
         syncQueue()
         let user = SettingsStore.shared.loadUserSettings()
@@ -154,6 +168,21 @@ final class PlayerViewModel: ObservableObject {
         currentItem = facade?.currentItem
     }
 
+    /// Jump straight to a track in the queue (queue sheet tap). Same-index tap restarts
+    /// the current track rather than reloading it through the network.
+    func jump(to index: Int) {
+        guard queue.indices.contains(index) else { return }
+        if index == currentIndex {
+            seek(to: 0)
+            if !isPlaying { facade?.play() }
+            return
+        }
+        facade?.jump(to: index)
+        syncQueue()
+        currentItem = facade?.currentItem
+        nowPlaying.currentItem = currentItem
+    }
+
     /// Hold skip-forward = 2×, hold previous = 0.5×. Starts playback if paused.
     func beginHoldSpeed(_ rate: Float) {
         guard currentItem?.isLiveStream != true else { return }
@@ -166,6 +195,12 @@ final class PlayerViewModel: ObservableObject {
 
     func endHoldSpeed() {
         facade?.setPlaybackRate(1)
+    }
+
+    /// Asks the player to look up lyrics for the current track now, for when the
+    /// automatic lookup is disabled or hasn't run yet.
+    func requestLyrics() {
+        facade?.requestLyrics()
     }
 
     func seek(to time: TimeInterval) {

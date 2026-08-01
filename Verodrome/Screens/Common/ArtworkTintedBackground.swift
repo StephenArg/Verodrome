@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import VerodromeKit
-import DominantColors
 
 /// Full-screen background tinted with the dominant color of a piece of artwork.
 ///
@@ -173,7 +172,7 @@ final class ArtworkTintResolver {
 
         let task = Task<ArtworkTint?, Never> {
             guard let image = await Self.artwork(for: token),
-                  let components = await Self.dominantComponents(of: image)
+                  let components = await DominantColorExtractor.dominantComponents(of: image)
             else { return nil }
             return ArtworkTint(hue: components.hue, saturation: components.saturation)
         }
@@ -200,44 +199,5 @@ final class ArtworkTintResolver {
             }
         }
         return await ArtworkResolver.shared.loadImage(for: token, size: ArtworkPixelSize.homeTile)
-    }
-
-    private static func dominantComponents(of image: UIImage) async -> ArtworkTintComponents? {
-        await Task.detached(priority: .userInitiated) {
-            let colors = try? DominantColors.dominantColors(
-                uiImage: image,
-                quality: .fair,
-                maxCount: 1,
-                options: [.excludeBlack, .excludeWhite, .excludeGray],
-                sorting: .frequency
-            )
-            guard let dominant = colors?.first else { return nil }
-            return ArtworkTintComponents(dominant)
-        }.value
-    }
-}
-
-/// Hue/saturation crossing back from the quantizer, so no `UIColor` has to.
-private struct ArtworkTintComponents: Sendable {
-    let hue: CGFloat
-    let saturation: CGFloat
-
-    init?(_ color: UIColor) {
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-
-        if !color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) {
-            // Quantized colors can land in a non-RGB space, where HSB is unavailable.
-            guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
-                  let converted = color.cgColor.converted(to: sRGB, intent: .defaultIntent, options: nil),
-                  UIColor(cgColor: converted)
-                    .getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-            else { return nil }
-        }
-
-        self.hue = hue
-        self.saturation = saturation
     }
 }

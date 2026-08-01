@@ -30,6 +30,7 @@ public protocol PlayerControlling: AnyObject {
     func toggleShuffle()
     func setShuffleMode(_ mode: ShuffleMode)
     func setRepeatMode(_ mode: RepeatMode)
+    func requestLyrics()
 }
 
 @MainActor
@@ -47,6 +48,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
     @Published public private(set) var lyrics: String = ""
+    /// True once the lyrics lookup for the current track has finished, found or not.
+    @Published public private(set) var lyricsLoaded = false
     /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
     @Published public private(set) var statusMessage: String = ""
 
@@ -94,6 +97,9 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.$lyrics
             .receive(on: DispatchQueue.main)
             .assign(to: &$lyrics)
+        audioPlayer.$lyricsLoaded
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$lyricsLoaded)
         audioPlayer.$statusMessage
             .receive(on: DispatchQueue.main)
             .assign(to: &$statusMessage)
@@ -215,6 +221,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.queueHandler.setShuffle(mode)
     }
 
+    public func requestLyrics() { audioPlayer.requestLyrics() }
+
     public func setEqualizerBands(_ bands: [Float]) {
         audioPlayer.applyEqualizerBands(bands)
     }
@@ -232,6 +240,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         currentTime = audioPlayer.backend.currentTime
         duration = audioPlayer.backend.duration
         lyrics = audioPlayer.lyrics
+        lyricsLoaded = audioPlayer.lyricsLoaded
         statusMessage = audioPlayer.statusMessage
         let trackChanged = currentItem?.id != previousId
         pushNowPlaying(reloadArtwork: trackChanged || lastArtworkLoadedItemId != currentItem?.id)

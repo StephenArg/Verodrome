@@ -23,14 +23,19 @@ struct QueueView: View {
             // `entryId` stays with the row across reorders. Offset keys make List recycle
             // cells by position and the trailing row often blanks until the next render.
             ForEach(Array(player.queue.enumerated()), id: \.element.entryId) { offset, item in
-                EntityRow(
-                    title: item.title,
-                    subtitle: item.artist ?? "",
-                    artworkURL: item.artworkId,
-                    symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
-                    isPlaying: player.currentItem?.entryId == item.entryId
-                        || (player.currentItem == nil && player.currentIndex == offset)
-                )
+                Button {
+                    player.jump(to: offset)
+                } label: {
+                    EntityRow(
+                        title: item.title,
+                        subtitle: item.artist ?? "",
+                        artworkURL: item.artworkId,
+                        symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
+                        isPlaying: player.currentItem?.entryId == item.entryId
+                            || (player.currentItem == nil && player.currentIndex == offset)
+                    )
+                }
+                .buttonStyle(.plain)
                 // Reorder grip is always shown while shuffled (edit mode stays active).
                 .moveDisabled(!isEditable)
                 // Only songs the user queued themselves can be taken back out.

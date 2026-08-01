@@ -17,6 +17,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var crossfadeDurationSeconds: Double
     public var gaplessPlaybackEnabled: Bool
     public var showLyricsWhenAvailable: Bool
+    /// Whether the full-screen player shows the lyrics panel in place of the artwork.
+    public var showLyricsInPlayer: Bool
     public var showRatingStars: Bool
     public var showSongInfo: Bool
     public var allowCellularDownloads: Bool
@@ -40,6 +42,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         crossfadeDurationSeconds: Double = 3,
         gaplessPlaybackEnabled: Bool = true,
         showLyricsWhenAvailable: Bool = true,
+        showLyricsInPlayer: Bool = false,
         showRatingStars: Bool = true,
         showSongInfo: Bool = false,
         allowCellularDownloads: Bool = false,
@@ -62,6 +65,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.crossfadeDurationSeconds = crossfadeDurationSeconds
         self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
         self.showLyricsWhenAvailable = showLyricsWhenAvailable
+        self.showLyricsInPlayer = showLyricsInPlayer
         self.showRatingStars = showRatingStars
         self.showSongInfo = showSongInfo
         self.allowCellularDownloads = allowCellularDownloads
@@ -89,6 +93,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
         gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
         showLyricsWhenAvailable = try c.decodeIfPresent(Bool.self, forKey: .showLyricsWhenAvailable) ?? true
+        showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
         showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
         showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
         allowCellularDownloads = try c.decodeIfPresent(Bool.self, forKey: .allowCellularDownloads) ?? false

@@ -25,6 +25,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var libraryDisplayType: LibraryDisplayType = .list
     @Published public var playerDisplayStyle: PlayerDisplayStyle = .standard
     @Published public var showMiniLyrics: Bool = true
+    /// Whether the full-screen player shows lyrics in place of the artwork.
+    @Published public var showLyricsInPlayer: Bool = false
     @Published public var showRatingStars: Bool = true
     @Published public var showSongInfo: Bool = false
     @Published public var streamFormat: StreamFormatPreference = .original
@@ -43,6 +45,7 @@ public final class SettingsStore: ObservableObject {
         var libraryDisplayType: LibraryDisplayType
         var playerDisplayStyle: PlayerDisplayStyle
         var showMiniLyrics: Bool
+        var showLyricsInPlayer: Bool
         var showRatingStars: Bool
         var showSongInfo: Bool
         var streamFormat: StreamFormatPreference
@@ -61,6 +64,7 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType: LibraryDisplayType,
             playerDisplayStyle: PlayerDisplayStyle,
             showMiniLyrics: Bool,
+            showLyricsInPlayer: Bool,
             showRatingStars: Bool,
             showSongInfo: Bool,
             streamFormat: StreamFormatPreference,
@@ -78,6 +82,7 @@ public final class SettingsStore: ObservableObject {
             self.libraryDisplayType = libraryDisplayType
             self.playerDisplayStyle = playerDisplayStyle
             self.showMiniLyrics = showMiniLyrics
+            self.showLyricsInPlayer = showLyricsInPlayer
             self.showRatingStars = showRatingStars
             self.showSongInfo = showSongInfo
             self.streamFormat = streamFormat
@@ -98,6 +103,7 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType = try c.decode(LibraryDisplayType.self, forKey: .libraryDisplayType)
             playerDisplayStyle = try c.decode(PlayerDisplayStyle.self, forKey: .playerDisplayStyle)
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
+            showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
             showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
             streamFormat = try c.decode(StreamFormatPreference.self, forKey: .streamFormat)
@@ -125,6 +131,7 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType: libraryDisplayType,
             playerDisplayStyle: playerDisplayStyle,
             showMiniLyrics: showMiniLyrics,
+            showLyricsInPlayer: showLyricsInPlayer,
             showRatingStars: showRatingStars,
             showSongInfo: showSongInfo,
             streamFormat: streamFormat,
@@ -165,6 +172,7 @@ public final class SettingsStore: ObservableObject {
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.showLyricsInPlayer = showLyricsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
         user.appearanceMode = appearanceMode(from: themePreference)
@@ -179,6 +187,7 @@ public final class SettingsStore: ObservableObject {
         streamFormat = settings.cacheTranscodingFormat
         playerDisplayStyle = settings.playerDisplayStyle
         showMiniLyrics = settings.showLyricsWhenAvailable
+        showLyricsInPlayer = settings.showLyricsInPlayer
         showRatingStars = settings.showRatingStars
         showSongInfo = settings.showSongInfo
         themePreference = themePreference(from: settings.appearanceMode)
@@ -215,6 +224,7 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType = snapshot.libraryDisplayType
             playerDisplayStyle = snapshot.playerDisplayStyle
             showMiniLyrics = snapshot.showMiniLyrics
+            showLyricsInPlayer = snapshot.showLyricsInPlayer
             showRatingStars = snapshot.showRatingStars
             showSongInfo = snapshot.showSongInfo
             streamFormat = snapshot.streamFormat
@@ -237,6 +247,7 @@ public final class SettingsStore: ObservableObject {
         streamFormat = user.cacheTranscodingFormat
         playerDisplayStyle = user.playerDisplayStyle
         showMiniLyrics = user.showLyricsWhenAvailable
+        showLyricsInPlayer = user.showLyricsInPlayer
         showRatingStars = user.showRatingStars
         showSongInfo = user.showSongInfo
         themePreference = themePreference(from: user.appearanceMode)
@@ -254,6 +265,7 @@ public final class SettingsStore: ObservableObject {
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.showLyricsInPlayer = showLyricsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
         user.appearanceMode = appearanceMode(from: themePreference)

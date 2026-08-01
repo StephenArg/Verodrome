@@ -7,7 +7,7 @@ public final class QueueCachePolicyManager {
 
     private let queue: PlayQueueHandler
     private let cache: any PlayableFileCaching
-    private let downloader: DownloadManager
+    private let downloader: any DownloadManaging
     private let settings: () -> UserSettings
     private var observers: [NSObjectProtocol] = []
     private var reevaluateTask: Task<Void, Never>?
@@ -15,7 +15,7 @@ public final class QueueCachePolicyManager {
     public init(
         queue: PlayQueueHandler,
         cache: any PlayableFileCaching,
-        downloader: DownloadManager,
+        downloader: any DownloadManaging,
         settings: @escaping () -> UserSettings
     ) {
         self.queue = queue
@@ -77,6 +77,13 @@ public final class QueueCachePolicyManager {
         let keepIds = Set(keepItems.map(\.id))
         let generation = queue.queueGeneration
         let currentId = queue.currentItem?.id
+
+        // A mid-queue jump moves the prefetch window away from the old neighbors. Drop
+        // their pending downloads so the new window's bandwidth isn't spent finishing
+        // tracks the user just left behind. In-flight downloads are left to complete;
+        // the prune loop below deletes anything that lands outside the window.
+        let keepPlayableIds = Set(keepItems.map(\.playableId))
+        Task { await downloader.cancelPending(reason: .queuePrefetch, except: keepPlayableIds) }
 
         for item in keepItems {
             // Don't download the track that is already streaming — that races the

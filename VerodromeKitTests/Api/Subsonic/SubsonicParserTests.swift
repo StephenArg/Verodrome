@@ -22,6 +22,12 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(lyrics, "Line one of the song\nLine two of the song")
     }
 
+    func testStructuredLyricsParserEmitsLrcTimestamps() throws {
+        let data = try fixture("subsonic_synced_lyrics.xml")
+        let lyrics = try SubsonicParsers.parseLyrics(data: data)
+        XCTAssertEqual(lyrics, "[00:00.00]First line\n[00:12.34]Second line\n[01:05.50]Third line")
+    }
+
     func testMusicDirectoryParser() throws {
         let data = try fixture("subsonic_music_directory.xml")
         let entries = try SubsonicParsers.parseMusicDirectory(data: data)

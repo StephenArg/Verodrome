@@ -201,8 +201,12 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             url = try await urlProvider.streamURL(forPlayableId: item.playableId, maxBitrate: maxBitrate, format: format)
             PlayTrace.mark("URL resolved (stream)", details: url.host ?? url.absoluteString)
         }
-        pendingNextURL = nil
-        isCrossfading = false
+        // A queued next URL from the previous track would auto-advance after this one
+        // ends (gapless / crossfade). Jumping mid-queue must drop it; otherwise the
+        // engine would carry the old track's neighbor into the new context. `play(url:)`
+        // replaces current audio, but `removeFromQueue` is what actually evicts a
+        // pre-queued entry, so route through `clearPendingNext()` like reorder does.
+        clearPendingNext()
         preferPaused = startPaused
         streamingPlayer.volume = 1
         // Live streams have no meaningful position to restore.

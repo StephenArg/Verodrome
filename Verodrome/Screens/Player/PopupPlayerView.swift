@@ -22,23 +22,8 @@ struct PopupPlayerView: View {
                     .padding(.bottom, 4)
                     .layoutPriority(1)
 
-                LargeArtworkView(
-                    urlString: player.currentItem?.artworkId,
-                    symbol: player.currentItem?.kind == .radio
-                        ? "dot.radiowaves.left.and.right"
-                        : "music.note"
-                )
-                .padding(.top, 24)
-                // Keep dismiss-swipe local to artwork so it cannot steal
-                // button / sheet gestures.
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 40)
-                        .onEnded { value in
-                            if value.translation.height > 80, abs(value.translation.width) < 80 {
-                                dismiss()
-                            }
-                        }
-                )
+                heroPanel
+                    .padding(.top, 24)
 
                 // Everything below the cover carries a layout priority so it is
                 // measured first and keeps its full height; the artwork then takes
@@ -122,6 +107,7 @@ struct PopupPlayerView: View {
             .task(id: player.currentItem?.playableId) {
                 currentSong = resolveCurrentSong()
                 artistCredits = resolveArtistCredits()
+                if settings.showLyricsInPlayer { player.requestLyrics() }
             }
             .sheet(item: $bottomPanel) { panel in
                 switch panel {
@@ -154,6 +140,64 @@ struct PopupPlayerView: View {
         .presentationCornerRadius(24)
     }
 
+    // MARK: - Hero panel (artwork / lyrics)
+
+    /// A track only has lyrics once the lookup has actually produced text.
+    private var lyricsAvailable: Bool { !player.lyrics.isEmpty }
+
+    /// Lyrics take over the hero slot only when the user asked for them *and* this
+    /// track has some; otherwise the artwork stays put.
+    private var showingLyrics: Bool { settings.showLyricsInPlayer && lyricsAvailable }
+
+    /// Artwork and lyrics are crossfaded rather than swapped, so `LargeArtworkView`
+    /// stays mounted and keeps feeding the background tint while lyrics are up.
+    private var heroPanel: some View {
+        ZStack {
+            LargeArtworkView(
+                urlString: player.currentItem?.artworkId,
+                symbol: player.currentItem?.kind == .radio
+                    ? "dot.radiowaves.left.and.right"
+                    : "music.note"
+            )
+            .opacity(showingLyrics ? 0 : 1)
+            .allowsHitTesting(!showingLyrics)
+            // Keep dismiss-swipe local to artwork so it cannot steal
+            // button / sheet gestures — or fight lyrics scrolling.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        if value.translation.height > 80, abs(value.translation.width) < 80 {
+                            dismiss()
+                        }
+                    }
+            )
+
+            // Only mounted while the user wants lyrics, so the playback clock isn't
+            // redrawing an invisible lyric list four times a second.
+            if settings.showLyricsInPlayer {
+                SyncedLyricsView()
+                    .opacity(showingLyrics ? 1 : 0)
+                    .allowsHitTesting(showingLyrics)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: showingLyrics)
+    }
+
+    private var lyricsButtonTint: Color {
+        if showingLyrics { return .accentColor }
+        return lyricsAvailable ? .primary : Color.secondary.opacity(0.4)
+    }
+
+    private func toggleLyrics() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            settings.showLyricsInPlayer.toggle()
+        }
+        settings.save()
+        if settings.showLyricsInPlayer { player.requestLyrics() }
+    }
+
     private var albumTitle: String {
         let name = player.currentItem?.albumName?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -173,6 +217,8 @@ struct PopupPlayerView: View {
             song: currentSong,
             showRatingStars: settings.showRatingStars,
             showSongInfo: settings.showSongInfo,
+            showLyrics: showingLyrics,
+            hasLyrics: lyricsAvailable,
             onDismiss: { dismiss() },
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
             onShare: { presentShareSheet() },
@@ -190,7 +236,8 @@ struct PopupPlayerView: View {
                     settings.showSongInfo.toggle()
                 }
                 settings.save()
-            }
+            },
+            onToggleLyrics: { toggleLyrics() }
         ))
     }
 
@@ -231,7 +278,7 @@ struct PopupPlayerView: View {
         }
     }
 
-    // MARK: - Bottom action bar (AirPlay / Share / Queue)
+    // MARK: - Bottom action bar (AirPlay / Lyrics / Share / Queue)
 
     private var bottomActionBar: some View {
         HStack(spacing: 28) {
@@ -239,6 +286,16 @@ struct PopupPlayerView: View {
                 .frame(width: 24, height: 24)
 
             Spacer()
+
+            Button {
+                toggleLyrics()
+            } label: {
+                Image(systemName: "text.quote")
+                    .font(.title3)
+                    .foregroundStyle(lyricsButtonTint)
+            }
+            .disabled(!lyricsAvailable)
+            .accessibilityLabel(showingLyrics ? "Show Artwork" : "Show Lyrics")
 
             Button {
                 presentShareSheet()
@@ -442,6 +499,8 @@ private struct PlayerHeader: View, Equatable {
     let song: Song?
     let showRatingStars: Bool
     let showSongInfo: Bool
+    let showLyrics: Bool
+    let hasLyrics: Bool
     let onDismiss: () -> Void
     let onOpenAlbum: () -> Void
     let onShare: () -> Void
@@ -450,6 +509,7 @@ private struct PlayerHeader: View, Equatable {
     let onEqualizer: () -> Void
     let onToggleRatingStars: () -> Void
     let onToggleSongInfo: () -> Void
+    let onToggleLyrics: () -> Void
 
     private let sideButtonWidth: CGFloat = 52
 
@@ -484,7 +544,9 @@ private struct PlayerHeader: View, Equatable {
                         hasSong: song != nil,
                         isFavorite: song?.isFavorite == true,
                         showRatingStars: showRatingStars,
-                        showSongInfo: showSongInfo
+                        showSongInfo: showSongInfo,
+                        showLyrics: showLyrics,
+                        hasLyrics: hasLyrics
                     ),
                     onShare: onShare,
                     onToggleFavorite: {
@@ -495,7 +557,8 @@ private struct PlayerHeader: View, Equatable {
                     onOpenQueue: onOpenQueue,
                     onEqualizer: onEqualizer,
                     onToggleRatingStars: onToggleRatingStars,
-                    onToggleSongInfo: onToggleSongInfo
+                    onToggleSongInfo: onToggleSongInfo,
+                    onToggleLyrics: onToggleLyrics
                 )
                 .frame(width: sideButtonWidth, height: sideButtonWidth)
                 .accessibilityLabel("More options")
@@ -511,6 +574,8 @@ private struct PlayerHeader: View, Equatable {
             && lhs.song?.isFavorite == rhs.song?.isFavorite
             && lhs.showRatingStars == rhs.showRatingStars
             && lhs.showSongInfo == rhs.showSongInfo
+            && lhs.showLyrics == rhs.showLyrics
+            && lhs.hasLyrics == rhs.hasLyrics
     }
 }
 
@@ -524,6 +589,8 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
         var isFavorite: Bool
         var showRatingStars: Bool
         var showSongInfo: Bool
+        var showLyrics: Bool
+        var hasLyrics: Bool
     }
 
     var menuState: MenuState
@@ -534,6 +601,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     var onEqualizer: () -> Void
     var onToggleRatingStars: () -> Void
     var onToggleSongInfo: () -> Void
+    var onToggleLyrics: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(owner: self)
@@ -603,10 +671,10 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             ) { [weak self] _ in self?.owner.onOpenQueue() }
 
             let lyrics = UIAction(
-                title: "Lyrics On/Off",
-                image: UIImage(systemName: "text.quote"),
-                attributes: .disabled
-            ) { _ in }
+                title: state.showLyrics ? "Show Artwork" : "Show Lyrics",
+                image: UIImage(systemName: state.showLyrics ? "photo" : "text.quote"),
+                attributes: state.hasLyrics ? [] : .disabled
+            ) { [weak self] _ in self?.owner.onToggleLyrics() }
 
             let hideRating = UIAction(
                 title: state.showRatingStars ? "Hide Rating Stars" : "Show Rating Stars",
