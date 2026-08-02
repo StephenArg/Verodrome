@@ -4,6 +4,7 @@ import VerodromeKit
 struct PlayerControlView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var progress: PlayerProgressModel
+    @EnvironmentObject private var shuffleAll: ShuffleAllCoordinator
 
     /// Thumb position while the user drags, so the time labels follow the scrub
     /// instead of the (still advancing) playback clock.
@@ -119,12 +120,25 @@ struct PlayerControlView: View {
     }
 
     private var shuffleButton: some View {
-        let isOn = player.shuffleMode == .on
-        return Button { player.toggleShuffle() } label: {
+        // A Shuffle All queue arrives in an order the server chose and keeps growing as
+        // it plays, so there is nothing to turn shuffle off and go back to. The control
+        // shows what is true — shuffled — and stays put rather than offering an undo it
+        // can't honour. Full opacity, unlike the live-stream case: this state is
+        // accurate, not unavailable.
+        let isLocked = shuffleAll.isShuffleLocked
+        let isLiveStream = player.currentItem?.isLiveStream == true
+        let isOn = isLocked || player.shuffleMode == .on
+        return Button(action: shuffleTapped) {
             VStack(spacing: 5) {
-                ShuffleControlIcon()
-                    .frame(width: sideIconSize + 8, height: sideIconSize)
-                    .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                Group {
+                    if shuffleAll.isStarting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        ShuffleControlIcon()
+                            .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                    }
+                }
+                .frame(width: sideIconSize + 8, height: sideIconSize)
                 // Active-state green dot (Spotify-style).
                 Circle()
                     .fill(isOn ? Color.accentColor : Color.clear)
@@ -134,8 +148,26 @@ struct PlayerControlView: View {
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Shuffle")
-        .disabled(player.currentItem?.isLiveStream == true)
-        .opacity(player.currentItem?.isLiveStream == true ? 0.35 : 1)
+        .accessibilityHint(isLocked ? "On, and locked while shuffling all songs" : "")
+        .disabled(isLocked || isLiveStream || shuffleAll.isStarting)
+        .opacity(isLiveStream ? 0.35 : 1)
+    }
+
+    /// Playing from the songs list queues only the rows around the track that was tapped,
+    /// so shuffling those would be a much smaller answer than the user is asking for.
+    /// Turning shuffle on there draws a fresh batch from the whole library and swaps the
+    /// queue for it — the playing track included.
+    private func shuffleTapped() {
+        guard shuffleAll.shufflePlaysWholeLibrary, player.shuffleMode == .off else {
+            player.toggleShuffle()
+            return
+        }
+        Task {
+            // Backends with no random endpoint fall back to reordering what's queued.
+            if await shuffleAll.shuffleAll() == false {
+                player.toggleShuffle()
+            }
+        }
     }
 
     private var repeatButton: some View {

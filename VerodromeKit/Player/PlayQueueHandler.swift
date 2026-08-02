@@ -2,11 +2,18 @@ import Foundation
 
 @MainActor
 public final class PlayQueueHandler: ObservableObject {
+    /// Played tracks kept behind the playing one before `appendContext` trims them.
+    public static let maxPlayedHistory = 100
+
     @Published public private(set) var contextQueue: [QueueItem] = []
     @Published public private(set) var userQueue: [QueueItem] = []
     @Published public private(set) var podcastQueue: [QueueItem] = []
     @Published public private(set) var currentIndex: Int = 0
     @Published public private(set) var queueGeneration: Int = 0
+    /// Increments only when a new context starts, so an owner of an open-ended context
+    /// can tell "the user played something else" from "the queue was reordered".
+    /// `queueGeneration` can't answer that — toggling shuffle bumps it too.
+    @Published public private(set) var contextGeneration: Int = 0
     @Published public var repeatMode: RepeatMode = .off
     @Published public var shuffleMode: ShuffleMode = .off
     @Published public var playerMode: PlayerMode = .music
@@ -47,6 +54,7 @@ public final class PlayQueueHandler: ObservableObject {
             currentIndex = items.isEmpty ? 0 : safeIndex
         }
         queueGeneration += 1
+        contextGeneration += 1
         userQueue.removeAll()
         PlayTrace.mark("persist queue…")
         persist()
@@ -70,6 +78,38 @@ public final class PlayQueueHandler: ObservableObject {
         mirrorEdit(inserted: items)
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+    }
+
+    /// Extends the current context, as opposed to `enqueueLast`, which marks items as
+    /// user-queued and therefore removable. Used to top up an open-ended context — a
+    /// shuffle-all walk — while it plays.
+    ///
+    /// Deliberately no `queueGeneration` bump, for the same reason `move` skips it:
+    /// prefetch treats an older generation as obsolete and would delete the playing
+    /// track's cached file mid-play.
+    public func appendContext(_ items: [QueueItem]) {
+        guard !items.isEmpty else { return }
+        contextQueue.append(contentsOf: items)
+        mirrorEdit(inserted: items)
+        trimPlayedHistory()
+        persist()
+        NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+    }
+
+    /// Drops tracks that played long ago, keeping at most `maxPlayedHistory` behind the
+    /// playing one. An open-ended context tops itself up for as long as playback runs,
+    /// so without a bound both the queue array and the rows persisted alongside it grow
+    /// all session.
+    private func trimPlayedHistory() {
+        let excess = currentIndex - Self.maxPlayedHistory
+        guard excess > 0 else { return }
+
+        contextQueue.removeFirst(excess)
+        currentIndex -= excess
+        // Restore order only means anything for tracks still in the queue. Matched on
+        // `entryId` rather than `id` because the same song can sit in the queue twice.
+        let remaining = Set(contextQueue.map(\.entryId))
+        unshuffledContext.removeAll { !remaining.contains($0.entryId) }
     }
 
     /// Removes queue rows. Only items the user queued themselves can be removed — the

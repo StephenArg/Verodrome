@@ -4,6 +4,8 @@ import Foundation
 /// Low-level Ampache XML API transport and request signing.
 public final class AmpacheServerApi: @unchecked Sendable {
     public static let clientVersion = "440004"
+    /// Ampache caps every request at 5000 rows for performance and clamps silently.
+    public static let maxResultsPerRequest = 5000
 
     private let session: Session
     private var baseURL: URL
@@ -104,6 +106,16 @@ public final class AmpacheServerApi: @unchecked Sendable {
         var params = pageParameters(limit: limit, offset: offset)
         params["type"] = "album"
         params["filter"] = "flagged"
+        return try await request(action: "stats", parameters: params)
+    }
+
+    /// Random songs from the whole library. Ampache re-draws the ordering on every
+    /// request, so `offset` sizes the window rather than guaranteeing a fresh page —
+    /// callers still have to drop repeats themselves.
+    public func getRandomSongs(limit: Int = 1000, offset: Int = 0) async throws -> Data {
+        var params = pageParameters(limit: min(max(1, limit), Self.maxResultsPerRequest), offset: offset)
+        params["type"] = "song"
+        params["filter"] = "random"
         return try await request(action: "stats", parameters: params)
     }
 

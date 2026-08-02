@@ -146,26 +146,18 @@ enum SubsonicParsers {
             rating: rating(albumNode.attributes["userRating"])
         )
 
-        let songs = albumNode.children(named: "song").map { songNode in
-            IngestSong(
-                id: songNode.attributes["id"] ?? "",
-                title: songNode.attributes["title"] ?? "",
-                albumId: album.id,
-                albumName: album.name,
-                artistId: songNode.attributes["artistId"] ?? album.artistId,
-                artistName: songNode.attributes["artist"] ?? album.artistName,
-                trackNumber: intValue(songNode.attributes["track"]),
-                discNumber: intValue(songNode.attributes["discNumber"]),
-                duration: timeInterval(songNode.attributes["duration"]),
-                artId: songNode.attributes["coverArt"] ?? album.artId,
-                bitrate: intValue(songNode.attributes["bitRate"]),
-                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
-                playCount: intValue(songNode.attributes["playCount"]),
-                rating: rating(songNode.attributes["userRating"])
-            )
-        }
-
+        let songs = albumNode.children(named: "song").map { song($0, in: album) }
         return ([album], songs)
+    }
+
+    /// Songs from any response that lists them as flat `<song>` nodes, such as
+    /// `getRandomSongs` or `getSongsByGenre`.
+    static func parseSongList(data: Data) throws -> [IngestSong] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        return root.descendants(named: "song")
+            .map { song($0) }
+            .filter { !$0.id.isEmpty }
     }
 
     static func parsePlaylists(data: Data) throws -> [IngestPlaylist] {
@@ -211,24 +203,7 @@ enum SubsonicParsers {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
         guard let playlistNode = root.firstChild(named: "playlist") else { return [] }
-        return playlistNode.children(named: "entry").map { songNode in
-            IngestSong(
-                id: songNode.attributes["id"] ?? "",
-                title: songNode.attributes["title"] ?? "",
-                albumId: songNode.attributes["albumId"],
-                albumName: songNode.attributes["album"],
-                artistId: songNode.attributes["artistId"],
-                artistName: songNode.attributes["artist"],
-                trackNumber: intValue(songNode.attributes["track"]),
-                discNumber: intValue(songNode.attributes["discNumber"]),
-                duration: timeInterval(songNode.attributes["duration"]),
-                artId: songNode.attributes["coverArt"],
-                bitrate: intValue(songNode.attributes["bitRate"]),
-                format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
-                playCount: intValue(songNode.attributes["playCount"]),
-                rating: rating(songNode.attributes["userRating"])
-            )
-        }
+        return playlistNode.children(named: "entry").map { song($0) }
     }
 
     static func parseSearch(data: Data) throws -> (artists: [SearchArtist], albums: [SearchAlbum], songs: [SearchSong]) {
@@ -413,21 +388,28 @@ enum SubsonicParsers {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
         guard let songNode = root.firstChild(named: "song") else { return nil }
-        return IngestSong(
-            id: songNode.attributes["id"] ?? "",
-            title: songNode.attributes["title"] ?? "",
-            albumId: songNode.attributes["albumId"],
-            albumName: songNode.attributes["album"],
-            artistId: songNode.attributes["artistId"],
-            artistName: songNode.attributes["artist"],
-            trackNumber: intValue(songNode.attributes["track"]),
-            discNumber: intValue(songNode.attributes["discNumber"]),
-            duration: timeInterval(songNode.attributes["duration"]),
-            artId: songNode.attributes["coverArt"],
-            bitrate: intValue(songNode.attributes["bitRate"]),
-            format: songNode.attributes["suffix"] ?? songNode.attributes["contentType"],
-            playCount: intValue(songNode.attributes["playCount"]),
-            rating: rating(songNode.attributes["userRating"])
+        return song(songNode)
+    }
+
+    /// Maps a `<song>` / `<entry>` node, which carries the same attributes wherever it
+    /// appears. `album` supplies the fields a song nested in an album detail response
+    /// leaves off, since the parent already states them.
+    private static func song(_ node: XmlNode, in album: IngestAlbum? = nil) -> IngestSong {
+        IngestSong(
+            id: node.attributes["id"] ?? "",
+            title: node.attributes["title"] ?? "",
+            albumId: album?.id ?? node.attributes["albumId"],
+            albumName: album?.name ?? node.attributes["album"],
+            artistId: node.attributes["artistId"] ?? album?.artistId,
+            artistName: node.attributes["artist"] ?? album?.artistName,
+            trackNumber: intValue(node.attributes["track"]),
+            discNumber: intValue(node.attributes["discNumber"]),
+            duration: timeInterval(node.attributes["duration"]),
+            artId: node.attributes["coverArt"] ?? album?.artId,
+            bitrate: intValue(node.attributes["bitRate"]),
+            format: node.attributes["suffix"] ?? node.attributes["contentType"],
+            playCount: intValue(node.attributes["playCount"]),
+            rating: rating(node.attributes["userRating"])
         )
     }
 

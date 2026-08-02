@@ -190,6 +190,93 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertEqual(handler.currentItem?.playableId, "1")
     }
 
+    /// Top-ups extend the context itself. Marking them user-queued would make the rows
+    /// removable and turn every shuffled track into a "Play Next" entry.
+    func testAppendContextAddsContextRowsNotUserQueuedOnes() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+
+        handler.appendContext([QueueItem(playableId: "extra", title: "Extra")])
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2", "extra"])
+        XCTAssertTrue(handler.activeQueue.allSatisfy { !$0.isUserQueued })
+    }
+
+    /// Prefetch treats a newer generation as a signal that the old queue's cached files
+    /// are obsolete, so extending a context must not look like starting one.
+    func testAppendContextDoesNotBumpGenerations() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        let queueGeneration = handler.queueGeneration
+        let contextGeneration = handler.contextGeneration
+
+        handler.appendContext([QueueItem(playableId: "extra", title: "Extra")])
+
+        XCTAssertEqual(handler.queueGeneration, queueGeneration)
+        XCTAssertEqual(handler.contextGeneration, contextGeneration)
+    }
+
+    /// `queueGeneration` can't answer "did the user play something else" — shuffling
+    /// bumps it too. That's the whole reason `contextGeneration` exists.
+    func testContextGenerationChangesOnlyForANewContext() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        let generation = handler.contextGeneration
+        let queueGeneration = handler.queueGeneration
+
+        handler.toggleShuffle()
+        XCTAssertGreaterThan(handler.queueGeneration, queueGeneration)
+        XCTAssertEqual(handler.contextGeneration, generation)
+
+        handler.replaceContext(with: Self.songs(2), startAt: 0)
+        XCTAssertEqual(handler.contextGeneration, generation + 1)
+    }
+
+    /// An open-ended context tops itself up for as long as playback runs, so played rows
+    /// have to fall off the front or the queue grows all session.
+    func testAppendContextTrimsPlayedHistoryAndFollowsThePlayingTrack() {
+        let handler = PlayQueueHandler()
+        let total = PlayQueueHandler.maxPlayedHistory + 30
+        handler.replaceContext(with: Self.songs(total), startAt: total - 1)
+        let playing = handler.currentItem?.playableId
+
+        handler.appendContext([QueueItem(playableId: "extra", title: "Extra")])
+
+        // Kept history, the playing track, and the track just appended.
+        XCTAssertEqual(handler.activeQueue.count, PlayQueueHandler.maxPlayedHistory + 2)
+        XCTAssertEqual(handler.currentIndex, PlayQueueHandler.maxPlayedHistory)
+        XCTAssertEqual(handler.currentItem?.playableId, playing)
+        XCTAssertEqual(handler.activeQueue.last?.playableId, "extra")
+    }
+
+    func testAppendContextLeavesAShortQueueIntact() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(5), startAt: 4)
+
+        handler.appendContext([QueueItem(playableId: "extra", title: "Extra")])
+
+        XCTAssertEqual(handler.activeQueue.count, 6)
+        XCTAssertEqual(handler.currentIndex, 4)
+        XCTAssertEqual(handler.currentItem?.playableId, "4")
+    }
+
+    /// Trimming drops rows from the shuffled queue; the restore-order copy has to lose
+    /// them too, or turning shuffle off would resurrect tracks that already played.
+    func testTrimmedRowsDoNotComeBackWhenShuffleIsTurnedOff() {
+        let handler = PlayQueueHandler()
+        let total = PlayQueueHandler.maxPlayedHistory + 30
+        handler.replaceContext(with: Self.songs(total), startAt: 0)
+        handler.toggleShuffle()
+        for _ in 0..<(total - 1) { _ = handler.advance() }
+
+        handler.appendContext([QueueItem(playableId: "extra", title: "Extra")])
+        let trimmedCount = handler.activeQueue.count
+        handler.toggleShuffle()
+
+        XCTAssertEqual(handler.shuffleMode, .off)
+        XCTAssertEqual(handler.activeQueue.count, trimmedCount)
+    }
+
     func testUnshufflingKeepsQueueEditsMadeWhileShuffled() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(10), startAt: 0)

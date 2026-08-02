@@ -34,6 +34,9 @@ final class PlayerViewModel: ObservableObject {
     /// Position of the playing track within `queue`. Rows are identified by position, so
     /// a duplicated song can't light up the wrong row.
     @Published private(set) var currentIndex = 0
+    /// Changes whenever a new context starts playing. Owners of an open-ended context
+    /// watch it to know the user moved on to something else.
+    @Published private(set) var contextGeneration = 0
     @Published var repeatMode: RepeatMode = .off
     @Published var shuffleMode: ShuffleMode = .off
     @Published var lyrics = "" {
@@ -144,10 +147,19 @@ final class PlayerViewModel: ObservableObject {
         syncQueue()
     }
 
+    /// Extends the playing context. Unlike `playNext`, these are not user-queued rows —
+    /// they belong to the context, which is what an open-ended shuffle keeps topping up.
+    func appendToQueue(_ items: [QueueItem]) {
+        guard !items.isEmpty else { return }
+        facade?.appendContext(items)
+        syncQueue()
+    }
+
     /// Mirrors the player's queue snapshot into the state the UI observes.
     private func syncQueue(fallback: [QueueItem]? = nil) {
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
+        contextGeneration = facade?.contextGeneration ?? contextGeneration
     }
 
     func playPause() {

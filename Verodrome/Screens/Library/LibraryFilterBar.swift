@@ -9,6 +9,9 @@ struct LibraryFilterBar: View {
     @Binding var text: String
     /// Omitted when the list has nothing to shuffle.
     var onShuffle: (() -> Void)?
+    /// Shuffling a whole library is a server round trip, and a slow one on some
+    /// Subsonic builds, so the button says so rather than looking unresponsive.
+    var isShuffleBusy = false
 
     @State private var isExpanded = false
     @FocusState private var isFocused: Bool
@@ -40,13 +43,21 @@ struct LibraryFilterBar: View {
 
     private func shuffleButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            ShuffleControlIcon()
-                .frame(width: 18, height: 18)
-                .foregroundStyle(Color.primary)
-                .frame(width: controlDiameter, height: controlDiameter)
-                .background(Circle().fill(Color(uiColor: .secondarySystemFill)))
+            Group {
+                if isShuffleBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    ShuffleControlIcon()
+                        .frame(width: 18, height: 18)
+                        .foregroundStyle(Color.primary)
+                }
+            }
+            .frame(width: controlDiameter, height: controlDiameter)
+            .background(Circle().fill(Color(uiColor: .secondarySystemFill)))
         }
         .buttonStyle(.plain)
+        .disabled(isShuffleBusy)
         .accessibilityLabel("Shuffle all")
     }
 

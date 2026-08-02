@@ -29,6 +29,14 @@ final class AppRouter: ObservableObject {
         launchPhase = isLoggedIn ? .main : .login
     }
 
+    /// Brings up the full player, however it was asked for — the mini bar, or a shuffle
+    /// button that wants to show the user what it just queued up.
+    func openPlayer() {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+            showFullPlayer = true
+        }
+    }
+
     func push(_ route: AppRoute) {
         path.append(route)
     }

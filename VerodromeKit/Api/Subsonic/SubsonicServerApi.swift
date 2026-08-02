@@ -11,6 +11,8 @@ public enum SubsonicAuthMode: Sendable {
 /// Low-level Subsonic REST XML client (`/rest/*.view`).
 public final class SubsonicServerApi: @unchecked Sendable {
     public static let apiVersion = "1.16.1"
+    /// `getRandomSongs` is capped at 500 by the spec, and servers clamp silently.
+    public static let randomSongsMaxSize = 500
 
     private let session: Session
     private let clientName: String
@@ -95,6 +97,16 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
     public func getAlbum(id: String) async throws -> Data {
         try await request(method: "getAlbum", parameters: ["id": id])
+    }
+
+    /// Random songs from the whole library. The spec caps `size` at 500 and offers no
+    /// offset, so this is a ceiling rather than a page: repeated calls are independent
+    /// draws that overlap.
+    public func getRandomSongs(size: Int = SubsonicServerApi.randomSongsMaxSize) async throws -> Data {
+        try await request(
+            method: "getRandomSongs",
+            parameters: ["size": String(min(max(1, size), Self.randomSongsMaxSize))]
+        )
     }
 
     public func getSong(id: String) async throws -> Data {

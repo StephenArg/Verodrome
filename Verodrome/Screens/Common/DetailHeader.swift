@@ -13,6 +13,7 @@ struct DetailHeader: View {
     var onShuffle: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var router: AppRouter
     @State private var tint: ArtworkTint?
 
     private var resolvedTint: ArtworkTint {
@@ -52,7 +53,13 @@ struct DetailHeader: View {
                     )
                 )
 
-                Button(action: onShuffle) {
+                // Shuffle raises the player; Play doesn't. Shuffling is a "surprise me"
+                // tap, and the answer is the track that comes up — worth showing. Play
+                // starts at the top of a tracklist the user is already looking at.
+                Button {
+                    onShuffle()
+                    router.openPlayer()
+                } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "shuffle")
                         Text("Shuffle")

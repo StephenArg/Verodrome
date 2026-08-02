@@ -29,6 +29,9 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var remoteCommandHandler = RemoteCommandCenterHandler()
     public private(set) var isInitialized = false
     public private(set) var activeLibrarySyncer: (any LibrarySyncer)?
+    /// The ingester behind `activeLibrarySyncer`, so on-demand fetches outside a sync can
+    /// still persist what they pulled.
+    public private(set) var activeLibraryIngester: (any LibraryIngesting)?
     public let artworkResolver = ArtworkResolver.shared
 
     @Published public var syncProgressMessage: String = ""
@@ -252,6 +255,7 @@ public final class VerodromeKit: ObservableObject {
     public func logout() {
         backendProxy.logout()
         activeLibrarySyncer = nil
+        activeLibraryIngester = nil
         settings.isLibrarySynced = false
         settings.save()
         observableSettings.updateApp {
@@ -312,6 +316,7 @@ public final class VerodromeKit: ObservableObject {
         accountStore.removeAccount(info)
         if wasActive {
             activeLibrarySyncer = nil
+            activeLibraryIngester = nil
             backendProxy.logout()
             if let next = accountStore.allAccounts().first {
                 try? await switchToAccount(next.info)
@@ -363,6 +368,7 @@ public final class VerodromeKit: ObservableObject {
         )
         let syncer = backendProxy.createLibrarySyncer(ingestor: ingester)
         activeLibrarySyncer = syncer
+        activeLibraryIngester = ingester
         let scrobble = ScrobbleSyncer(uploader: LibrarySyncerScrobbleUploader(syncer: syncer))
         scrobble.onScrobble = { playableId in
             LibraryActions.shared.recordPlay(playableId: playableId)

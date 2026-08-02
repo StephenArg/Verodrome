@@ -352,6 +352,63 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 }
 
+extension SubsonicLibrarySyncer: RandomSongProviding {
+    /// Navidrome's native list endpoint pages a seeded random ordering, so it can be
+    /// asked for as much as any other bulk page. Plain Subsonic tops out at 500.
+    public var randomSongBatchLimit: Int {
+        native == nil ? SubsonicServerApi.randomSongsMaxSize : CommonLibrarySyncer.defaultPageSize
+    }
+
+    public func randomSongs(count: Int, after cursor: RandomSongCursor?) async throws -> RandomSongBatch {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+
+        if let native {
+            do {
+                return try await randomSongsInBulk(native, count: count, after: cursor)
+            } catch {
+                // Same bargain as the bulk track sync: the native API is undocumented
+                // and can change under us, so anything unexpected drops to Subsonic.
+                await EventLogger.shared.warning(
+                    "shuffle",
+                    "Navidrome random songs failed, falling back to getRandomSongs: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        let data = try await server.getRandomSongs(size: count)
+        let songs = try SubsonicParsers.parseSongList(data: data)
+        // `getRandomSongs` takes no offset, so there is no cursor to carry forward — the
+        // next call is a fresh draw. Only an empty response means there is nothing left.
+        return RandomSongBatch(songs: songs, cursor: nil, isExhausted: songs.isEmpty)
+    }
+
+    private func randomSongsInBulk(
+        _ native: NavidromeNativeApi,
+        count: Int,
+        after cursor: RandomSongCursor?
+    ) async throws -> RandomSongBatch {
+        if !native.isAuthenticated {
+            try await native.authenticate()
+        }
+
+        // A seed per session, reused for every page: without it the server re-draws the
+        // ordering each request and consecutive pages would return the same tracks.
+        let seed = cursor?.seed ?? CryptoHelpers.randomSalt(length: 12)
+        let offset = cursor?.offset ?? 0
+        let page = try await native.randomSongs(seed: seed, offset: offset, limit: count)
+
+        let nextOffset = offset + page.songs.count
+        let total = page.total ?? cursor?.total
+        let isExhausted = page.songs.count < count || total.map { nextOffset >= $0 } == true
+
+        return RandomSongBatch(
+            songs: page.songs,
+            cursor: RandomSongCursor(seed: seed, offset: nextOffset, total: total),
+            isExhausted: isExhausted
+        )
+    }
+}
+
 extension SubsonicLibrarySyncer: LyricsProviding {
     public func fetchLyrics(playableId: String) async throws -> String? {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())

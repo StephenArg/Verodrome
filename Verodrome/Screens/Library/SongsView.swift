@@ -7,6 +7,8 @@ struct SongsView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @EnvironmentObject private var shuffle: ShuffleAllCoordinator
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.modelContext) private var modelContext
 
     @State private var searchText = ""
@@ -24,7 +26,11 @@ struct SongsView: View {
             LibraryFilterBar(
                 prompt: "Filter songs",
                 text: $searchText,
-                onShuffle: shuffleAll
+                // The server picks the tracks, and no backend's random endpoint takes a
+                // free-text filter — offering the button while one is typed would just
+                // ignore it.
+                onShuffle: searchText.isEmpty ? shuffleAll : nil,
+                isShuffleBusy: shuffle.isStarting
             )
             IndexedEntityTableView(
                 sections: model.sections,
@@ -80,6 +86,11 @@ struct SongsView: View {
     }
 
     private func shuffleAll() {
+        // Only on success — raising an empty player would be a worse answer than the
+        // button simply not having worked.
+        Task {
+            if await shuffle.shuffleAll() { router.openPlayer() }
+        }
     }
 
     private func play(item: LibrarySongRowSnapshot, allItems: [LibrarySongRowSnapshot]) {
@@ -92,7 +103,18 @@ struct SongsView: View {
         PlayTrace.mark("mapping window QueueItems", details: "start=\(start) end=\(end)")
         let items = allItems[start..<end].map(\.queueItem)
         PlayTrace.mark("calling player.play", details: "count=\(items.count)")
-        player.play(items: Array(items), startAt: 0)
+        // Explicitly unshuffled, so shuffle left on from an album or playlist doesn't
+        // follow the user here and randomise the tracks queued behind the one they
+        // tapped. Picking a song out of a list is a request for that song, then the ones
+        // after it.
+        player.play(items: items, startAt: 0, shuffle: false)
+
+        // Only unfiltered, for the same reason the Shuffle All button hides while a
+        // filter is typed: the rows on screen are then the user's own selection, and no
+        // backend's random endpoint can reproduce it.
+        if searchText.isEmpty, let first = items.first {
+            shuffle.trackSongsLibrary(seededBy: first)
+        }
     }
 
     private func resolveSong(compoundRemoteId: String) -> Song? {

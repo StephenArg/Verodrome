@@ -10,6 +10,8 @@ public protocol PlayerControlling: AnyObject {
     var duration: TimeInterval { get }
     var queue: [QueueItem] { get }
     var currentIndex: Int { get }
+    /// Changes when a new context starts, so callers can tell their queue was replaced.
+    var contextGeneration: Int { get }
     var repeatMode: RepeatMode { get set }
     var shuffleMode: ShuffleMode { get }
     func play(items: [QueueItem], startAt: Int) async
@@ -24,6 +26,8 @@ public protocol PlayerControlling: AnyObject {
     func seek(to: TimeInterval)
     func enqueueNext(_ items: [QueueItem])
     func enqueueLast(_ items: [QueueItem])
+    /// Extends the playing context rather than adding user-queued items.
+    func appendContext(_ items: [QueueItem])
     func remove(at offsets: IndexSet)
     func move(from: IndexSet, to: Int)
     func jump(to index: Int)
@@ -117,6 +121,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public var queue: [QueueItem] { audioPlayer.queueHandler.activeQueue }
     public var currentIndex: Int { audioPlayer.queueHandler.currentIndex }
+    public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
         set {
@@ -205,6 +210,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }
     public func enqueueLast(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueLast(items) }
+    public func appendContext(_ items: [QueueItem]) { audioPlayer.queueHandler.appendContext(items) }
     public func remove(at offsets: IndexSet) { audioPlayer.queueHandler.remove(at: offsets) }
     public func remove(at index: Int) { audioPlayer.queueHandler.remove(at: IndexSet(integer: index)) }
     public func move(from: IndexSet, to: Int) { audioPlayer.queueHandler.move(from: from, to: to) }

@@ -360,8 +360,13 @@ public final class Song {
     }
 
     public static func makeCompoundRemoteId(account: Account?, remoteId: String) -> String {
-        let prefix = account?.compoundKey ?? "global"
-        return "\(prefix)::song::\(remoteId)"
+        makeCompoundRemoteId(accountKey: account?.compoundKey, remoteId: remoteId)
+    }
+
+    /// For callers that hold the account's storage key but not the model object, such as
+    /// lookups running on a background context.
+    public static func makeCompoundRemoteId(accountKey: String?, remoteId: String) -> String {
+        "\(accountKey ?? "global")::song::\(remoteId)"
     }
 }
 

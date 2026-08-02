@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
+  <randomSongs>
+    <song id="331" title="Blue Line" album="Living Fields" albumId="55" artist="Portico" artistId="10" track="3" discNumber="1" duration="214" coverArt="al-55" bitRate="960" suffix="flac" playCount="17" userRating="4"/>
+    <song id="412" title="Second Track" album="Other Fields" albumId="56" artist="Portico" artistId="10" duration="180" coverArt="al-56" suffix="mp3"/>
+    <song id="507" title="Third Track" album="Elsewhere" albumId="57" artist="Beta" artistId="11" duration="95" coverArt="al-57" suffix="mp3" userRating="3.0"/>
+  </randomSongs>
+</subsonic-response>

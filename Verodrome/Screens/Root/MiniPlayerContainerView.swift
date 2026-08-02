@@ -139,9 +139,7 @@ struct MiniPlayerBar: View {
     }
 
     private func openPlayer() {
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-            router.showFullPlayer = true
-        }
+        router.openPlayer()
     }
 }
 

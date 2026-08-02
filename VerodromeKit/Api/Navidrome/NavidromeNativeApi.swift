@@ -62,18 +62,33 @@ public final class NavidromeNativeApi: @unchecked Sendable {
 
     /// One page of songs, ordered by title so paging stays stable across requests.
     public func songs(offset: Int, limit: Int) async throws -> NavidromeSongPage {
+        try await page(offset: offset, limit: limit, sort: "title")
+    }
+
+    /// One page of a random ordering. The seed is what makes this pageable: without it
+    /// the server reshuffles per request and consecutive pages would overlap. Navidrome
+    /// keeps this path seeded precisely so its own web UI can scroll a random list.
+    public func randomSongs(seed: String, offset: Int, limit: Int) async throws -> NavidromeSongPage {
+        try await page(offset: offset, limit: limit, sort: "random", seed: seed)
+    }
+
+    private func page(offset: Int, limit: Int, sort: String, seed: String? = nil) async throws -> NavidromeSongPage {
         guard let token else { throw BackendApiError.notAuthenticated }
 
         var components = URLComponents(
             url: baseURL.appendingPathComponent("api").appendingPathComponent("song"),
             resolvingAgainstBaseURL: false
         )
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "_start", value: String(offset)),
             URLQueryItem(name: "_end", value: String(offset + limit)),
-            URLQueryItem(name: "_sort", value: "title"),
+            URLQueryItem(name: "_sort", value: sort),
             URLQueryItem(name: "_order", value: "ASC")
         ]
+        if let seed {
+            queryItems.append(URLQueryItem(name: "seed", value: seed))
+        }
+        components?.queryItems = queryItems
         guard let url = components?.url else { throw BackendApiError.invalidURL }
 
         var request = URLRequest(url: url)

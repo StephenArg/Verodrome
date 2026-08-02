@@ -41,6 +41,28 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(songs[2].rating, 3)
     }
 
+    /// `getRandomSongs` returns a flat list under its own element, and unlike album
+    /// detail there is no parent node to fall back on — every song states its own album.
+    func testSongListParserReadsFlatRandomSongs() throws {
+        let songs = try SubsonicParsers.parseSongList(data: fixture("subsonic_random_songs.xml"))
+        XCTAssertEqual(songs.map(\.id), ["331", "412", "507"])
+        XCTAssertEqual(songs.map(\.albumId), ["55", "56", "57"])
+        XCTAssertEqual(songs.map(\.artId), ["al-55", "al-56", "al-57"])
+        XCTAssertEqual(songs[0].artistName, "Portico")
+        XCTAssertEqual(songs[0].playCount, 17)
+        XCTAssertNil(songs[1].playCount)
+        XCTAssertEqual(songs[2].rating, 3)
+    }
+
+    /// Songs nested in an album detail response leave off what the parent already says,
+    /// so they have to inherit the album's id and cover art rather than come back bare.
+    func testAlbumDetailSongsInheritTheAlbum() throws {
+        let (_, songs) = try SubsonicParsers.parseAlbumDetail(data: fixture("subsonic_album_detail.xml"))
+        XCTAssertTrue(songs.allSatisfy { $0.albumId == "55" })
+        XCTAssertTrue(songs.allSatisfy { $0.albumName == "Living Fields" })
+        XCTAssertTrue(songs.allSatisfy { $0.artId == "al-55" })
+    }
+
     func testPingStatus() throws {
         let data = try fixture("subsonic_ping.xml")
         XCTAssertNoThrow(try SubsonicParsers.checkForError(data: data))

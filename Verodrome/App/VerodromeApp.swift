@@ -7,6 +7,7 @@ struct VerodromeApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var kit = VerodromeKit.shared
     @StateObject private var player = PlayerViewModel()
+    @StateObject private var shuffleAll = ShuffleAllCoordinator()
     @StateObject private var themeManager: ThemeManager
 
     init() {
@@ -22,6 +23,7 @@ struct VerodromeApp: App {
                 .environmentObject(player)
                 .environmentObject(player.progress)
                 .environmentObject(player.nowPlaying)
+                .environmentObject(shuffleAll)
                 .environmentObject(themeManager)
                 .preferredColorScheme(colorScheme)
                 .tint(themeManager.accentColor)
@@ -29,6 +31,7 @@ struct VerodromeApp: App {
                     PersistentStorage.shared.configureMainContext()
                     await kit.initialize()
                     player.attach(facade: kit.player)
+                    shuffleAll.attach(player: player)
                     themeManager.applyTheme()
                 }
                 .onOpenURL { url in

@@ -316,6 +316,31 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 }
 
+extension AmpacheLibrarySyncer: RandomSongProviding {
+    public var randomSongBatchLimit: Int { AmpacheServerApi.maxResultsPerRequest }
+
+    public func randomSongs(count: Int, after cursor: RandomSongCursor?) async throws -> RandomSongBatch {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+
+        let offset = cursor?.offset ?? 0
+        let data = try await server.getRandomSongs(limit: count, offset: offset)
+        let songs = try AmpacheParsers.parseSongs(data: data)
+        let total = (try? AmpacheParsers.parseTotalCount(data: data)) ?? cursor?.total
+
+        // Ampache re-draws the ordering per request, so advancing the offset widens the
+        // window rather than guaranteeing fresh rows. It still bounds the walk: once it
+        // has passed the library size, further calls can only repeat what we have.
+        let nextOffset = offset + songs.count
+        let isExhausted = songs.isEmpty || total.map { nextOffset >= $0 } == true
+
+        return RandomSongBatch(
+            songs: songs,
+            cursor: RandomSongCursor(offset: nextOffset, total: total),
+            isExhausted: isExhausted
+        )
+    }
+}
+
 extension AmpacheLibrarySyncer: LyricsProviding {
     public func fetchLyrics(playableId: String) async throws -> String? {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
