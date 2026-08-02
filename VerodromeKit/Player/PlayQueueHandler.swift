@@ -80,6 +80,43 @@ public final class PlayQueueHandler: ObservableObject {
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
+    /// Queues tracks for a single listen: they play after the current one and leave the
+    /// queue the moment playback moves past them, taking their prefetched file with them.
+    ///
+    /// Inserted after any temporary run already waiting, so adding two albums in a row
+    /// plays them in the order they were added rather than in reverse.
+    public func enqueueEphemeral(_ items: [QueueItem]) {
+        guard !items.isEmpty else { return }
+        let items = items.map { item -> QueueItem in
+            var copy = Self.markUserQueued(item)
+            copy.isEphemeral = true
+            return copy
+        }
+        var insertAt = min(currentIndex + 1, contextQueue.count)
+        while insertAt < contextQueue.count, contextQueue[insertAt].isEphemeral {
+            insertAt += 1
+        }
+        contextQueue.insert(contentsOf: items, at: insertAt)
+        mirrorEdit(inserted: items)
+        persist()
+        NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+    }
+
+    /// Drops a temporary row the playhead just left. Posting the removal on
+    /// `verodromeQueueChanged` is what gets its cached file deleted — `QueueCachePolicyManager`
+    /// listens for exactly this and skips anything the user pinned, so a song that is also
+    /// downloaded survives.
+    private func dropEphemeral(leftAt index: Int) {
+        guard playerMode == .music else { return }
+        guard index != currentIndex, contextQueue.count > 1 else { return }
+        guard contextQueue.indices.contains(index), contextQueue[index].isEphemeral else { return }
+
+        let removed = contextQueue.remove(at: index)
+        if currentIndex > index { currentIndex -= 1 }
+        mirrorEdit(removedEntryIds: [removed.entryId])
+        NotificationCenter.default.post(name: .verodromeQueueChanged, object: [removed])
+    }
+
     /// Extends the current context, as opposed to `enqueueLast`, which marks items as
     /// user-queued and therefore removable. Used to top up an open-ended context — a
     /// shuffle-all walk — while it plays.
@@ -169,13 +206,24 @@ public final class PlayQueueHandler: ObservableObject {
 
     /// Keeps the restore-order copy aligned with queue edits, so turning shuffle off
     /// later cannot resurrect removed tracks or drop newly queued ones.
-    private func mirrorEdit(inserted: [QueueItem] = [], removedIds: Set<String> = []) {
+    ///
+    /// `removedEntryIds` exists for removals that must hit one specific row: the same
+    /// song can sit in the queue twice, and dropping a temporary copy by playable id
+    /// would take the context's copy with it.
+    private func mirrorEdit(
+        inserted: [QueueItem] = [],
+        removedIds: Set<String> = [],
+        removedEntryIds: Set<UUID> = []
+    ) {
         guard shuffleMode == .on else {
             unshuffledContext = contextQueue
             return
         }
         if !removedIds.isEmpty {
             unshuffledContext.removeAll { removedIds.contains($0.id) }
+        }
+        if !removedEntryIds.isEmpty {
+            unshuffledContext.removeAll { removedEntryIds.contains($0.entryId) }
         }
         unshuffledContext.append(contentsOf: inserted)
     }
@@ -186,12 +234,14 @@ public final class PlayQueueHandler: ObservableObject {
     public func advance() -> QueueItem? {
         let q = activeQueue
         guard !q.isEmpty else { return nil }
+        let departedIndex = currentIndex
         switch repeatMode {
         case .all:
             currentIndex = (currentIndex + 1) % q.count
         case .off, .one:
             if currentIndex + 1 < q.count { currentIndex += 1 } else { return nil }
         }
+        dropEphemeral(leftAt: departedIndex)
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
         return currentItem
@@ -213,7 +263,9 @@ public final class PlayQueueHandler: ObservableObject {
 
     public func jump(to index: Int) {
         guard activeQueue.indices.contains(index) else { return }
+        let departedIndex = currentIndex
         currentIndex = index
+        dropEphemeral(leftAt: departedIndex)
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
     }
@@ -238,8 +290,8 @@ public final class PlayQueueHandler: ObservableObject {
 
         PlayTrace.begin("setShuffle", details: "was=\(shuffleMode) count=\(contextQueue.count)")
         // Anchor on the playing *position*, not an id lookup — the same song can appear
-        // twice (context + Play Next), and a wrong firstIndex would pull a different row
-        // to the front while the engine keeps playing the original.
+        // twice (context + a queued copy), and a wrong firstIndex would pull a different
+        // row to the front while the engine keeps playing the original.
         let playingAt = currentIndex
         let playingItem = contextQueue.indices.contains(playingAt) ? contextQueue[playingAt] : nil
         let playingId = playingItem?.id

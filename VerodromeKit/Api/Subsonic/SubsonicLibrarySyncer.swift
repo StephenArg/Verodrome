@@ -251,12 +251,13 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         return try SubsonicParsers.parseSearch(data: data).songs
     }
 
-    public func setFavorite(playableId: String, isFavorite: Bool) async throws {
-        try await server.star(id: playableId, unstar: !isFavorite)
+    public func setFavorite(entityId: String, type: LibraryEntityType, isFavorite: Bool) async throws {
+        try await server.star(id: entityId, type: type, unstar: !isFavorite)
     }
 
-    public func setRating(playableId: String, rating: Int) async throws {
-        try await server.setRating(id: playableId, rating: rating)
+    public func setRating(entityId: String, type: LibraryEntityType, rating: Int) async throws {
+        // `setRating` takes any id, so the entity type doesn't change the call.
+        try await server.setRating(id: entityId, rating: rating)
     }
 
     public func scrobble(playableId: String, timestamp: Date, duration: TimeInterval?) async throws {

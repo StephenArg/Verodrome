@@ -26,6 +26,8 @@ public protocol PlayerControlling: AnyObject {
     func seek(to: TimeInterval)
     func enqueueNext(_ items: [QueueItem])
     func enqueueLast(_ items: [QueueItem])
+    /// Queues items for one listen; they leave the queue and the cache once played.
+    func enqueueEphemeral(_ items: [QueueItem])
     /// Extends the playing context rather than adding user-queued items.
     func appendContext(_ items: [QueueItem])
     func remove(at offsets: IndexSet)
@@ -210,6 +212,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }
     public func enqueueLast(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueLast(items) }
+    public func enqueueEphemeral(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueEphemeral(items) }
     public func appendContext(_ items: [QueueItem]) { audioPlayer.queueHandler.appendContext(items) }
     public func remove(at offsets: IndexSet) { audioPlayer.queueHandler.remove(at: offsets) }
     public func remove(at index: Int) { audioPlayer.queueHandler.remove(at: IndexSet(integer: index)) }

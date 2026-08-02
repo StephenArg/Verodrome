@@ -142,13 +142,17 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func playNext(_ items: [QueueItem]) {
-        facade?.enqueueNext(items)
+    /// Queues items to play next for one listen only — they leave the queue, and the
+    /// cache, as soon as playback moves past them.
+    func addToQueueTemporarily(_ items: [QueueItem]) {
+        guard !items.isEmpty else { return }
+        facade?.enqueueEphemeral(items)
         syncQueue()
     }
 
-    /// Extends the playing context. Unlike `playNext`, these are not user-queued rows —
-    /// they belong to the context, which is what an open-ended shuffle keeps topping up.
+    /// Extends the playing context. Unlike `addToQueueTemporarily`, these are not
+    /// user-queued rows — they belong to the context, which is what an open-ended
+    /// shuffle keeps topping up.
     func appendToQueue(_ items: [QueueItem]) {
         guard !items.isEmpty else { return }
         facade?.appendContext(items)
@@ -229,7 +233,7 @@ final class PlayerViewModel: ObservableObject {
         syncQueue()
     }
 
-    /// Only songs the user queued themselves ("Play Next") can be taken back out.
+    /// Only songs the user queued themselves ("Add to Queue") can be taken back out.
     func removeFromQueue(at offsets: IndexSet) {
         guard shuffleMode == .on else { return }
         let removable = offsets.filter { queue.indices.contains($0) && queue[$0].isUserQueued }

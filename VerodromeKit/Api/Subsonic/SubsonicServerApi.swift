@@ -163,9 +163,18 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
     // MARK: - Mutations
 
-    public func star(id: String, unstar: Bool = false) async throws {
+    /// `star`/`unstar` address ID3 albums and artists through their own parameters —
+    /// passing an album under plain `id` stars the matching *directory* on servers that
+    /// still keep the two namespaces apart.
+    public func star(id: String, type: LibraryEntityType = .song, unstar: Bool = false) async throws {
         let method = unstar ? "unstar" : "star"
-        _ = try await request(method: method, parameters: ["id": id])
+        let parameter: String
+        switch type {
+        case .song: parameter = "id"
+        case .album: parameter = "albumId"
+        case .artist: parameter = "artistId"
+        }
+        _ = try await request(method: method, parameters: [parameter: id])
     }
 
     public func setRating(id: String, rating: Int) async throws {

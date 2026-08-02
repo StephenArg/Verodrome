@@ -7,6 +7,7 @@ struct PopupPlayerView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var settings: SettingsStore
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.dismiss) private var dismiss
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
@@ -60,7 +61,7 @@ struct PopupPlayerView: View {
                             )
 
                             artistCreditsRow
-                                .opacity(artistCredits.isEmpty ? 0 : 1)
+                                .opacity(artistCredits.isEmpty && downloadStatus == .none ? 0 : 1)
                         }
 
                         favoriteButton
@@ -215,6 +216,7 @@ struct PopupPlayerView: View {
             albumTitle: albumTitle,
             albumId: currentSong?.album?.compoundRemoteId,
             song: currentSong,
+            downloadStatus: overflowDownloadStatus,
             showRatingStars: settings.showRatingStars,
             showSongInfo: settings.showSongInfo,
             showLyrics: showingLyrics,
@@ -239,6 +241,21 @@ struct PopupPlayerView: View {
             },
             onToggleLyrics: { toggleLyrics() }
         ))
+    }
+
+    /// Download state of the playing track, or `.none` when the queue item isn't a
+    /// library song (radio, for instance).
+    private var downloadStatus: DownloadStatus {
+        guard let song = currentSong else { return .none }
+        return downloadCenter.status(for: song.remoteId, isDownloaded: song.isDownloadedLocally)
+    }
+
+    /// The overflow menu only needs to know *that* a download is running, not how far
+    /// along it is. Feeding it the live fraction would rebuild the `UIMenu` on every
+    /// progress callback — the exact churn the UIKit menu exists to avoid.
+    private var overflowDownloadStatus: DownloadStatus {
+        if case .downloading = downloadStatus { return .downloading(0) }
+        return downloadStatus
     }
 
     /// Compact file-type + bitrate label shown opposite the rating stars.
@@ -325,7 +342,7 @@ struct PopupPlayerView: View {
             } label: {
                 Image(systemName: song.isFavorite ? "heart.fill" : "heart")
                     .font(.system(size: 24))
-                    .foregroundStyle(song.isFavorite ? Color.accentColor : Color.primary)
+                    .foregroundStyle(song.isFavorite ? themeManager.accentColor : Color.primary)
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
@@ -339,6 +356,30 @@ struct PopupPlayerView: View {
 
     @ViewBuilder
     private var artistCreditsRow: some View {
+        HStack(spacing: 6) {
+            // Decorative only — download / remove lives in the overflow menu.
+            if currentSong != nil {
+                DownloadStatusIcon(status: downloadStatus, size: 14, tint: themeManager.accentColor)
+                    .accessibilityLabel(downloadAccessibilityLabel)
+            }
+
+            artistCreditsContent
+        }
+    }
+
+    private var downloadAccessibilityLabel: String {
+        switch downloadStatus {
+        case .pending: return "Waiting to download"
+        case .downloading: return "Downloading"
+        case .partial: return "Partially downloaded"
+        case .downloaded: return "Downloaded"
+        case .failed: return "Download failed"
+        case .none: return ""
+        }
+    }
+
+    @ViewBuilder
+    private var artistCreditsContent: some View {
         if artistCredits.count == 1, let only = artistCredits.first {
             // Single credit — keep marquee for long names.
             if let artistID = only.artistID {
@@ -497,6 +538,7 @@ private struct PlayerHeader: View, Equatable {
     let albumTitle: String
     let albumId: String?
     let song: Song?
+    let downloadStatus: DownloadStatus
     let showRatingStars: Bool
     let showSongInfo: Bool
     let showLyrics: Bool
@@ -543,6 +585,7 @@ private struct PlayerHeader: View, Equatable {
                     menuState: PlayerOverflowMenuButton.MenuState(
                         hasSong: song != nil,
                         isFavorite: song?.isFavorite == true,
+                        downloadStatus: downloadStatus,
                         showRatingStars: showRatingStars,
                         showSongInfo: showSongInfo,
                         showLyrics: showLyrics,
@@ -552,6 +595,10 @@ private struct PlayerHeader: View, Equatable {
                     onToggleFavorite: {
                         guard let song else { return }
                         Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+                    },
+                    onDownload: {
+                        guard let song else { return }
+                        Task { await LibraryActions.shared.downloadOrCancel(song: song) }
                     },
                     onAddToPlaylist: onAddToPlaylist,
                     onOpenQueue: onOpenQueue,
@@ -572,6 +619,7 @@ private struct PlayerHeader: View, Equatable {
             && lhs.albumId == rhs.albumId
             && lhs.song?.remoteId == rhs.song?.remoteId
             && lhs.song?.isFavorite == rhs.song?.isFavorite
+            && lhs.downloadStatus == rhs.downloadStatus
             && lhs.showRatingStars == rhs.showRatingStars
             && lhs.showSongInfo == rhs.showSongInfo
             && lhs.showLyrics == rhs.showLyrics
@@ -587,6 +635,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     struct MenuState: Equatable {
         var hasSong: Bool
         var isFavorite: Bool
+        var downloadStatus: DownloadStatus
         var showRatingStars: Bool
         var showSongInfo: Bool
         var showLyrics: Bool
@@ -596,6 +645,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     var menuState: MenuState
     var onShare: () -> Void
     var onToggleFavorite: () -> Void
+    var onDownload: () -> Void
     var onAddToPlaylist: () -> Void
     var onOpenQueue: () -> Void
     var onEqualizer: () -> Void
@@ -653,6 +703,12 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
                 attributes: state.hasSong ? [] : .disabled
             ) { [weak self] _ in self?.owner.onToggleFavorite() }
 
+            let download = UIAction(
+                title: Self.downloadTitle(for: state.downloadStatus),
+                image: UIImage(systemName: Self.downloadSymbol(for: state.downloadStatus)),
+                attributes: state.hasSong ? [] : .disabled
+            ) { [weak self] _ in self?.owner.onDownload() }
+
             let addToPlaylist = UIAction(
                 title: "Add to Playlist",
                 image: UIImage(systemName: "text.badge.plus"),
@@ -699,9 +755,27 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
 
             return UIMenu(children: [
                 UIMenu(options: .displayInline, children: [share]),
-                UIMenu(options: .displayInline, children: [favorite, addToPlaylist, addToQueue, openQueue]),
+                UIMenu(options: .displayInline, children: [favorite, download, addToPlaylist, addToQueue, openQueue]),
                 UIMenu(options: .displayInline, children: [lyrics, hideRating, songInfo, equalizer, sleepTimer])
             ])
+        }
+
+        private static func downloadTitle(for status: DownloadStatus) -> String {
+            switch status {
+            case .pending, .downloading: return "Cancel Download"
+            case .downloaded: return "Remove Download"
+            case .failed: return "Retry Download"
+            case .none, .partial: return "Download Song"
+            }
+        }
+
+        private static func downloadSymbol(for status: DownloadStatus) -> String {
+            switch status {
+            case .pending, .downloading: return "stop.circle"
+            case .downloaded: return "arrow.down.circle.fill"
+            case .failed: return "exclamationmark.circle"
+            case .none, .partial: return "arrow.down.circle"
+            }
         }
     }
 }

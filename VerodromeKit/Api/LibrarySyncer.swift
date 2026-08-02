@@ -79,6 +79,15 @@ public enum LibrarySyncCatalogStage: Int, Sendable, CaseIterable {
     }
 }
 
+/// What a favorite or rating write applies to. Backends address these differently:
+/// Subsonic uses separate `id` / `albumId` / `artistId` parameters, Ampache an
+/// `object_type`.
+public enum LibraryEntityType: String, Sendable {
+    case song
+    case album
+    case artist
+}
+
 /// Library synchronization and mutation operations for the active backend.
 public protocol LibrarySyncer: Sendable {
     /// Full sync: catalog then all tracks (used by manual "Sync Now").
@@ -111,8 +120,8 @@ public protocol LibrarySyncer: Sendable {
     func searchAlbums(query: String) async throws -> [SearchAlbum]
     func searchSongs(query: String) async throws -> [SearchSong]
 
-    func setFavorite(playableId: String, isFavorite: Bool) async throws
-    func setRating(playableId: String, rating: Int) async throws
+    func setFavorite(entityId: String, type: LibraryEntityType, isFavorite: Bool) async throws
+    func setRating(entityId: String, type: LibraryEntityType, rating: Int) async throws
 
     func scrobble(playableId: String, timestamp: Date, duration: TimeInterval?) async throws
     func reportNowPlaying(playableId: String, position: TimeInterval) async throws
@@ -132,4 +141,14 @@ public protocol LibrarySyncer: Sendable {
 
     func listMusicFolders() async throws -> [RemoteMusicFolder]
     func listMusicDirectory(folderId: String?) async throws -> [DirectoryEntry]
+}
+
+extension LibrarySyncer {
+    public func setFavorite(playableId: String, isFavorite: Bool) async throws {
+        try await setFavorite(entityId: playableId, type: .song, isFavorite: isFavorite)
+    }
+
+    public func setRating(playableId: String, rating: Int) async throws {
+        try await setRating(entityId: playableId, type: .song, rating: rating)
+    }
 }

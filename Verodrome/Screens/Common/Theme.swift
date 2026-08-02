@@ -4,6 +4,10 @@ import VerodromeKit
 
 @MainActor
 final class ThemeManager: ObservableObject {
+    /// Set from `VerodromeApp` so UIKit cells can resolve the same accent without
+    /// threading an environment object through every table.
+    static private(set) weak var shared: ThemeManager?
+
     @Published var accentColor: Color = .accentColor
     @Published var playerTintColor: Color?
 
@@ -11,8 +15,12 @@ final class ThemeManager: ObservableObject {
     /// Player tints already sampled this launch, keyed by artwork token.
     private var playerTintCache: [String: Color] = [:]
 
+    /// UIKit counterpart of `accentColor` (falls back to the system tint).
+    var accentUIColor: UIColor { UIColor(accentColor) }
+
     init(settings: SettingsStore) {
         self.settings = settings
+        Self.shared = self
         applyTheme()
     }
 

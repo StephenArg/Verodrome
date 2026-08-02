@@ -1,16 +1,39 @@
 import SwiftUI
 
-struct DetailHeader: View {
+struct DetailHeader<Accessory: View>: View {
     let title: String
     let subtitle: String
-    var artworkURL: String? = nil
     /// Artwork the buttons take their color from. Defaults to the hero art, but
     /// screens whose background falls back to another cover (an artist with no
     /// image, say) should pass the same token they tint the background with.
-    var tintToken: String? = nil
-    var symbol: String = "music.note"
-    var onPlay: () -> Void
-    var onShuffle: () -> Void
+    let artworkURL: String?
+    let tintToken: String?
+    let symbol: String
+    let onPlay: () -> Void
+    let onShuffle: () -> Void
+    /// Optional row between the title and the action buttons — the album's rating,
+    /// download, and favorite controls. Most screens leave it empty.
+    @ViewBuilder let accessory: () -> Accessory
+
+    init(
+        title: String,
+        subtitle: String,
+        artworkURL: String? = nil,
+        tintToken: String? = nil,
+        symbol: String = "music.note",
+        onPlay: @escaping () -> Void,
+        onShuffle: @escaping () -> Void,
+        @ViewBuilder accessory: @escaping () -> Accessory
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.artworkURL = artworkURL
+        self.tintToken = tintToken
+        self.symbol = symbol
+        self.onPlay = onPlay
+        self.onShuffle = onShuffle
+        self.accessory = accessory
+    }
 
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var router: AppRouter
@@ -36,6 +59,8 @@ struct DetailHeader: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+
+            accessory()
 
             HStack(spacing: 16) {
                 Button(action: onPlay) {
@@ -84,6 +109,29 @@ struct DetailHeader: View {
 
     private var playFill: Color {
         resolvedTint.primaryButtonFill(for: colorScheme)
+    }
+}
+
+extension DetailHeader where Accessory == EmptyView {
+    init(
+        title: String,
+        subtitle: String,
+        artworkURL: String? = nil,
+        tintToken: String? = nil,
+        symbol: String = "music.note",
+        onPlay: @escaping () -> Void,
+        onShuffle: @escaping () -> Void
+    ) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            artworkURL: artworkURL,
+            tintToken: tintToken,
+            symbol: symbol,
+            onPlay: onPlay,
+            onShuffle: onShuffle,
+            accessory: { EmptyView() }
+        )
     }
 }
 

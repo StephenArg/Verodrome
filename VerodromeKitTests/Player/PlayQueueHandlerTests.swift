@@ -63,7 +63,7 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertNotEqual(handler.activeQueue.map(\.playableId), items.map(\.playableId))
     }
 
-    /// Play Next can insert a second copy of a song already in the context. Shuffle must
+    /// Queueing can insert a second copy of a song already in the context. Shuffle must
     /// keep the *playing* row, not the first id match.
     func testToggleShufflePrefersPlayingRowWhenIdsDuplicate() {
         let handler = PlayQueueHandler()
@@ -164,6 +164,89 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertFalse(handler.activeQueue[0].isUserQueued)
     }
 
+    func testEphemeralItemsQueueAfterCurrentTrackInAddedOrder() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+
+        handler.enqueueEphemeral([QueueItem(playableId: "first", title: "First")])
+        handler.enqueueEphemeral([QueueItem(playableId: "second", title: "Second")])
+
+        XCTAssertEqual(
+            handler.activeQueue.map(\.playableId),
+            ["0", "first", "second", "1", "2"],
+            "a second temporary add must land behind the first, not ahead of it"
+        )
+        XCTAssertTrue(handler.activeQueue[1].isEphemeral)
+        XCTAssertTrue(handler.activeQueue[1].isUserQueued)
+    }
+
+    func testEphemeralItemLeavesQueueOncePlayed() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "temp", title: "Temp")])
+
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "temp")
+        XCTAssertEqual(handler.activeQueue.count, 4)
+
+        _ = handler.advance()
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2"])
+        XCTAssertEqual(handler.currentItem?.playableId, "1", "the playhead must stay on the track it moved to")
+    }
+
+    func testEphemeralRemovalKeepsTheContextCopyOfTheSameSong() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "2", title: "Song 2")])
+
+        _ = handler.advance()
+        _ = handler.advance()
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2"])
+    }
+
+    func testJumpingAwayDropsTheEphemeralItemLeftBehind() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(4), startAt: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "temp", title: "Temp")])
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "temp")
+
+        handler.jump(to: 3)
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2", "3"])
+        XCTAssertEqual(handler.currentItem?.playableId, "2", "the jump target follows the removal")
+    }
+
+    func testGoingBackKeepsTheEphemeralItem() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "temp", title: "Temp")])
+        _ = handler.advance()
+
+        _ = handler.retreat()
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "temp", "1", "2"])
+        XCTAssertEqual(handler.currentItem?.playableId, "0")
+    }
+
+    func testEphemeralAtTheEndIsDroppedWhenRepeatAllWrapsAround() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(2), startAt: 0)
+        handler.setRepeat(.all)
+        _ = handler.advance()
+        // Queued from the last track, so it sits at the end: 0, 1, temp.
+        handler.enqueueEphemeral([QueueItem(playableId: "temp", title: "Temp")])
+
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "temp")
+        _ = handler.advance()
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1"])
+        XCTAssertEqual(handler.currentItem?.playableId, "0", "wrapping to the front is unaffected by the drop")
+    }
+
     func testRemoveOnlyTakesUserQueuedRows() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(5), startAt: 0)
@@ -191,7 +274,7 @@ final class PlayQueueHandlerTests: XCTestCase {
     }
 
     /// Top-ups extend the context itself. Marking them user-queued would make the rows
-    /// removable and turn every shuffled track into a "Play Next" entry.
+    /// removable and turn every shuffled track into a user-queued entry.
     func testAppendContextAddsContextRowsNotUserQueuedOnes() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(3), startAt: 0)

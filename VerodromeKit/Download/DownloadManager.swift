@@ -30,10 +30,18 @@ public actor DownloadManager: DownloadManaging {
         if isOffline { return }
         if cache.fileURL(forPlayableId: playableId, kind: kind) != nil {
             cache.touchPlayable(id: playableId, kind: kind, reason: reason)
+            // The file is already here but the library may not know it — a queue
+            // prefetch that later gets pinned, or a cache written before this ran.
+            await recordCompletion(id: playableId, kind: kind, reason: reason)
             return
         }
         if inFlight.contains(playableId) || pending.contains(where: { $0.0 == playableId }) { return }
         pending.append((playableId, kind, reason))
+        // A user download of a whole album leaves most tracks waiting behind
+        // `maxConcurrent`; without this they would show no state at all until they start.
+        if reason.isUserPinnedReason {
+            await MainActor.run { DownloadCenter.shared.enqueued(playableId: playableId) }
+        }
         await pump()
     }
 
@@ -112,9 +120,33 @@ public actor DownloadManager: DownloadManaging {
                     }
                 }
             }
+            await recordCompletion(id: id, kind: kind, reason: reason)
             await MainActor.run { DownloadCenter.shared.complete(playableId: id) }
         } catch {
             await MainActor.run { DownloadCenter.shared.fail(playableId: id) }
+        }
+    }
+
+    /// Records the landed file on the library model. `relFilePath` is what the rest of
+    /// the app reads as "downloaded", so it must only be written once bytes are on disk.
+    private func recordCompletion(id: String, kind: PlayableRef.Kind, reason: CacheReason) async {
+        guard kind == .song, let fileURL = cache.fileURL(forPlayableId: id, kind: kind) else { return }
+        let relPath = "\(kind.rawValue)/\(id)"
+        let size = Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        await MainActor.run {
+            guard let repository = VerodromeKit.shared.repository(),
+                  let account = try? VerodromeKit.shared.activeAccount(),
+                  let song = try? repository.resolveSong(remoteId: id, account: account)
+            else { return }
+            song.relFilePath = relPath
+            song.size = song.size ?? size
+            song.cacheTouchedDate = .now
+            // A prefetch must not downgrade a track the user explicitly downloaded.
+            if reason.isUserPinnedReason || song.cacheReason == .none {
+                song.cacheReason = reason
+                song.isUserPinned = reason.isUserPinnedReason || song.isUserPinned
+            }
+            try? repository.save()
         }
     }
 }

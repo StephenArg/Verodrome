@@ -6,6 +6,7 @@ struct AlbumsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
@@ -15,6 +16,13 @@ struct AlbumsView: View {
     }
 
     private var sort: LibrarySortOption { settings.librarySort.albums }
+
+    /// Cheap fingerprint so album download badges refresh without refetching the library.
+    private var downloadRevision: Int {
+        downloadCenter.workingIds.count
+            &+ downloadCenter.completedIds.count
+            &+ downloadCenter.failedIds.count
+    }
 
     var body: some View {
         Group {
@@ -27,6 +35,7 @@ struct AlbumsView: View {
                     playingId: nowPlaying.currentItem?.playableId,
                     isPartial: model.isPartial,
                     isSectioned: model.isSectioned,
+                    downloadRevision: downloadRevision,
                     onSelect: { item, _ in selectedId = item.id }
                 )
             }
@@ -80,8 +89,13 @@ struct AlbumsView: View {
                     limit: request.limit,
                     matching: predicate(for: request)
                 )
-                let snapshots = albums.map { album in
-                    LibraryRowSnapshot(
+                let snapshots = albums.map { album -> LibraryRowSnapshot in
+                    let songs = album.songs
+                    let songIds = songs.map(\.remoteId)
+                    let downloadedIds = Set(songs.compactMap { song -> String? in
+                        song.relFilePath != nil ? song.remoteId : nil
+                    })
+                    return LibraryRowSnapshot(
                         id: album.compoundRemoteId,
                         sectionKey: (album.sortTitle.isEmpty ? album.title : album.sortTitle).sectionInitial,
                         title: album.title,
@@ -92,7 +106,10 @@ struct AlbumsView: View {
                         artworkToken: album.artworkToken,
                         // Ordering by rating sorts on a value the row otherwise never
                         // shows, which reads as arbitrary without the key on screen.
-                        trailingRating: request.sort == .ratingHighest ? album.rating : nil
+                        trailingRating: request.sort == .ratingHighest ? album.rating : nil,
+                        songRemoteIds: songIds,
+                        downloadedSongIds: downloadedIds,
+                        trackTotal: max(album.trackCount, songs.count)
                     )
                 }
                 return LibraryListPage(

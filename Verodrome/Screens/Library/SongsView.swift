@@ -38,8 +38,8 @@ struct SongsView: View {
                 isPartial: model.isPartial,
                 isSectioned: model.isSectioned,
                 onSelect: play,
-                onPlayNext: { item in
-                    player.playNext([item.queueItem])
+                onAddToQueue: { item in
+                    player.addToQueueTemporarily([item.queueItem])
                 },
                 onRequestActions: { compoundId in
                     actionsSong = resolveSong(compoundRemoteId: compoundId)

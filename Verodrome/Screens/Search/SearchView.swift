@@ -5,6 +5,7 @@ import VerodromeKit
 struct SearchView: View {
     @StateObject private var history = SearchHistoryStore()
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
@@ -53,7 +54,12 @@ struct SearchView: View {
                     Section("Albums") {
                         ForEach(albumRows) { row in
                             Button { selectedAlbumId = row.id } label: {
-                                EntityRow(title: row.title, subtitle: row.subtitle, artworkURL: row.artworkToken)
+                                EntityRow(
+                                    title: row.title,
+                                    subtitle: row.subtitle,
+                                    artworkURL: row.artworkToken,
+                                    downloadStatus: albumDownloadStatus(for: row)
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -148,7 +154,19 @@ struct SearchView: View {
                         $0.title.localizedCaseInsensitiveContains(searchText)
                             || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
                     }
-                    .map { LibraryRowSnapshot(id: $0.compoundRemoteId, sectionKey: $0.title.sectionInitial, title: $0.title, subtitle: $0.displayArtist, artworkToken: $0.artworkToken) }
+                    .map { album -> LibraryRowSnapshot in
+                        let songs = album.songs
+                        return LibraryRowSnapshot(
+                            id: album.compoundRemoteId,
+                            sectionKey: album.title.sectionInitial,
+                            title: album.title,
+                            subtitle: album.displayArtist,
+                            artworkToken: album.artworkToken,
+                            songRemoteIds: songs.map(\.remoteId),
+                            downloadedSongIds: Set(songs.compactMap { $0.relFilePath != nil ? $0.remoteId : nil }),
+                            trackTotal: max(album.trackCount, songs.count)
+                        )
+                    }
 
                 let songs = try context.fetch(FetchDescriptor<Song>(sortBy: [SortDescriptor(\Song.title)]))
                     .filter {
@@ -166,6 +184,15 @@ struct SearchView: View {
         } catch {
             return ([], [], [], [])
         }
+    }
+
+    private func albumDownloadStatus(for row: LibraryRowSnapshot) -> DownloadStatus {
+        SongsDownloadSummary(
+            songRemoteIds: row.songRemoteIds,
+            downloadedIds: row.downloadedSongIds,
+            trackTotal: row.trackTotal,
+            center: downloadCenter
+        ).status
     }
 
     @MainActor

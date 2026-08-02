@@ -5,6 +5,7 @@ import VerodromeKit
 struct FavoritesView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var albumRows: [LibraryRowSnapshot] = []
     @State private var songRows: [LibraryRowSnapshot] = []
@@ -16,7 +17,12 @@ struct FavoritesView: View {
                 Section("Albums") {
                     ForEach(albumRows) { row in
                         Button { selectedAlbumId = row.id } label: {
-                            EntityRow(title: row.title, subtitle: row.subtitle, artworkURL: row.artworkToken)
+                            EntityRow(
+                                title: row.title,
+                                subtitle: row.subtitle,
+                                artworkURL: row.artworkToken,
+                                downloadStatus: albumDownloadStatus(for: row)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -63,13 +69,17 @@ struct FavoritesView: View {
                         sortBy: [SortDescriptor(\Album.title)]
                     )
                 )
-                let albumRows = albums.map { album in
-                    LibraryRowSnapshot(
+                let albumRows = albums.map { album -> LibraryRowSnapshot in
+                    let songs = album.songs
+                    return LibraryRowSnapshot(
                         id: album.compoundRemoteId,
                         sectionKey: album.title.sectionInitial,
                         title: album.title,
                         subtitle: album.displayArtist,
-                        artworkToken: album.artworkToken
+                        artworkToken: album.artworkToken,
+                        songRemoteIds: songs.map(\.remoteId),
+                        downloadedSongIds: Set(songs.compactMap { $0.relFilePath != nil ? $0.remoteId : nil }),
+                        trackTotal: max(album.trackCount, songs.count)
                     )
                 }
 
@@ -95,5 +105,14 @@ struct FavoritesView: View {
         } catch {
             return ([], [])
         }
+    }
+
+    private func albumDownloadStatus(for row: LibraryRowSnapshot) -> DownloadStatus {
+        SongsDownloadSummary(
+            songRemoteIds: row.songRemoteIds,
+            downloadedIds: row.downloadedSongIds,
+            trackTotal: row.trackTotal,
+            center: downloadCenter
+        ).status
     }
 }

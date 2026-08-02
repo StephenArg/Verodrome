@@ -17,14 +17,21 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
     /// Player identity, for rows that represent something playable. Distinct from
     /// `id`, which is the compound library id and never matches a queue item.
     var playableId: String? { get }
+    /// Song remote ids belonging to this row (albums). Empty for artists/genres/…
+    /// Used to overlay live download state from `DownloadCenter` without refetching.
+    var songRemoteIds: [String] { get }
+    /// Tracks already on disk when the snapshot was built.
+    var downloadedSongIds: Set<String> { get }
+    /// Server track count when known — denominator for partial vs full downloads.
+    var trackTotal: Int { get }
 }
 
 extension LibraryRow {
     var trailingRating: Int? { nil }
-}
-
-extension LibraryRow {
     var playableId: String? { nil }
+    var songRemoteIds: [String] { [] }
+    var downloadedSongIds: Set<String> { [] }
+    var trackTotal: Int { 0 }
 }
 
 struct LibraryRowSection<Item: LibraryRow>: Identifiable, Sendable, Hashable {
@@ -49,6 +56,9 @@ struct LibraryRowSnapshot: LibraryRow {
     let trailingText: String?
     let trailingRating: Int?
     let playableId: String?
+    let songRemoteIds: [String]
+    let downloadedSongIds: Set<String>
+    let trackTotal: Int
 
     init(
         id: String,
@@ -59,7 +69,10 @@ struct LibraryRowSnapshot: LibraryRow {
         symbol: String = "music.note",
         trailingText: String? = nil,
         trailingRating: Int? = nil,
-        playableId: String? = nil
+        playableId: String? = nil,
+        songRemoteIds: [String] = [],
+        downloadedSongIds: Set<String> = [],
+        trackTotal: Int = 0
     ) {
         self.id = id
         self.sectionKey = sectionKey
@@ -70,6 +83,9 @@ struct LibraryRowSnapshot: LibraryRow {
         self.trailingText = trailingText
         self.trailingRating = trailingRating
         self.playableId = playableId
+        self.songRemoteIds = songRemoteIds
+        self.downloadedSongIds = downloadedSongIds
+        self.trackTotal = trackTotal
     }
 }
 
@@ -84,8 +100,10 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     /// False when the rows are ordered by something other than title, which makes
     /// letter headers and the A–Z scrubber meaningless.
     var isSectioned: Bool = true
+    /// Bumps when `DownloadCenter` changes so album download badges reconfigure live.
+    var downloadRevision: Int = 0
     var onSelect: (Item, [Item]) -> Void
-    var onPlayNext: ((Item) -> Void)?
+    var onAddToQueue: ((Item) -> Void)?
     var onRequestActions: ((String) -> Void)?
 
     init(
@@ -93,31 +111,34 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         playingId: String? = nil,
         isPartial: Bool = false,
         isSectioned: Bool = true,
+        downloadRevision: Int = 0,
         onSelect: @escaping (Item, [Item]) -> Void,
-        onPlayNext: ((Item) -> Void)? = nil,
+        onAddToQueue: ((Item) -> Void)? = nil,
         onRequestActions: ((String) -> Void)? = nil
     ) {
         self.sections = sections
         self.playingId = playingId
         self.isPartial = isPartial
         self.isSectioned = isSectioned
+        self.downloadRevision = downloadRevision
         self.onSelect = onSelect
-        self.onPlayNext = onPlayNext
+        self.onAddToQueue = onAddToQueue
         self.onRequestActions = onRequestActions
     }
 
     func makeUIViewController(context: Context) -> IndexedEntityTableController<Item> {
         let controller = IndexedEntityTableController<Item>()
         controller.onSelect = onSelect
-        controller.onPlayNext = onPlayNext
+        controller.onAddToQueue = onAddToQueue
         controller.onRequestActions = onRequestActions
         return controller
     }
 
     func updateUIViewController(_ controller: IndexedEntityTableController<Item>, context: Context) {
         controller.onSelect = onSelect
-        controller.onPlayNext = onPlayNext
+        controller.onAddToQueue = onAddToQueue
         controller.onRequestActions = onRequestActions
+        controller.downloadRevision = downloadRevision
         controller.apply(
             sections: sections,
             playingId: playingId,
@@ -130,8 +151,9 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
 @MainActor
 final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UITableViewDataSource, UITableViewDelegate, UITableViewDataSourcePrefetching {
     var onSelect: ((Item, [Item]) -> Void)?
-    var onPlayNext: ((Item) -> Void)?
+    var onAddToQueue: ((Item) -> Void)?
     var onRequestActions: ((String) -> Void)?
+    var downloadRevision = 0
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var sections: [LibraryRowSection<Item>] = []
@@ -140,6 +162,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private var isSectioned = true
     private var flatItems: [Item] = []
     private var appliedFingerprint = ""
+    private var appliedDownloadRevision = 0
     private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
 
     override func viewDidLoad() {
@@ -179,6 +202,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
 
         if fingerprint != appliedFingerprint {
             appliedFingerprint = fingerprint
+            appliedDownloadRevision = downloadRevision
             self.sections = sections
             flatItems = sections.flatMap(\.items)
             // Padding is reserved per section even where the header itself is empty, so
@@ -200,6 +224,24 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
                 cell.setPlaying(isPlaying(item))
             }
         }
+        if appliedDownloadRevision != downloadRevision {
+            appliedDownloadRevision = downloadRevision
+            for case let cell as EntityTableCell in tableView.visibleCells {
+                guard let indexPath = tableView.indexPath(for: cell),
+                      let item = item(at: indexPath) else { continue }
+                cell.setDownloadStatus(Self.downloadStatus(for: item))
+            }
+        }
+    }
+
+    private static func downloadStatus(for item: Item) -> DownloadStatus {
+        guard !item.songRemoteIds.isEmpty || item.trackTotal > 0 else { return .none }
+        return SongsDownloadSummary(
+            songRemoteIds: item.songRemoteIds,
+            downloadedIds: item.downloadedSongIds,
+            trackTotal: item.trackTotal,
+            center: DownloadCenter.shared
+        ).status
     }
 
     private func isPlaying(_ item: Item) -> Bool {
@@ -260,7 +302,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             trailingRating: item.trailingRating,
             artworkToken: item.artworkToken,
             symbol: item.symbol,
-            isPlaying: isPlaying(item)
+            isPlaying: isPlaying(item),
+            downloadStatus: Self.downloadStatus(for: item)
         )
         return cell
     }
@@ -311,15 +354,15 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         contextMenuConfigurationForRowAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard onPlayNext != nil || onRequestActions != nil,
+        guard onAddToQueue != nil || onRequestActions != nil,
               let item = item(at: indexPath) else { return nil }
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             var actions: [UIAction] = []
-            if let onPlayNext = self?.onPlayNext {
+            if let onAddToQueue = self?.onAddToQueue {
                 actions.append(UIAction(
-                    title: "Play Next",
-                    image: UIImage(systemName: "text.line.first.and.arrowtriangle.forward")
-                ) { _ in onPlayNext(item) })
+                    title: "Add to Queue",
+                    image: UIImage(systemName: "text.append")
+                ) { _ in onAddToQueue(item) })
             }
             if let onRequestActions = self?.onRequestActions {
                 actions.append(UIAction(title: "Actions…", image: UIImage(systemName: "ellipsis.circle")) { _ in
@@ -362,8 +405,11 @@ final class EntityTableCell: UITableViewCell {
     private let subtitleLabel = UILabel()
     private let trailingLabel = UILabel()
     private let playingView = UIImageView(image: UIImage(systemName: "waveform"))
+    private let downloadView = UIImageView()
+    private let downloadSpinner = UIActivityIndicatorView(style: .medium)
     private var artworkToken: String?
     private var artworkTask: Task<Void, Never>?
+    private var downloadWidthConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -389,12 +435,41 @@ final class EntityTableCell: UITableViewCell {
         playingView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         playingView.accessibilityLabel = "Now playing"
 
+        downloadView.contentMode = .scaleAspectFit
+        downloadView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        downloadView.isHidden = true
+        downloadSpinner.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
+        downloadSpinner.hidesWhenStopped = true
+
+        let downloadContainer = UIView()
+        downloadContainer.addSubview(downloadView)
+        downloadContainer.addSubview(downloadSpinner)
+        downloadView.translatesAutoresizingMaskIntoConstraints = false
+        downloadSpinner.translatesAutoresizingMaskIntoConstraints = false
+        let downloadWidth = downloadContainer.widthAnchor.constraint(equalToConstant: 0)
+        downloadWidthConstraint = downloadWidth
+        NSLayoutConstraint.activate([
+            downloadWidth,
+            downloadContainer.heightAnchor.constraint(equalToConstant: 14),
+            downloadView.centerXAnchor.constraint(equalTo: downloadContainer.centerXAnchor),
+            downloadView.centerYAnchor.constraint(equalTo: downloadContainer.centerYAnchor),
+            downloadView.widthAnchor.constraint(equalToConstant: 14),
+            downloadView.heightAnchor.constraint(equalToConstant: 14),
+            downloadSpinner.centerXAnchor.constraint(equalTo: downloadContainer.centerXAnchor),
+            downloadSpinner.centerYAnchor.constraint(equalTo: downloadContainer.centerYAnchor)
+        ])
+
         let titleRow = UIStackView(arrangedSubviews: [playingView, titleLabel])
         titleRow.axis = .horizontal
         titleRow.spacing = 5
         titleRow.alignment = .center
 
-        let textStack = UIStackView(arrangedSubviews: [titleRow, subtitleLabel])
+        let subtitleRow = UIStackView(arrangedSubviews: [downloadContainer, subtitleLabel])
+        subtitleRow.axis = .horizontal
+        subtitleRow.spacing = 5
+        subtitleRow.alignment = .center
+
+        let textStack = UIStackView(arrangedSubviews: [titleRow, subtitleRow])
         textStack.axis = .vertical
         textStack.spacing = 2
         textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -427,14 +502,15 @@ final class EntityTableCell: UITableViewCell {
 
     required init?(coder: NSCoder) { nil }
 
-    /// Filled stars take the tint so the rating reads at a glance; the empty ones stay
-    /// quiet enough not to compete with the title.
+    /// Filled stars use the theme accent so they stay consistent even when a parent
+    /// screen rebinds the navigation tint to artwork colors.
     private func ratingStars(_ rating: Int) -> NSAttributedString {
         let filled = max(0, min(5, rating))
         let font = trailingLabel.font ?? .preferredFont(forTextStyle: .subheadline)
+        let accent = ThemeManager.shared?.accentUIColor ?? .tintColor
         let stars = NSMutableAttributedString(
             string: String(repeating: "★", count: filled),
-            attributes: [.font: font, .foregroundColor: UIColor.tintColor]
+            attributes: [.font: font, .foregroundColor: accent]
         )
         stars.append(NSAttributedString(
             string: String(repeating: "☆", count: 5 - filled),
@@ -449,6 +525,7 @@ final class EntityTableCell: UITableViewCell {
         artworkToken = nil
         artworkView.image = nil
         setPlaying(false)
+        setDownloadStatus(.none)
         trailingLabel.attributedText = nil
         trailingLabel.isHidden = false
     }
@@ -460,7 +537,8 @@ final class EntityTableCell: UITableViewCell {
         trailingRating: Int?,
         artworkToken: String?,
         symbol: String,
-        isPlaying: Bool
+        isPlaying: Bool,
+        downloadStatus: DownloadStatus = .none
     ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
@@ -475,6 +553,7 @@ final class EntityTableCell: UITableViewCell {
             trailingLabel.isHidden = trailingText == nil
         }
         setPlaying(isPlaying)
+        setDownloadStatus(downloadStatus)
         self.artworkToken = artworkToken
         if let token = artworkToken,
            let cached = ArtworkImageCache.shared.image(for: token, size: ArtworkPixelSize.thumbnail) {
@@ -488,6 +567,42 @@ final class EntityTableCell: UITableViewCell {
         } else {
             artworkView.image = nil
             artworkView.backgroundColor = .secondarySystemFill
+        }
+    }
+
+    func setDownloadStatus(_ status: DownloadStatus) {
+        switch status {
+        case .none:
+            downloadSpinner.stopAnimating()
+            downloadView.isHidden = true
+            downloadView.image = nil
+            downloadWidthConstraint?.constant = 0
+        case .pending, .downloading:
+            downloadView.isHidden = true
+            downloadView.image = nil
+            downloadWidthConstraint?.constant = 14
+            downloadSpinner.startAnimating()
+        case .partial:
+            downloadSpinner.stopAnimating()
+            downloadWidthConstraint?.constant = 14
+            downloadView.isHidden = false
+            downloadView.tintColor = .tintColor
+            downloadView.image = UIImage(systemName: "arrow.down.circle")
+            downloadView.accessibilityLabel = "Partially downloaded"
+        case .downloaded:
+            downloadSpinner.stopAnimating()
+            downloadWidthConstraint?.constant = 14
+            downloadView.isHidden = false
+            downloadView.tintColor = .tintColor
+            downloadView.image = UIImage(systemName: "arrow.down.circle.fill")
+            downloadView.accessibilityLabel = "Downloaded"
+        case .failed:
+            downloadSpinner.stopAnimating()
+            downloadWidthConstraint?.constant = 14
+            downloadView.isHidden = false
+            downloadView.tintColor = .systemOrange
+            downloadView.image = UIImage(systemName: "exclamationmark.circle")
+            downloadView.accessibilityLabel = "Download failed"
         }
     }
 

@@ -7,6 +7,7 @@ struct ArtistDetailView: View {
     @Query private var artists: [Artist]
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var artistAlbums: [Album] = []
     @State private var artistSongs: [Song] = []
 
@@ -38,7 +39,12 @@ struct ArtistDetailView: View {
                         NavigationLink {
                             AlbumDetailView(albumID: album.compoundRemoteId)
                         } label: {
-                            EntityRow(title: album.title, subtitle: "\(album.year ?? 0)", artworkURL: album.artworkToken)
+                            EntityRow(
+                                title: album.title,
+                                subtitle: "\(album.year ?? 0)",
+                                artworkURL: album.artworkToken,
+                                downloadStatus: SongsDownloadSummary(album: album, center: downloadCenter).status
+                            )
                         }
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -54,7 +60,11 @@ struct ArtistDetailView: View {
                                     subtitle: song.displayAlbum,
                                     artworkURL: song.artworkToken,
                                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
-                                    trailing: formatDuration(song.displayDuration)
+                                    trailing: formatDuration(song.displayDuration),
+                                    downloadStatus: downloadCenter.status(
+                                        for: song.remoteId,
+                                        isDownloaded: song.isDownloadedLocally
+                                    )
                                 )
                             }
                             .buttonStyle(.plain)

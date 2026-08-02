@@ -7,7 +7,38 @@ struct SongActionsModifier: ViewModifier {
     let song: Song
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var showPlaylistSelector = false
+
+    private var downloadStatus: DownloadStatus {
+        downloadCenter.status(for: song.remoteId, isDownloaded: song.isDownloadedLocally)
+    }
+
+    private var isDownloadWorking: Bool {
+        switch downloadStatus {
+        case .pending, .downloading: return true
+        default: return false
+        }
+    }
+
+    private var downloadActionTitle: String {
+        switch downloadStatus {
+        case .pending, .downloading: return "Cancel Download"
+        case .downloaded: return "Remove Download"
+        case .failed: return "Retry Download"
+        case .none, .partial: return "Download"
+        }
+    }
+
+    private var downloadActionSymbol: String {
+        switch downloadStatus {
+        case .pending, .downloading: return "stop.circle"
+        case .downloaded: return "arrow.down.circle.fill"
+        case .failed: return "exclamationmark.circle"
+        case .none, .partial: return "arrow.down.circle"
+        }
+    }
 
     func body(content: Content) -> some View {
         content
@@ -28,9 +59,9 @@ struct SongActionsModifier: ViewModifier {
     @ViewBuilder
     private var menuButtons: some View {
         Button {
-            player.playNext([QueueItem.from(song)])
+            player.addToQueueTemporarily([QueueItem.from(song)])
         } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            Label("Add to Queue", systemImage: "text.append")
         }
 
         Button {
@@ -67,10 +98,7 @@ struct SongActionsModifier: ViewModifier {
         Button {
             Task { await LibraryActions.shared.downloadOrCancel(song: song) }
         } label: {
-            Label(
-                song.isDownloadedLocally ? "Remove Download" : "Download",
-                systemImage: song.isDownloadedLocally ? "arrow.down.circle.fill" : "arrow.down.circle"
-            )
+            Label(downloadActionTitle, systemImage: downloadActionSymbol)
         }
 
         Button {
@@ -85,9 +113,9 @@ struct SongActionsModifier: ViewModifier {
         switch action {
         case "queue":
             Button {
-                player.playNext([QueueItem.from(song)])
+                player.addToQueueTemporarily([QueueItem.from(song)])
             } label: {
-                Label("Queue", systemImage: "text.line.first.and.arrowtriangle.forward")
+                Label("Queue", systemImage: "text.append")
             }
             .tint(.indigo)
         case "download":
@@ -95,7 +123,7 @@ struct SongActionsModifier: ViewModifier {
                 Task { await LibraryActions.shared.downloadOrCancel(song: song) }
             } label: {
                 Label(
-                    song.isDownloadedLocally ? "Remove" : "Download",
+                    downloadStatus == .none ? "Download" : (isDownloadWorking ? "Cancel" : "Remove"),
                     systemImage: "arrow.down.circle"
                 )
             }
@@ -106,7 +134,7 @@ struct SongActionsModifier: ViewModifier {
             } label: {
                 Label("Favorite", systemImage: "heart")
             }
-            .tint(.pink)
+            .tint(themeManager.accentColor)
         default:
             EmptyView()
         }

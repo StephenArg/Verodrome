@@ -38,6 +38,29 @@ public final class LibraryActions {
         try repository?.save()
     }
 
+    public func setFavorite(album: Album, isFavorite: Bool) async throws {
+        if let syncer {
+            try await syncer.setFavorite(entityId: album.remoteId, type: .album, isFavorite: isFavorite)
+        }
+        album.isFavorite = isFavorite
+        album.updatedAt = .now
+        try repository?.save()
+    }
+
+    public func toggleFavorite(album: Album) async throws {
+        try await setFavorite(album: album, isFavorite: !album.isFavorite)
+    }
+
+    public func setRating(album: Album, rating: Int) async throws {
+        let clamped = max(0, min(5, rating))
+        if let syncer {
+            try await syncer.setRating(entityId: album.remoteId, type: .album, rating: clamped)
+        }
+        album.rating = clamped
+        album.updatedAt = .now
+        try repository?.save()
+    }
+
     /// Counts a play locally as soon as it scrobbles.
     ///
     /// Servers report `playCount` back on the next library sync, which can be hours
@@ -56,36 +79,93 @@ public final class LibraryActions {
 
     // MARK: - Download
 
+    /// Marks the song as wanted offline and queues the transfer. `relFilePath` — and
+    /// therefore `isDownloadedLocally` — is only written once the bytes land.
     public func download(song: Song) async {
-        await downloader?.enqueue(playableId: song.remoteId, kind: .song, reason: .userDownload)
         song.cacheReason = .userDownload
+        song.isUserPinned = true
         song.cacheTouchedDate = .now
         try? repository?.save()
+        await downloader?.enqueue(playableId: song.remoteId, kind: .song, reason: .userDownload)
     }
 
     public func cancelDownload(song: Song) async {
         await downloader?.cancel(playableId: song.remoteId)
+        song.cacheReason = .none
+        song.isUserPinned = false
+        try? repository?.save()
     }
 
+    /// Cancels any transfer, deletes the cached file, and clears the library's record.
+    public func removeDownload(song: Song) async {
+        await downloader?.cancel(playableId: song.remoteId)
+        try? kit.playableCache?.deletePlayable(id: song.remoteId, kind: .song)
+        song.cacheReason = .none
+        song.isUserPinned = false
+        song.relFilePath = nil
+        song.cacheTouchedDate = nil
+        try? repository?.save()
+    }
+
+    /// Toggle used by row menus and swipe actions: cancel while working, retry after a
+    /// failure, remove once downloaded, otherwise start.
     public func downloadOrCancel(song: Song) async {
-        if song.isDownloadedLocally || song.cacheReason != .none {
+        if DownloadCenter.shared.isWorking(on: song.remoteId) {
             await cancelDownload(song: song)
-            song.cacheReason = .none
-            song.relFilePath = nil
-            try? repository?.save()
+        } else if DownloadCenter.shared.failedIds.contains(song.remoteId) {
+            await download(song: song)
+        } else if song.isDownloadedLocally || song.isDownloadRequested {
+            await removeDownload(song: song)
         } else {
             await download(song: song)
         }
     }
 
-    // MARK: - Queue helpers
+    // MARK: - Bulk download
 
-    public func playNext(song: Song) {
-        kit.player?.enqueueNext([QueueItem.from(song)])
+    /// Downloads every song that isn't already on disk. Songs already downloaded are
+    /// re-pinned rather than re-fetched, so a partial album finishes cleanly.
+    public func downloadRemaining(songs: [Song]) async {
+        for song in songs where !song.isDownloadedLocally {
+            await download(song: song)
+        }
     }
 
-    public func playNext(episode: PodcastEpisode) {
-        kit.player?.enqueueNext([QueueItem.from(episode)])
+    public func removeDownloads(songs: [Song]) async {
+        for song in songs where song.isDownloadedLocally || song.isDownloadRequested {
+            await removeDownload(song: song)
+        }
+    }
+
+    public func cancelDownloads(songs: [Song]) async {
+        for song in songs where DownloadCenter.shared.isWorking(on: song.remoteId) {
+            await cancelDownload(song: song)
+        }
+    }
+
+    /// Clears the library's record of a local file after the cache dropped it, so
+    /// `isDownloadedLocally` can never outlive the bytes it describes.
+    public func forgetLocalFile(playableId: String) {
+        guard let repository,
+              let account = try? kit.activeAccount(),
+              let song = try? repository.resolveSong(remoteId: playableId, account: account),
+              song.relFilePath != nil
+        else { return }
+        song.relFilePath = nil
+        song.cacheTouchedDate = nil
+        if !song.isUserPinned { song.cacheReason = .none }
+        try? repository.save()
+    }
+
+    // MARK: - Queue helpers
+
+    /// Queues for a single listen: the row leaves the queue once playback moves past it.
+    public func addToQueue(song: Song) {
+        kit.player?.enqueueEphemeral([QueueItem.from(song)])
+    }
+
+    public func addToQueue(episode: PodcastEpisode) {
+        kit.player?.enqueueEphemeral([QueueItem.from(episode)])
     }
 
     // MARK: - Playlists
@@ -147,7 +227,13 @@ public final class LibraryActions {
 
 // Local helpers for Song download state when used from Kit.
 extension Song {
-    public var isDownloadedLocally: Bool { cacheReasonRaw != CacheReason.none.rawValue || relFilePath != nil }
+    /// The file is on disk. Written by `DownloadManager` only after the transfer
+    /// completes, so this never reports a download that hasn't happened yet.
+    public var isDownloadedLocally: Bool { relFilePath != nil }
+
+    /// The user (or an auto-cache rule) asked for this song offline. True from the
+    /// moment the download is queued, which is what a cancel/remove action keys off.
+    public var isDownloadRequested: Bool { cacheReasonRaw != CacheReason.none.rawValue }
 }
 
 extension QueueItem {

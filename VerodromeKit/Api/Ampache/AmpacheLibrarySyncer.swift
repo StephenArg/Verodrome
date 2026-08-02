@@ -211,12 +211,12 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         return try AmpacheParsers.parseSearchSongs(data: data)
     }
 
-    public func setFavorite(playableId: String, isFavorite: Bool) async throws {
-        try await server.setFlag(objectId: playableId, objectType: "song", flagged: isFavorite)
+    public func setFavorite(entityId: String, type: LibraryEntityType, isFavorite: Bool) async throws {
+        try await server.setFlag(objectId: entityId, objectType: type.rawValue, flagged: isFavorite)
     }
 
-    public func setRating(playableId: String, rating: Int) async throws {
-        try await server.setRating(objectId: playableId, rating: rating)
+    public func setRating(entityId: String, type: LibraryEntityType, rating: Int) async throws {
+        try await server.setRating(objectId: entityId, objectType: type.rawValue, rating: rating)
     }
 
     public func scrobble(playableId: String, timestamp: Date, duration: TimeInterval?) async throws {

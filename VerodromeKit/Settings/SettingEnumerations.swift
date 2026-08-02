@@ -59,7 +59,7 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     /// Soft cap so tab labels stay readable on phone.
     public static let maxVisible = 5
 
-    public static let defaultVisible: [RootTabItem] = [.search, .home, .library]
+    public static let defaultVisible: [RootTabItem] = [.search, .home, .library, .downloads]
 
     public var title: String {
         switch self {

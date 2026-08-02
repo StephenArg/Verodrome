@@ -26,14 +26,25 @@ struct QueueView: View {
                 Button {
                     player.jump(to: offset)
                 } label: {
-                    EntityRow(
-                        title: item.title,
-                        subtitle: item.artist ?? "",
-                        artworkURL: item.artworkId,
-                        symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
-                        isPlaying: player.currentItem?.entryId == item.entryId
-                            || (player.currentItem == nil && player.currentIndex == offset)
-                    )
+                    HStack(spacing: 8) {
+                        EntityRow(
+                            title: item.title,
+                            subtitle: item.artist ?? "",
+                            artworkURL: item.artworkId,
+                            symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
+                            isPlaying: player.currentItem?.entryId == item.entryId
+                                || (player.currentItem == nil && player.currentIndex == offset)
+                        )
+
+                        // Temporary rows disappear once played; without a marker that
+                        // reads as the queue losing tracks on its own.
+                        if item.isEphemeral {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Plays once")
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
                 // Reorder grip is always shown while shuffled (edit mode stays active).

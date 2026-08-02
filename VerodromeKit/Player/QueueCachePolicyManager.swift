@@ -101,7 +101,7 @@ public final class QueueCachePolicyManager {
             let outsideWindow = !keepIds.contains(itemId)
             let obsoleteGeneration = entry.generation != 0 && entry.generation < generation
             if outsideWindow || obsoleteGeneration {
-                try? cache.deletePlayable(id: entry.id, kind: entry.kind)
+                evict(id: entry.id, kind: entry.kind)
             }
         }
         pruneStale(staleHours: user.queuePrefetchStaleHours)
@@ -113,7 +113,7 @@ public final class QueueCachePolicyManager {
         for entry in cache.cachedPlayableIds(reason: .queuePrefetch) {
             if cache.isUserPinned(id: entry.id, kind: entry.kind) { continue }
             if entry.touched < cutoff {
-                try? cache.deletePlayable(id: entry.id, kind: entry.kind)
+                evict(id: entry.id, kind: entry.kind)
             }
         }
     }
@@ -122,8 +122,17 @@ public final class QueueCachePolicyManager {
         for item in items {
             if cache.isUserPinned(id: item.playableId, kind: item.kind) { continue }
             if cache.cacheReason(forPlayableId: item.playableId, kind: item.kind) == .queuePrefetch {
-                try? cache.deletePlayable(id: item.playableId, kind: item.kind)
+                evict(id: item.playableId, kind: item.kind)
             }
+        }
+    }
+
+    /// Deletes the file and the library's record of it together — a `relFilePath` left
+    /// behind would show the track as downloaded with nothing on disk.
+    private func evict(id: String, kind: PlayableRef.Kind) {
+        try? cache.deletePlayable(id: id, kind: kind)
+        if kind == .song {
+            LibraryActions.shared.forgetLocalFile(playableId: id)
         }
     }
 }

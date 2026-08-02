@@ -10,6 +10,7 @@ struct RatingStarsView: View {
     var spacing: CGFloat = 4
     var onRate: (Int) -> Void
 
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var dragRating: Int?
     @State private var dragOriginRating: Int?
     /// True once the finger moves onto a star different from the press origin.
@@ -20,6 +21,10 @@ struct RatingStarsView: View {
         dragRating ?? rating
     }
 
+    /// Theme accent — not `Color.accentColor`, which follows a parent `.tint` and
+    /// would pick up the artwork fill on album/playlist detail screens.
+    private var filledColor: Color { themeManager.accentColor }
+
     var body: some View {
         HStack(spacing: spacing) {
             ForEach(1...5, id: \.self) { star in
@@ -27,9 +32,9 @@ struct RatingStarsView: View {
                 let isHot = dragRating == star
                 Image(systemName: filled ? "star.fill" : "star")
                     .font(.system(size: starSize))
-                    .foregroundStyle(filled ? Color.yellow : Color.secondary)
+                    .foregroundStyle(filled ? filledColor : Color.secondary)
                     .scaleEffect(isHot ? 1.22 : 1.0)
-                    .shadow(color: isHot ? Color.yellow.opacity(0.45) : .clear, radius: isHot ? 4 : 0)
+                    .shadow(color: isHot ? filledColor.opacity(0.45) : .clear, radius: isHot ? 4 : 0)
                     .animation(.spring(response: 0.28, dampingFraction: 0.55), value: displayedRating)
                     .animation(.spring(response: 0.28, dampingFraction: 0.55), value: isHot)
             }

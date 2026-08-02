@@ -178,11 +178,11 @@ public final class AmpacheServerApi: @unchecked Sendable {
         )
     }
 
-    public func setRating(objectId: String, rating: Int) async throws {
+    public func setRating(objectId: String, objectType: String = "song", rating: Int) async throws {
         _ = try await request(
             action: "set_rating",
             parameters: [
-                "object_type": "song",
+                "object_type": objectType,
                 "object_id": objectId,
                 "rating": String(rating)
             ]

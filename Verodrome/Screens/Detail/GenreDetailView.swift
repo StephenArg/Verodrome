@@ -8,6 +8,7 @@ struct GenreDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var genreAlbums: [Album] = []
     @State private var genreSongs: [Song] = []
 
@@ -38,7 +39,12 @@ struct GenreDetailView: View {
                             NavigationLink {
                                 AlbumDetailView(albumID: album.compoundRemoteId)
                             } label: {
-                                EntityRow(title: album.title, subtitle: album.displayArtist, artworkURL: album.artworkToken)
+                                EntityRow(
+                                    title: album.title,
+                                    subtitle: album.displayArtist,
+                                    artworkURL: album.artworkToken,
+                                    downloadStatus: SongsDownloadSummary(album: album, center: downloadCenter).status
+                                )
                             }
                         }
                     }

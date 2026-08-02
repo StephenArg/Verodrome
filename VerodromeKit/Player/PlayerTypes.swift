@@ -38,10 +38,14 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
     public var artworkId: String?
     /// When set, playback uses this URL directly (e.g. internet radio) instead of StreamURLProviding.
     public var directStreamURL: URL?
-    /// True for items the user explicitly put in the queue ("Play Next" / "Add to Queue")
-    /// rather than tracks that came in with the album, playlist, or other context. Only
-    /// these may be removed from the queue.
+    /// True for items the user explicitly put in the queue ("Add to Queue") rather than
+    /// tracks that came in with the album, playlist, or other context. Only these may be
+    /// removed from the queue.
     public var isUserQueued: Bool = false
+    /// A temporary listen: the row leaves the queue as soon as playback moves past it,
+    /// and its prefetched file is dropped with it. Set by "Add to Queue", which is meant
+    /// to slot tracks in without permanently joining the queue.
+    public var isEphemeral: Bool = false
 
     public var isLiveStream: Bool { kind == .radio || directStreamURL != nil }
 
@@ -55,6 +59,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
         artworkId: String? = nil,
         directStreamURL: URL? = nil,
         isUserQueued: Bool = false,
+        isEphemeral: Bool = false,
         entryId: UUID = UUID()
     ) {
         self.entryId = entryId
@@ -67,6 +72,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
         self.artworkId = artworkId
         self.directStreamURL = directStreamURL
         self.isUserQueued = isUserQueued
+        self.isEphemeral = isEphemeral
     }
 
     public init(from ref: PlayableRef) {

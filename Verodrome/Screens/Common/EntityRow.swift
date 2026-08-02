@@ -25,6 +25,11 @@ struct EntityRow: View {
     var trackNumber: Int? = nil
     /// When true (default), uses lightweight 80px artwork suitable for scrolling lists.
     var compactArtwork: Bool = true
+    /// Per-track download state, drawn to the left of the subtitle (artist / album).
+    /// `.none` (and nil) leave the subtitle flush with the leading edge.
+    var downloadStatus: DownloadStatus? = nil
+
+    @EnvironmentObject private var themeManager: ThemeManager
 
     var body: some View {
         HStack(spacing: 12) {
@@ -39,10 +44,22 @@ struct EntityRow: View {
                         .font(.body)
                         .lineLimit(1)
                 }
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if let downloadStatus, downloadStatus != .none {
+                        // Theme accent, not environment tint — album/playlist screens rebind
+                        // `.tint` to the artwork fill for the back chevron.
+                        DownloadStatusIcon(
+                            status: downloadStatus,
+                            size: 12,
+                            tint: themeManager.accentColor
+                        )
+                        .accessibilityLabel(downloadAccessibilityLabel(for: downloadStatus))
+                    }
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 8)
@@ -54,6 +71,17 @@ struct EntityRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    private func downloadAccessibilityLabel(for status: DownloadStatus) -> String {
+        switch status {
+        case .pending: return "Waiting to download"
+        case .downloading: return "Downloading"
+        case .partial: return "Partially downloaded"
+        case .downloaded: return "Downloaded"
+        case .failed: return "Download failed"
+        case .none: return ""
+        }
     }
 
     @ViewBuilder
