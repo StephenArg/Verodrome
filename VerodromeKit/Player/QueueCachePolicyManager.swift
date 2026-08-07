@@ -43,7 +43,12 @@ public final class QueueCachePolicyManager {
                 Task { @MainActor in self?.scheduleReevaluate() }
             },
             center.addObserver(forName: .verodromeForegroundRefresh, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.scheduleReevaluate(); self?.pruneStale() }
+                Task { @MainActor in
+                    self?.scheduleReevaluate()
+                    self?.pruneStale()
+                    self?.pruneOrphans()
+                    self?.enforceCacheLimit()
+                }
             },
             center.addObserver(forName: .verodromeQueueCacheReevaluate, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.scheduleReevaluate(delayNanoseconds: 0) }
@@ -77,7 +82,13 @@ public final class QueueCachePolicyManager {
 
     public func reevaluate() {
         let user = settings()
-        guard user.smartQueuePrefetchEnabled else { return }
+        guard user.smartQueuePrefetchEnabled else {
+            // Turning the setting off must not strand what it already fetched — with an
+            // early return here, nothing would ever prune those files again.
+            drainPrefetchCache()
+            enforceCacheLimit(limitBytes: user.cacheLimitBytes)
+            return
+        }
         let keepItems = queue.windowItems(previous: Self.previousKeepCount, next: Self.nextKeepCount)
         let keepIds = Set(keepItems.map(\.id))
         let generation = queue.queueGeneration
@@ -123,6 +134,32 @@ public final class QueueCachePolicyManager {
             }
         }
         pruneStale(staleHours: user.queuePrefetchStaleHours)
+        enforceCacheLimit(limitBytes: user.cacheLimitBytes)
+    }
+
+    /// Deletes cached files the cache has no record of. Both prune loops above iterate the
+    /// cache's own metadata, so a file missing from it would otherwise stay on disk for
+    /// good. A song the library still lists as downloaded is re-adopted instead of deleted,
+    /// so a lost metadata entry can't silently drop a download the user asked for.
+    public func pruneOrphans(minimumAge: TimeInterval = 300) {
+        for orphan in cache.orphanedFiles(olderThan: minimumAge) {
+            if orphan.kind == .song,
+               let reason = LibraryActions.shared.recordedCacheReason(playableId: orphan.id),
+               reason.isUserPinnedReason {
+                cache.touchPlayable(id: orphan.id, kind: orphan.kind, reason: reason)
+            } else {
+                evict(id: orphan.id, kind: orphan.kind)
+            }
+        }
+    }
+
+    /// Deletes every prefetched file. Used when the feature is switched off, so the cache
+    /// it built doesn't outlive it. User downloads are untouched — they are pinned.
+    public func drainPrefetchCache() {
+        for entry in cache.cachedPlayableIds(reason: .queuePrefetch) {
+            if cache.isUserPinned(id: entry.id, kind: entry.kind) { continue }
+            evict(id: entry.id, kind: entry.kind)
+        }
     }
 
     public func pruneStale(staleHours: Int? = nil) {
@@ -136,6 +173,26 @@ public final class QueueCachePolicyManager {
         }
     }
 
+    /// Drops the oldest unpinned (prefetch) files until total cache size is at or under
+    /// `limitBytes`. User downloads are never removed for a size cap. `0` is unlimited.
+    public func enforceCacheLimit(limitBytes: Int64? = nil) {
+        let limit = limitBytes ?? settings().cacheLimitBytes
+        guard limit > 0 else { return }
+        var total = cache.totalPlayableCacheSize()
+        guard total > limit else { return }
+
+        let candidates = cache.cachedPlayableIds(reason: .queuePrefetch)
+            .filter { !cache.isUserPinned(id: $0.id, kind: $0.kind) }
+            .sorted { $0.touched < $1.touched }
+
+        for entry in candidates {
+            guard total > limit else { break }
+            let size = cache.playableByteSize(id: entry.id, kind: entry.kind)
+            evict(id: entry.id, kind: entry.kind)
+            total -= size
+        }
+    }
+
     public func handleRemovedItems(_ items: [QueueItem]) {
         for item in items {
             if cache.isUserPinned(id: item.playableId, kind: item.kind) { continue }
@@ -145,10 +202,11 @@ public final class QueueCachePolicyManager {
         }
     }
 
-    /// Deletes the file and the library's record of it together — a `relFilePath` left
-    /// behind would show the track as downloaded with nothing on disk.
+    /// Deletes the file and every record of it together — a `relFilePath` or a lingering
+    /// `DownloadCenter` completion would show the track as downloaded with nothing on disk.
     private func evict(id: String, kind: PlayableRef.Kind) {
         try? cache.deletePlayable(id: id, kind: kind)
+        DownloadCenter.shared.clearActive(playableId: id)
         if kind == .song {
             LibraryActions.shared.forgetLocalFile(playableId: id)
         }

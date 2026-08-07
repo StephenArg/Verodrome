@@ -42,6 +42,18 @@ final class DownloadCenterTests: XCTestCase {
         XCTAssertEqual(center.status(for: "a", isDownloaded: false), .pending)
     }
 
+    /// The glyph must be droppable: a cached file can be evicted or removed after the
+    /// transfer finished, and `completedIds` would otherwise keep reporting `.downloaded`.
+    func testClearingADownloadForgetsItsCompletion() {
+        center.begin(playableId: "a")
+        center.complete(playableId: "a")
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), .downloaded)
+
+        center.clearActive(playableId: "a")
+
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), DownloadStatus.none)
+    }
+
     func testProgressOutranksAnAlreadyDownloadedFile() {
         center.begin(playableId: "a")
         center.update(playableId: "a", progress: 0.25)

@@ -18,6 +18,41 @@ public enum ArtworkDownloadSetting: String, Codable, CaseIterable, Sendable {
     case always
 }
 
+/// Cap on playable cache size. `0` means unlimited.
+public enum PlayableCacheLimit: Int64, Codable, CaseIterable, Sendable, Identifiable {
+    case mb250 = 262_144_000
+    case mb500 = 524_288_000
+    case gb1 = 1_073_741_824
+    case gb2 = 2_147_483_648
+    case gb3 = 3_221_225_472
+    case gb5 = 5_368_709_120
+    case gb7 = 7_516_192_768
+    case gb10 = 10_737_418_240
+    case gb12 = 12_884_901_888
+    case gb20 = 21_474_836_480
+    case unlimited = 0
+
+    public var id: Int64 { rawValue }
+
+    public static let `default`: PlayableCacheLimit = .gb3
+
+    public var label: String {
+        switch self {
+        case .mb250: "250 MB"
+        case .mb500: "500 MB"
+        case .gb1: "1 GB"
+        case .gb2: "2 GB"
+        case .gb3: "3 GB"
+        case .gb5: "5 GB"
+        case .gb7: "7 GB"
+        case .gb10: "10 GB"
+        case .gb12: "12 GB"
+        case .gb20: "20 GB"
+        case .unlimited: "Unlimited"
+        }
+    }
+}
+
 public enum CacheReason: Int, Codable, CaseIterable, Sendable {
     case none = 0
     case queuePrefetch = 1

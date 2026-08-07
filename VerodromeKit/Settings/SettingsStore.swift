@@ -33,6 +33,7 @@ public final class SettingsStore: ObservableObject {
     @Published public var streamFormat: StreamFormatPreference = .original
     @Published public var smartQueuePrefetchEnabled: Bool = true
     @Published public var smartQueueStaleHours: Int = 18
+    @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
     @Published public var offlineModeEnabled: Bool = false
     @Published public var artworkDownloadSetting: ArtworkDownloadSetting = .always
     @Published public var swipeLeftAction: String = "queue"
@@ -54,6 +55,7 @@ public final class SettingsStore: ObservableObject {
         var streamFormat: StreamFormatPreference
         var smartQueuePrefetchEnabled: Bool
         var smartQueueStaleHours: Int
+        var cacheLimitBytes: Int64
         var offlineModeEnabled: Bool
         var artworkDownloadSetting: ArtworkDownloadSetting
         var swipeLeftAction: String
@@ -75,6 +77,7 @@ public final class SettingsStore: ObservableObject {
             streamFormat: StreamFormatPreference,
             smartQueuePrefetchEnabled: Bool,
             smartQueueStaleHours: Int,
+            cacheLimitBytes: Int64,
             offlineModeEnabled: Bool,
             artworkDownloadSetting: ArtworkDownloadSetting,
             swipeLeftAction: String,
@@ -95,6 +98,7 @@ public final class SettingsStore: ObservableObject {
             self.streamFormat = streamFormat
             self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
             self.smartQueueStaleHours = smartQueueStaleHours
+            self.cacheLimitBytes = cacheLimitBytes
             self.offlineModeEnabled = offlineModeEnabled
             self.artworkDownloadSetting = artworkDownloadSetting
             self.swipeLeftAction = swipeLeftAction
@@ -118,6 +122,7 @@ public final class SettingsStore: ObservableObject {
             streamFormat = try c.decode(StreamFormatPreference.self, forKey: .streamFormat)
             smartQueuePrefetchEnabled = try c.decode(Bool.self, forKey: .smartQueuePrefetchEnabled)
             smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
+            cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
             offlineModeEnabled = try c.decode(Bool.self, forKey: .offlineModeEnabled)
             artworkDownloadSetting = try c.decode(ArtworkDownloadSetting.self, forKey: .artworkDownloadSetting)
             swipeLeftAction = try c.decode(String.self, forKey: .swipeLeftAction)
@@ -150,6 +155,7 @@ public final class SettingsStore: ObservableObject {
             streamFormat: streamFormat,
             smartQueuePrefetchEnabled: smartQueuePrefetchEnabled,
             smartQueueStaleHours: smartQueueStaleHours,
+            cacheLimitBytes: cacheLimitBytes,
             offlineModeEnabled: offlineModeEnabled,
             artworkDownloadSetting: artworkDownloadSetting,
             swipeLeftAction: swipeLeftAction,
@@ -183,6 +189,7 @@ public final class SettingsStore: ObservableObject {
         user.isOfflineMode = offlineModeEnabled
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
+        user.cacheLimitBytes = cacheLimitBytes
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
@@ -198,6 +205,7 @@ public final class SettingsStore: ObservableObject {
         offlineModeEnabled = settings.isOfflineMode
         smartQueuePrefetchEnabled = settings.smartQueuePrefetchEnabled
         smartQueueStaleHours = settings.queuePrefetchStaleHours
+        cacheLimitBytes = settings.cacheLimitBytes
         streamFormat = settings.cacheTranscodingFormat
         playerDisplayStyle = settings.playerDisplayStyle
         showMiniLyrics = settings.showLyricsWhenAvailable
@@ -245,6 +253,7 @@ public final class SettingsStore: ObservableObject {
             streamFormat = snapshot.streamFormat
             smartQueuePrefetchEnabled = snapshot.smartQueuePrefetchEnabled
             smartQueueStaleHours = snapshot.smartQueueStaleHours
+            cacheLimitBytes = snapshot.cacheLimitBytes
             offlineModeEnabled = snapshot.offlineModeEnabled
             artworkDownloadSetting = snapshot.artworkDownloadSetting
             swipeLeftAction = snapshot.swipeLeftAction
@@ -260,6 +269,7 @@ public final class SettingsStore: ObservableObject {
         offlineModeEnabled = user.isOfflineMode
         smartQueuePrefetchEnabled = user.smartQueuePrefetchEnabled
         smartQueueStaleHours = user.queuePrefetchStaleHours
+        cacheLimitBytes = user.cacheLimitBytes
         streamFormat = user.cacheTranscodingFormat
         playerDisplayStyle = user.playerDisplayStyle
         showMiniLyrics = user.showLyricsWhenAvailable
@@ -278,6 +288,7 @@ public final class SettingsStore: ObservableObject {
         user.isOfflineMode = offlineModeEnabled
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
+        user.cacheLimitBytes = cacheLimitBytes
         user.cacheTranscodingFormat = streamFormat
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics

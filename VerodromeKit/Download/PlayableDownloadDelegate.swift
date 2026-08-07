@@ -39,6 +39,10 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
     private let fm = FileManager.default
     private var meta: [String: Meta] = [:]
     private let metaURL: URL
+    /// `meta` is written from the main actor (the queue cache policy) and from inside the
+    /// `DownloadManager` actor (a transfer landing). Without this, a lost entry leaves a
+    /// file on disk that neither prune loop can see, because both iterate `meta`.
+    private let lock = NSLock()
 
     private struct Meta: Codable {
         var reason: CacheReason
@@ -52,7 +56,7 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
         self.root = root
         self.metaURL = root.appendingPathComponent("cache-meta.json")
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
-        loadMeta()
+        lock.withLock { loadMetaLocked() }
     }
 
     private func key(_ id: String, _ kind: PlayableRef.Kind) -> String { "\(kind.rawValue)::\(id)" }
@@ -70,15 +74,26 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
         try fm.moveItem(at: temporaryURL, to: dest)
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         var destVar = dest; try? destVar.setResourceValues(values)
-        meta[key(id, kind)] = Meta(reason: reason, kind: kind, touched: Date(), generation: meta[key(id, kind)]?.generation ?? 0, pinned: reason.isUserPinnedReason)
-        saveMeta()
+        lock.withLock {
+            let k = key(id, kind)
+            meta[k] = Meta(
+                reason: reason,
+                kind: kind,
+                touched: Date(),
+                generation: meta[k]?.generation ?? 0,
+                pinned: reason.isUserPinnedReason
+            )
+            saveMetaLocked()
+        }
         return dest
     }
 
     public func deletePlayable(id: String, kind: PlayableRef.Kind) throws {
         if let url = fileURL(forPlayableId: id, kind: kind) { try fm.removeItem(at: url) }
-        meta.removeValue(forKey: key(id, kind))
-        saveMeta()
+        lock.withLock {
+            meta.removeValue(forKey: key(id, kind))
+            saveMetaLocked()
+        }
     }
 
     public func totalPlayableCacheSize() -> Int64 {
@@ -91,55 +106,82 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
     }
 
     public func touchPlayable(id: String, kind: PlayableRef.Kind, reason: CacheReason?) {
-        let k = key(id, kind)
-        if var existing = meta[k] {
-            existing.touched = Date()
-            if let reason {
-                if reason.isUserPinnedReason || existing.reason == .none || existing.reason == .queuePrefetch {
-                    existing.reason = reason
-                    existing.pinned = reason.isUserPinnedReason || existing.pinned
+        let hasFile = fileURL(forPlayableId: id, kind: kind) != nil
+        lock.withLock {
+            let k = key(id, kind)
+            if var existing = meta[k] {
+                existing.touched = Date()
+                if let reason {
+                    if reason.isUserPinnedReason || existing.reason == .none || existing.reason == .queuePrefetch {
+                        existing.reason = reason
+                        existing.pinned = reason.isUserPinnedReason || existing.pinned
+                    }
                 }
+                meta[k] = existing
+            } else if hasFile {
+                meta[k] = Meta(reason: reason ?? .queuePrefetch, kind: kind, touched: Date(), generation: 0, pinned: reason?.isUserPinnedReason ?? false)
             }
-            meta[k] = existing
-        } else if fileURL(forPlayableId: id, kind: kind) != nil {
-            meta[k] = Meta(reason: reason ?? .queuePrefetch, kind: kind, touched: Date(), generation: 0, pinned: reason?.isUserPinnedReason ?? false)
+            saveMetaLocked()
         }
-        saveMeta()
     }
 
     public func cacheReason(forPlayableId id: String, kind: PlayableRef.Kind) -> CacheReason {
-        meta[key(id, kind)]?.reason ?? .none
+        lock.withLock { meta[key(id, kind)]?.reason ?? .none }
     }
 
     public func isUserPinned(id: String, kind: PlayableRef.Kind) -> Bool {
-        let m = meta[key(id, kind)]
-        return m?.pinned == true || (m?.reason.isUserPinnedReason ?? false)
+        lock.withLock {
+            let m = meta[key(id, kind)]
+            return m?.pinned == true || (m?.reason.isUserPinnedReason ?? false)
+        }
     }
 
     public func cachedPlayableIds(reason: CacheReason?) -> [(id: String, kind: PlayableRef.Kind, touched: Date, generation: Int)] {
-        meta.compactMap { key, value in
-            if let reason, value.reason != reason { return nil }
-            let cleanId = key.components(separatedBy: "::").last ?? key
-            return (cleanId, value.kind, value.touched, value.generation)
+        lock.withLock {
+            meta.compactMap { key, value in
+                if let reason, value.reason != reason { return nil }
+                let cleanId = key.components(separatedBy: "::").last ?? key
+                return (cleanId, value.kind, value.touched, value.generation)
+            }
         }
     }
 
     public func setQueueGeneration(id: String, kind: PlayableRef.Kind, generation: Int) {
-        let k = key(id, kind)
-        if var existing = meta[k] {
+        lock.withLock {
+            let k = key(id, kind)
+            guard var existing = meta[k] else { return }
             existing.generation = generation
             meta[k] = existing
-            saveMeta()
+            saveMetaLocked()
         }
     }
 
-    private func loadMeta() {
+    public func orphanedFiles(olderThan minimumAge: TimeInterval) -> [(id: String, kind: PlayableRef.Kind)] {
+        let known = lock.withLock { Set(meta.keys) }
+        let cutoff = Date().addingTimeInterval(-minimumAge)
+        var orphans: [(id: String, kind: PlayableRef.Kind)] = []
+        for kind in PlayableRef.Kind.allCases {
+            let dir = root.appendingPathComponent(kind.rawValue, isDirectory: true)
+            let names = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
+            for name in names where !known.contains(key(name, kind)) {
+                // `storePlayable` moves the file into place before taking the lock, so a
+                // transfer that just landed looks orphaned for an instant.
+                let url = dir.appendingPathComponent(name)
+                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                guard modified < cutoff else { continue }
+                orphans.append((name, kind))
+            }
+        }
+        return orphans
+    }
+
+    private func loadMetaLocked() {
         guard let data = try? Data(contentsOf: metaURL),
               let decoded = try? JSONDecoder().decode([String: Meta].self, from: data) else { return }
         meta = decoded
     }
 
-    private func saveMeta() {
+    private func saveMetaLocked() {
         guard let data = try? JSONEncoder().encode(meta) else { return }
         try? data.write(to: metaURL, options: .atomic)
     }

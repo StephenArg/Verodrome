@@ -100,6 +100,9 @@ public final class LibraryActions {
     public func removeDownload(song: Song) async {
         await downloader?.cancel(playableId: song.remoteId)
         try? kit.playableCache?.deletePlayable(id: song.remoteId, kind: .song)
+        // `cancel` clears the in-flight state but not a finished one; without this the
+        // row keeps the downloaded glyph from `completedIds` for the rest of the session.
+        DownloadCenter.shared.clearActive(playableId: song.remoteId)
         song.cacheReason = .none
         song.isUserPinned = false
         song.relFilePath = nil
@@ -141,6 +144,17 @@ public final class LibraryActions {
         for song in songs where DownloadCenter.shared.isWorking(on: song.remoteId) {
             await cancelDownload(song: song)
         }
+    }
+
+    /// The reason the library has on record for a song it believes is on disk, if any.
+    /// Lets the orphan sweep tell a lost cache-metadata entry from a file nothing wants.
+    public func recordedCacheReason(playableId: String) -> CacheReason? {
+        guard let repository,
+              let account = try? kit.activeAccount(),
+              let song = try? repository.resolveSong(remoteId: playableId, account: account),
+              song.relFilePath != nil
+        else { return nil }
+        return song.cacheReason
     }
 
     /// Clears the library's record of a local file after the cache dropped it, so

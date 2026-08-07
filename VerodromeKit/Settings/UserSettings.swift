@@ -27,7 +27,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
     public init(
         isOfflineMode: Bool = false,
-        cacheLimitBytes: Int64 = 5_368_709_120,
+        cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue,
         streamingBitrateWifi: Int = 320,
         streamingBitrateCellular: Int = 192,
         cacheTranscodingFormat: StreamFormatPreference = .original,
@@ -78,7 +78,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         isOfflineMode = try c.decodeIfPresent(Bool.self, forKey: .isOfflineMode) ?? false
-        cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? 5_368_709_120
+        cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
         streamingBitrateWifi = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateWifi) ?? 320
         streamingBitrateCellular = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateCellular) ?? 192
         cacheTranscodingFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .cacheTranscodingFormat) ?? .original

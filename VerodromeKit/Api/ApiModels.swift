@@ -16,7 +16,7 @@ public struct PlayableRef: Sendable, Hashable, Identifiable {
     public var size: Int64?
     public var kind: Kind
 
-    public enum Kind: String, Sendable, Codable {
+    public enum Kind: String, Sendable, Codable, CaseIterable {
         case song
         case podcastEpisode
         case radio

@@ -5,6 +5,11 @@ import XCTest
 final class QueueCachePolicyTests: XCTestCase {
     final class MockCache: PlayableFileCaching, @unchecked Sendable {
         var files: [String: (kind: PlayableRef.Kind, reason: CacheReason, touched: Date, generation: Int, pinned: Bool)] = [:]
+        /// Synthetic sizes so the limit tests don't need real files on disk.
+        var sizes: [String: Int64] = [:]
+        /// Files on disk that `files` has no record of, keyed the same way, with the date
+        /// they landed — what a lost metadata write leaves behind.
+        var untracked: [String: Date] = [:]
         func fileURL(forPlayableId id: String, kind: PlayableRef.Kind) -> URL? {
             files["\(kind.rawValue)::\(id)"] == nil ? nil : URL(fileURLWithPath: "/tmp/\(id)")
         }
@@ -14,8 +19,15 @@ final class QueueCachePolicyTests: XCTestCase {
         }
         func deletePlayable(id: String, kind: PlayableRef.Kind) throws {
             files.removeValue(forKey: "\(kind.rawValue)::\(id)")
+            sizes.removeValue(forKey: "\(kind.rawValue)::\(id)")
+            untracked.removeValue(forKey: "\(kind.rawValue)::\(id)")
         }
-        func totalPlayableCacheSize() -> Int64 { Int64(files.count) }
+        func totalPlayableCacheSize() -> Int64 {
+            files.keys.reduce(0) { $0 + (sizes[$1] ?? 1) }
+        }
+        func playableByteSize(id: String, kind: PlayableRef.Kind) -> Int64 {
+            sizes["\(kind.rawValue)::\(id)"] ?? (files["\(kind.rawValue)::\(id)"] == nil ? 0 : 1)
+        }
         func touchPlayable(id: String, kind: PlayableRef.Kind, reason: CacheReason?) {
             let key = "\(kind.rawValue)::\(id)"
             var existing = files[key] ?? (kind, reason ?? .queuePrefetch, Date(), 0, false)
@@ -41,6 +53,17 @@ final class QueueCachePolicyTests: XCTestCase {
             guard var existing = files[key] else { return }
             existing.generation = generation
             files[key] = existing
+        }
+        func orphanedFiles(olderThan minimumAge: TimeInterval) -> [(id: String, kind: PlayableRef.Kind)] {
+            let cutoff = Date().addingTimeInterval(-minimumAge)
+            return untracked.compactMap { key, landed in
+                guard landed < cutoff else { return nil }
+                let parts = key.components(separatedBy: "::")
+                guard let kind = parts.first.flatMap(PlayableRef.Kind.init(rawValue:)),
+                      let id = parts.last
+                else { return nil }
+                return (id, kind)
+            }
         }
     }
 
@@ -174,6 +197,148 @@ final class QueueCachePolicyTests: XCTestCase {
         for pruned in ["7", "8", "9"] {
             XCTAssertNil(cache.files["song::\(pruned)"], "\(pruned) fell outside the window after jump")
         }
+    }
+
+    /// Switching the feature off has to take its cache with it. Pruning used to live
+    /// behind the same setting check as fetching, so everything already prefetched was
+    /// stranded on disk with nothing left to delete it.
+    func testDisablingPrefetchDrainsTheCache() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<3).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 0)
+        for item in items {
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        }
+        cache.files["song::owned"] = (.song, .userDownload, Date(), 0, true)
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: false, queuePrefetchStaleHours: 18) }
+        )
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        for drained in ["0", "1", "2"] {
+            XCTAssertNil(cache.files["song::\(drained)"], "\(drained) has nothing left to prune it")
+        }
+        XCTAssertNotNil(cache.files["song::owned"], "an explicit download is not a prefetch")
+        XCTAssertTrue(downloader.enqueued.isEmpty, "nothing should be fetched with the feature off")
+    }
+
+    /// `status(for:)` reads `completedIds`, so a completion recorded for the UI outlives
+    /// the file unless eviction clears it — the row keeps the downloaded glyph over an
+    /// empty cache for the rest of the session.
+    func testEvictionClearsARecordedCompletion() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        queue.replaceContext(with: [QueueItem(playableId: "a", title: "A")], startAt: 0)
+        cache.files["song::stale"] = (.song, .queuePrefetch, Date().addingTimeInterval(-20 * 3600), 0, false)
+
+        DownloadCenter.shared.complete(playableId: "stale")
+        XCTAssertEqual(DownloadCenter.shared.status(for: "stale", isDownloaded: false), .downloaded)
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.pruneStale()
+
+        XCTAssertNil(cache.files["song::stale"])
+        XCTAssertEqual(DownloadCenter.shared.status(for: "stale", isDownloaded: false), DownloadStatus.none)
+    }
+
+    /// Oldest unpinned files go first; explicit downloads are never sacrificed for a size cap.
+    func testEnforceCacheLimitEvictsOldestPrefetchFirst() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        queue.replaceContext(with: [QueueItem(playableId: "playing", title: "P")], startAt: 0)
+
+        let older = Date().addingTimeInterval(-3_600)
+        let newer = Date().addingTimeInterval(-60)
+        cache.files["song::old"] = (.song, .queuePrefetch, older, 0, false)
+        cache.files["song::new"] = (.song, .queuePrefetch, newer, 0, false)
+        cache.files["song::owned"] = (.song, .userDownload, older, 0, true)
+        cache.sizes["song::old"] = 40
+        cache.sizes["song::new"] = 40
+        cache.sizes["song::owned"] = 40
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(cacheLimitBytes: 80, smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.enforceCacheLimit()
+
+        XCTAssertNil(cache.files["song::old"], "oldest prefetch should be freed first")
+        XCTAssertNotNil(cache.files["song::new"])
+        XCTAssertNotNil(cache.files["song::owned"], "user downloads are outside the size budget")
+        XCTAssertEqual(cache.totalPlayableCacheSize(), 80)
+    }
+
+    func testUnlimitedCacheLimitDoesNotEvict() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        queue.replaceContext(with: [QueueItem(playableId: "a", title: "A")], startAt: 0)
+        cache.files["song::a"] = (.song, .queuePrefetch, Date(), 0, false)
+        cache.sizes["song::a"] = 1_000
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    cacheLimitBytes: PlayableCacheLimit.unlimited.rawValue,
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18
+                )
+            }
+        )
+        policy.enforceCacheLimit()
+        XCTAssertNotNil(cache.files["song::a"])
+    }
+
+    func testDefaultCacheLimitIsThreeGigabytes() {
+        XCTAssertEqual(PlayableCacheLimit.default, .gb3)
+        XCTAssertEqual(UserSettings.default.cacheLimitBytes, PlayableCacheLimit.gb3.rawValue)
+        XCTAssertEqual(PlayableCacheLimit.allCases.map(\.label), [
+            "250 MB", "500 MB", "1 GB", "2 GB", "3 GB", "5 GB", "7 GB", "10 GB", "12 GB", "20 GB", "Unlimited"
+        ])
+    }
+
+    /// Both prune loops iterate the cache's own metadata, so a file missing from it is
+    /// unreachable — the sweep is what stops those from living on disk forever.
+    func testOrphanSweepDeletesUntrackedFilesOnceTheyAreOldEnough() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        queue.replaceContext(with: [QueueItem(playableId: "a", title: "A")], startAt: 0)
+        cache.untracked["song::stranded"] = Date().addingTimeInterval(-600)
+        cache.untracked["song::justLanded"] = Date()
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.pruneOrphans()
+
+        XCTAssertNil(cache.untracked["song::stranded"])
+        XCTAssertNotNil(
+            cache.untracked["song::justLanded"],
+            "a transfer stores the file before recording it; sweeping that window would delete it"
+        )
     }
 
     /// A spy downloader that records `enqueue` and `cancelPending` calls without
