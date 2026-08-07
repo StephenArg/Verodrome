@@ -22,9 +22,9 @@ struct DisplaySettingsView: View {
 
             Section("Library") {
                 Picker("Default Layout", selection: $settings.libraryDisplayType) {
-                    ForEach(LibraryDisplayType.allCases, id: \.self) { type in
-                        Text(type.rawValue.capitalized).tag(type)
-                    }
+                    Text(LibraryDisplayType.grid3.displayName).tag(LibraryDisplayType.grid3)
+                    Text(LibraryDisplayType.grid2.displayName).tag(LibraryDisplayType.grid2)
+                    Text(LibraryDisplayType.list.displayName).tag(LibraryDisplayType.list)
                 }
                 .onChange(of: settings.libraryDisplayType) { _, _ in settings.save() }
             }

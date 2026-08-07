@@ -50,7 +50,7 @@ final class ThemeManager: ObservableObject {
     /// Recolors the player background from `token`'s artwork.
     ///
     /// The sampling itself runs off the main actor, and each token is only ever measured
-    /// once per launch. This used to quantize the full 1200px hero image inline on the main
+    /// once per launch. This used to quantize the full-size hero image inline on the main
     /// actor, which blocked every other main-actor continuation behind it — including the
     /// one that hands the decoded artwork to `ArtworkView`, leaving the cover stuck on its
     /// spinner while the rest of the UI stopped responding.

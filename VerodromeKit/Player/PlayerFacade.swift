@@ -288,7 +288,11 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
 extension ArtworkResolver {
     public func managerImage(for token: String) async -> UIImage? {
-        if let url = await resolvedURL(for: token, kind: .album, size: 1200) {
+        if let url = await resolvedURL(
+            for: token,
+            kind: .album,
+            size: ArtworkDownloadManager.largestRequestedSize
+        ) {
             if url.isFileURL {
                 return UIImage(contentsOfFile: url.path)
             }

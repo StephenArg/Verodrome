@@ -9,15 +9,18 @@ extension BackendURLProvider: ArtworkURLProviding {}
 
 /// Downloads and resolves artwork tokens to local file URLs (or remote URLs as fallback).
 /// Cache keys include requested pixel size so thumbnails never poison player/detail art.
-public actor ArtworkDownloadManager {
+public actor ArtworkDownloadManager: ArtworkPrefetching {
     private let urlProvider: any ArtworkURLProviding
     private let maxConcurrent: Int
     private var pending: [(artId: String, kind: ArtworkKind, size: Int)] = []
     private var active = 0
     private var cacheDirectory: URL
+    /// Cache key → file URL for every render on disk. Seeded once from a directory listing
+    /// and kept current by `noteStored`, so a probe is a dictionary lookup instead of one
+    /// `stat` per standard size. Every write goes through `noteStored`, so a missing key
+    /// authoritatively means "not cached" — no negative cache needed.
     private var memory: [String: URL] = [:]
-    /// Cache keys already proven absent from disk, so repeated scroll-ins skip the stat sweep.
-    private var knownMisses: Set<String> = []
+    private var didIndexCacheDirectory = false
 
     /// Limits concurrent direct network loads from `loadImage` (which bypasses the
     /// prefetch queue). Without this, ~140 Home tiles fire URLSession requests at once.
@@ -36,41 +39,75 @@ public actor ArtworkDownloadManager {
     }
 
     public func enqueue(artId: String, kind: ArtworkKind = .album, size: Int = 300) async {
-        let key = cacheKey(artId: artId, size: size)
         if localURL(for: artId, size: size) != nil { return }
         if pending.contains(where: { $0.artId == artId && $0.size == size }) { return }
         pending.append((artId, kind, size))
-        _ = key
         await pump()
     }
 
-    /// Standard pixel sizes used across the app, ascending. Used to fall back to an
-    /// already-cached larger render when the exact requested size is missing on disk,
-    /// so Home tiles can reuse player/grid art instead of re-downloading.
-    private static let standardSizes = [120, 300, 450, 900, 1200]
+    /// The biggest render any screen asks a server for, shared by the detail hero (280pt)
+    /// and the player cover so both come from one download and one cached file.
+    ///
+    /// Covers are photographs at arm's length, and servers rarely hold anything larger, so
+    /// past this the extra pixels cost download time and ~3MB of memory each without being
+    /// visible. Lower this to shrink both.
+    public static let largestRequestedSize = 900
+
+    /// Standard pixel sizes, ascending. Used to fall back to an already-cached larger
+    /// render when the exact requested size is missing on disk, so Home tiles can reuse
+    /// hero art instead of re-downloading.
+    ///
+    /// Includes 1200 even though nothing requests it any more: covers cached by an earlier
+    /// version still answer today's requests rather than downloading a second copy.
+    private static let standardSizes = [120, 300, 450, largestRequestedSize, 1200]
+
+    /// Reads the cache directory once per launch. A single listing replaces the repeated
+    /// per-size `fileExists` sweeps that every cold cache probe used to pay.
+    private func indexCacheDirectoryIfNeeded() {
+        guard !didIndexCacheDirectory else { return }
+        didIndexCacheDirectory = true
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        // File names are cache keys, so the listing is the lookup table.
+        for file in files where memory[file.lastPathComponent] == nil {
+            memory[file.lastPathComponent] = file
+        }
+    }
 
     public func localURL(for artId: String, size: Int = 300) -> URL? {
-        let key = cacheKey(artId: artId, size: size)
-        if let cached = memory[key] { return cached }
-        // Without this, a token that isn't on disk re-runs the whole stat sweep below
-        // every time its tile scrolls back into view.
-        if knownMisses.contains(key) { return nil }
-        let url = fileURL(for: artId, size: size)
-        if FileManager.default.fileExists(atPath: url.path) {
-            memory[key] = url
-            return url
-        }
+        indexCacheDirectoryIfNeeded()
+        if let cached = memory[cacheKey(artId: artId, size: size)] { return cached }
         // Reuse the smallest already-cached render > requested size (SwiftUI downscales).
         for larger in Self.standardSizes where larger > size {
-            let altKey = cacheKey(artId: artId, size: larger)
-            if let cached = memory[altKey] { return cached }
-            let altURL = fileURL(for: artId, size: larger)
-            if FileManager.default.fileExists(atPath: altURL.path) {
-                memory[altKey] = altURL
-                return altURL
-            }
+            if let cached = memory[cacheKey(artId: artId, size: larger)] { return cached }
         }
-        knownMisses.insert(key)
+        return nil
+    }
+
+    /// True when this size (or a larger render) is already on disk, so the load is a local
+    /// decode with no network request. Lets callers skip delays meant to guard the network.
+    public func hasLocalRender(for artId: String?, size: Int) -> Bool {
+        guard let artId, !artId.isEmpty else { return false }
+        return localURL(for: artId, size: size) != nil
+    }
+
+    /// A *smaller* cached render, decoded so a view can show art immediately while the
+    /// requested size downloads. Navigating from a list (120px) or grid (300px) into a
+    /// 900px hero would otherwise sit on a placeholder for the length of a download.
+    ///
+    /// Returns nil when `localURL` already has this size or larger — that load is a fast
+    /// disk decode, and returning here too would decode the same file twice.
+    public func downgradedCachedImage(for artId: String?, size: Int) async -> UIImage? {
+        guard let artId, !artId.isEmpty else { return nil }
+        if localURL(for: artId, size: size) != nil { return nil }
+        for smaller in Self.standardSizes.reversed() where smaller < size {
+            guard let url = memory[cacheKey(artId: artId, size: smaller)] else { continue }
+            // `decode` never upscales, so this stays as cheap as the smaller render.
+            return await Self.decodeDownsampled(fileURL: url, target: size)?.image
+        }
         return nil
     }
 
@@ -269,11 +306,8 @@ public actor ArtworkDownloadManager {
         noteStored(artId: artId, size: 0, at: dest)
     }
 
-    /// Records a freshly cached file and drops the negative cache, since a new render can
-    /// satisfy a smaller size that previously missed via the larger-size fallback.
     private func noteStored(artId: String, size: Int, at dest: URL) {
         memory[cacheKey(artId: artId, size: size)] = dest
-        knownMisses.removeAll(keepingCapacity: true)
     }
 
     private func cacheKey(artId: String, size: Int) -> String {
@@ -353,12 +387,13 @@ public actor ArtworkDownloadManager {
     public func clearCache() throws {
         pending.removeAll()
         memory.removeAll()
-        knownMisses.removeAll()
         let fm = FileManager.default
         if fm.fileExists(atPath: cacheDirectory.path) {
             try fm.removeItem(at: cacheDirectory)
         }
         try fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        // The directory is empty and `memory` matches it, so no re-listing is needed.
+        didIndexCacheDirectory = true
     }
 }
 
@@ -470,6 +505,20 @@ public final class ArtworkResolver: ObservableObject {
     ) async -> UIImage? {
         guard let manager else { return nil }
         return await manager.loadImage(for: token, kind: kind, size: size)
+    }
+
+    /// An already-cached smaller render, for showing art immediately while `loadImage`
+    /// fetches the requested size. Never hits the network, and returns nil when the
+    /// requested size is already local.
+    public nonisolated func downgradedImage(for token: String?, size: Int) async -> UIImage? {
+        guard let manager else { return nil }
+        return await manager.downgradedCachedImage(for: token, size: size)
+    }
+
+    /// True when `loadImage` for this size will be served from disk rather than the network.
+    public nonisolated func hasLocalRender(for token: String?, size: Int) async -> Bool {
+        guard let manager else { return false }
+        return await manager.hasLocalRender(for: token, size: size)
     }
 
     public func diskCacheStats() async -> ArtworkDownloadManager.CacheStats {

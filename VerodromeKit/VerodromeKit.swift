@@ -81,6 +81,7 @@ public final class VerodromeKit: ObservableObject {
             queue: queue,
             cache: cache,
             downloader: downloader,
+            artwork: artManager,
             settings: { [weak self] in self?.settings.loadUserSettings() ?? .default }
         )
         self.queueCachePolicy = policy

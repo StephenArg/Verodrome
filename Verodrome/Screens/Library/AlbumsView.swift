@@ -26,10 +26,9 @@ struct AlbumsView: View {
 
     var body: some View {
         Group {
-            switch settings.libraryDisplayType {
-            case .grid:
-                AlbumsGridView(albums: gridAlbums)
-            case .list, .table:
+            if let columns = settings.libraryDisplayType.gridColumnCount {
+                AlbumsGridView(albums: gridAlbums, columnCount: columns)
+            } else {
                 IndexedEntityTableView(
                     sections: model.sections,
                     playingId: nowPlaying.currentItem?.playableId,
@@ -49,23 +48,13 @@ struct AlbumsView: View {
             AlbumDetailView(albumID: id)
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 LibrarySortMenu(
                     selection: $settings.librarySort.albums,
                     options: LibrarySortOption.albumOptions
                 )
+                LibraryLayoutMenu(selection: $settings.libraryDisplayType)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Picker("Display", selection: $settings.libraryDisplayType) {
-                    ForEach(LibraryDisplayType.allCases, id: \.self) { type in
-                        Text(type.rawValue.capitalized).tag(type)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-        }
-        .onChange(of: settings.libraryDisplayType) { _, _ in
-            settings.save()
         }
         .perfAppear("Albums", details: "rows=\(model.rowCount) display=\(settings.libraryDisplayType.rawValue)")
         .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {

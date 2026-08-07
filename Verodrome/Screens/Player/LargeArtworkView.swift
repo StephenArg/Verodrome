@@ -24,7 +24,7 @@ struct LargeArtworkView: View {
             .task(id: urlString) {
                 let image = await ArtworkResolver.shared.loadImage(
                     for: urlString,
-                    size: ArtworkPixelSize.player
+                    size: ArtworkPixelSize.large
                 )
                 // The track can change while the cover is still loading; without this the
                 // previous album's tint wins the race and stays behind the new one.

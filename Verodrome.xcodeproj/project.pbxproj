@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		0271BA4A66E55B4F74FFD631 /* PlayerDownloadPreparationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F716E49C739CFF345661C9D3 /* PlayerDownloadPreparationHandler.swift */; };
 		03FF22CCA200362B9F4B4368 /* LibrarySortMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */; };
+		A1B2C3D40E7F45A18C3D6E32 /* LibraryLayoutMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40E7F45A18C3D6E31 /* LibraryLayoutMenu.swift */; };
 		04B7F7A2E3D599042E3E014B /* ArtistDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A84B2BC8C7CFF93BCB7A83CC /* ArtistDetailView.swift */; };
 		05BC6192693F47CCEB34ED7D /* PopupPlayerTransitionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F881C96006ED7784C237A6 /* PopupPlayerTransitionController.swift */; };
 		0729D0D695EDB95C39BD83B0 /* DominantColorExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A12AB138ECA53F4A81461F /* DominantColorExtractor.swift */; };
 		07B8302E34608F8C39D617BC /* PopupPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3474CBBC1ED6052E1BF9FF23 /* PopupPlayerView.swift */; };
 		091C2B72F31D2365A3585200 /* QueueCachePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */; };
 		D4A1B2C30E7F45A18C3D6E12 /* DownloadCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A1B2C30E7F45A18C3D6E11 /* DownloadCenterTests.swift */; };
+		D4A1B2C30E7F45A18C3D6E22 /* ArtworkCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A1B2C30E7F45A18C3D6E21 /* ArtworkCacheTests.swift */; };
 		09FD8EB8EB4F2ED0F7EDD506 /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296CA6B47128A5E820D7F5BA /* QueueView.swift */; };
 		0AC079864A62577B450E5871 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CC560078D02294213853B0 /* AudioPlayer.swift */; };
 		1278D00076764045C69DA07A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43FAAB86E3F25E08723B105D /* Theme.swift */; };
@@ -266,6 +268,7 @@
 		039394D745F5B9FB4533C1BC /* ArtworkTintedBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkTintedBackground.swift; sourceTree = "<group>"; };
 		03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyTests.swift; sourceTree = "<group>"; };
 		D4A1B2C30E7F45A18C3D6E11 /* DownloadCenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadCenterTests.swift; sourceTree = "<group>"; };
+		D4A1B2C30E7F45A18C3D6E21 /* ArtworkCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCacheTests.swift; sourceTree = "<group>"; };
 		04057A21F240E44C6F6AF9BE /* BackendApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendApi.swift; sourceTree = "<group>"; };
 		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		08B57FFE233953B8C9F45598 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
@@ -286,6 +289,7 @@
 		14706109A4BD137F580AC45B /* CacheFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFileManager.swift; sourceTree = "<group>"; };
 		14FC5176B32254B740611D49 /* PlaceholderArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderArtwork.swift; sourceTree = "<group>"; };
 		1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySortMenu.swift; sourceTree = "<group>"; };
+		A1B2C3D40E7F45A18C3D6E31 /* LibraryLayoutMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryLayoutMenu.swift; sourceTree = "<group>"; };
 		18180AB9B7A63810632FED77 /* subsonic_artists.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = subsonic_artists.xml; sourceTree = "<group>"; };
 		1835CC372F690E59415CD64A /* SongActionsModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongActionsModifier.swift; sourceTree = "<group>"; };
 		D4A1B2C30E7F45A18C3D6E01 /* DownloadStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStatusView.swift; sourceTree = "<group>"; };
@@ -705,6 +709,7 @@
 				65E38A0DE27711FF9F982A40 /* LibraryFilterBar.swift */,
 				73F26A44B4C1FC940C85D7B7 /* LibraryHubView.swift */,
 				9FDC7F3D99782678E5A704CB /* LibraryListModel.swift */,
+				A1B2C3D40E7F45A18C3D6E31 /* LibraryLayoutMenu.swift */,
 				1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */,
 				FFCD4665337B0FCF33E6F28D /* PlaylistsView.swift */,
 				5B8F8B9F367AA22D1B5E4216 /* PodcastsView.swift */,
@@ -862,6 +867,7 @@
 		D4A1B2C30E7F45A18C3D6E10 /* Download */ = {
 			isa = PBXGroup;
 			children = (
+				D4A1B2C30E7F45A18C3D6E21 /* ArtworkCacheTests.swift */,
 				D4A1B2C30E7F45A18C3D6E11 /* DownloadCenterTests.swift */,
 			);
 			path = Download;
@@ -1243,6 +1249,7 @@
 				42B05DD5ADD0482650FE722C /* PlaybackStallDetectorTests.swift in Sources */,
 				091C2B72F31D2365A3585200 /* QueueCachePolicyTests.swift in Sources */,
 				D4A1B2C30E7F45A18C3D6E12 /* DownloadCenterTests.swift in Sources */,
+				D4A1B2C30E7F45A18C3D6E22 /* ArtworkCacheTests.swift in Sources */,
 				B5BB2679EA5B685646BF045B /* ShuffleAllSessionTests.swift in Sources */,
 				C0082494846694EA80FC9915 /* SubsonicParserTests.swift in Sources */,
 			);
@@ -1379,6 +1386,7 @@
 				D910185281D6D7C80E194BE2 /* LibraryHubView.swift in Sources */,
 				8787B43F7AB910318C3B3D30 /* LibraryListModel.swift in Sources */,
 				A74F8A59159B6DA7C717FBAE /* LibrarySettingsView.swift in Sources */,
+				A1B2C3D40E7F45A18C3D6E32 /* LibraryLayoutMenu.swift in Sources */,
 				03FF22CCA200362B9F4B4368 /* LibrarySortMenu.swift in Sources */,
 				DD429F009EF6762CF0686E9D /* LibrarySyncProgressBar.swift in Sources */,
 				887DF2EC8C469EAED9E1BCBC /* LoginView.swift in Sources */,

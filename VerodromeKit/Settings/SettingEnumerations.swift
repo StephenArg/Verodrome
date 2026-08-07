@@ -179,9 +179,49 @@ public enum PlayerDisplayStyle: String, Codable, CaseIterable, Sendable {
 }
 
 public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
-    case grid
+    case grid3
+    case grid2
     case list
-    case table
+
+    public var displayName: String {
+        switch self {
+        case .grid3: "Grid (3)"
+        case .grid2: "Grid (2)"
+        case .list: "List"
+        }
+    }
+
+    public var systemImage: String {
+        switch self {
+        case .grid3: "square.grid.3x3"
+        case .grid2: "square.grid.2x2"
+        case .list: "list.bullet"
+        }
+    }
+
+    /// Fixed column count for grid layouts; `nil` means list.
+    public var gridColumnCount: Int? {
+        switch self {
+        case .grid3: 3
+        case .grid2: 2
+        case .list: nil
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case Self.grid3.rawValue, "grid": self = .grid3
+        case Self.grid2.rawValue: self = .grid2
+        case Self.list.rawValue, "table": self = .list
+        default: self = .list
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum HomeSection: String, Codable, CaseIterable, Sendable, Identifiable {

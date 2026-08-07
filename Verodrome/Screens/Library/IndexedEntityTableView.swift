@@ -555,11 +555,14 @@ final class EntityTableCell: UITableViewCell {
         setPlaying(isPlaying)
         setDownloadStatus(downloadStatus)
         self.artworkToken = artworkToken
+        // Any cached size beats a grey box: coming back from a detail screen or the player,
+        // the only render in memory is a larger one. `beginArtworkLoadIfNeeded` still
+        // fetches the thumbnail, since it only skips on an exact-size hit.
         if let token = artworkToken,
-           let cached = ArtworkImageCache.shared.image(for: token, size: ArtworkPixelSize.thumbnail) {
+           let cached = ArtworkImageCache.shared.bestAvailableImage(for: token, size: ArtworkPixelSize.thumbnail) {
             artworkView.contentMode = .scaleAspectFill
             artworkView.tintColor = nil
-            artworkView.image = cached
+            artworkView.image = cached.image
         } else if artworkToken == nil || artworkToken?.isEmpty == true {
             artworkView.image = UIImage(systemName: symbol)
             artworkView.tintColor = .secondaryLabel

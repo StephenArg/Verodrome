@@ -447,13 +447,14 @@ final class HomeTileCell: UICollectionViewCell {
         accessibilityLabel = tile.subtitle.isEmpty ? tile.title : "\(tile.title), \(tile.subtitle)"
 
         // Synchronous cache probe, so a tile scrolling back in shows its art in the same
-        // frame instead of flashing a placeholder.
+        // frame instead of flashing a placeholder. Any cached size counts —
+        // `loadArtworkIfNeeded` still fetches the tile size on an inexact hit.
         if let token = tile.artworkToken, !token.isEmpty,
-           let cached = ArtworkImageCache.shared.image(
+           let cached = ArtworkImageCache.shared.bestAvailableImage(
                for: token,
                size: ArtworkPixelSize.homeTile
            ) {
-            show(image: cached)
+            show(image: cached.image)
         } else {
             showPlaceholder()
         }

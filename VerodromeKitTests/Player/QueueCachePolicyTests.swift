@@ -198,6 +198,54 @@ final class QueueCachePolicyTests: XCTestCase {
         func retryFailed() async {}
     }
 
+    final class SpyArtwork: ArtworkPrefetching, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _enqueued: [(artId: String, kind: ArtworkKind, size: Int)] = []
+
+        var enqueued: [(artId: String, kind: ArtworkKind, size: Int)] {
+            lock.withLock { _enqueued }
+        }
+
+        func enqueue(artId: String, kind: ArtworkKind, size: Int) async {
+            lock.withLock { _enqueued.append((artId, kind, size)) }
+        }
+    }
+
+    /// Queue-window reevaluate also disk-prefetches cover art (player size) for
+    /// upcoming tracks so skip / Now Playing don't wait on the network.
+    func testReevaluatePrefetchesArtworkForWindow() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let artwork = SpyArtwork()
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { i in
+            QueueItem(
+                playableId: "\(i)",
+                title: "S\(i)",
+                // Shared album art for even indices — should enqueue once.
+                artworkId: i % 2 == 0 ? "album-A" : "art-\(i)"
+            )
+        }
+        queue.replaceContext(with: items, startAt: 5)
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            artwork: artwork,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Window at index 5 keeps items 3…9; shared album-A is enqueued once.
+        let artIds = Set(artwork.enqueued.map(\.artId))
+        XCTAssertEqual(artIds, ["art-3", "album-A", "art-5", "art-7", "art-9"])
+        XCTAssertTrue(artwork.enqueued.allSatisfy { $0.size == QueueCachePolicyManager.artworkPrefetchSize })
+        XCTAssertTrue(artwork.enqueued.allSatisfy { $0.kind == .album })
+        XCTAssertEqual(artwork.enqueued.filter { $0.artId == "album-A" }.count, 1)
+    }
+
     /// After a jump, pending `.queuePrefetch` downloads outside the new window are
     /// cancelled so bandwidth isn't spent finishing tracks the user left behind.
     func testJumpCancelsPendingPrefetchOutsideWindow() async {

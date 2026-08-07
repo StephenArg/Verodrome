@@ -28,3 +28,8 @@ public protocol DownloadManaging: AnyObject, Sendable {
     func cancelPending(reason: CacheReason, except keep: Set<String>) async
     func retryFailed() async
 }
+
+/// Disk-prefetch of cover art for the queue window (player / Now Playing size).
+public protocol ArtworkPrefetching: AnyObject, Sendable {
+    func enqueue(artId: String, kind: ArtworkKind, size: Int) async
+}

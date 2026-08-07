@@ -16,7 +16,7 @@ import UIKit
 enum DominantColorExtractor {
     /// Side of the square the artwork is sampled at. 4096 pixels is far more than is needed
     /// to rank a cover's palette, and small enough that the whole pass is well under a
-    /// millisecond even for a 1200px hero image.
+    /// millisecond even for a full-size hero image.
     private static let sampleSide = 64
 
     /// Quantization steps per channel. 16 keeps visibly distinct colors in separate buckets

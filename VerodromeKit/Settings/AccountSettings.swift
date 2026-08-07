@@ -45,7 +45,7 @@ public struct AccountSettings: Codable, Equatable, Sendable {
         playlistSortField: PlaylistSortField = .name,
         playlistSortDirection: SortDirection = .ascending,
         homeSections: [HomeSection] = HomeSection.allCases,
-        libraryDisplayTypesInUse: [LibraryDisplayType] = [.grid, .list],
+        libraryDisplayTypesInUse: [LibraryDisplayType] = [.grid3, .list],
         apiType: ApiType = .notDetected
     ) {
         self.credentials = credentials

@@ -186,14 +186,8 @@ final class ArtworkTintResolver {
     /// Prefers any already-decoded size — the detail header's hero art is
     /// normally in the cache — so opening an album costs no extra download.
     private static func artwork(for token: String) async -> UIImage? {
-        let cachedSizes = [
-            ArtworkPixelSize.player,
-            ArtworkPixelSize.detail,
-            ArtworkPixelSize.grid,
-            ArtworkPixelSize.homeTile,
-            ArtworkPixelSize.thumbnail
-        ]
-        for size in cachedSizes {
+        // Biggest first: the detail header's hero art is normally the one in memory.
+        for size in ArtworkPixelSize.all.reversed() {
             if let cached = ArtworkImageCache.shared.image(for: token, size: size) {
                 return cached
             }

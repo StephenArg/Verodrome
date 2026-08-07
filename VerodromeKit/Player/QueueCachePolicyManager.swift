@@ -4,10 +4,13 @@ import Foundation
 public final class QueueCachePolicyManager {
     public static let previousKeepCount = 2
     public static let nextKeepCount = 5
+    /// Player / Now Playing resolution; smaller UI sizes reuse this via ArtworkDownloadManager.
+    public static let artworkPrefetchSize = ArtworkDownloadManager.largestRequestedSize
 
     private let queue: PlayQueueHandler
     private let cache: any PlayableFileCaching
     private let downloader: any DownloadManaging
+    private let artwork: (any ArtworkPrefetching)?
     private let settings: () -> UserSettings
     private var observers: [NSObjectProtocol] = []
     private var reevaluateTask: Task<Void, Never>?
@@ -16,11 +19,13 @@ public final class QueueCachePolicyManager {
         queue: PlayQueueHandler,
         cache: any PlayableFileCaching,
         downloader: any DownloadManaging,
+        artwork: (any ArtworkPrefetching)? = nil,
         settings: @escaping () -> UserSettings
     ) {
         self.queue = queue
         self.cache = cache
         self.downloader = downloader
+        self.artwork = artwork
         self.settings = settings
     }
 
@@ -92,6 +97,19 @@ public final class QueueCachePolicyManager {
             cache.touchPlayable(id: item.playableId, kind: item.kind, reason: .queuePrefetch)
             cache.setQueueGeneration(id: item.playableId, kind: item.kind, generation: generation)
             Task { await downloader.enqueue(playableId: item.playableId, kind: item.kind, reason: .queuePrefetch) }
+        }
+
+        // Cover art is small and shared across album tracks; prefetch the whole window
+        // (including current) so skip / Now Playing don't wait on the network.
+        if let artwork {
+            var seenArtIds = Set<String>()
+            for item in keepItems {
+                guard let artId = item.artworkId, !artId.isEmpty, seenArtIds.insert(artId).inserted else { continue }
+                let artKind: ArtworkKind = item.kind == .podcastEpisode ? .podcast : .album
+                Task {
+                    await artwork.enqueue(artId: artId, kind: artKind, size: Self.artworkPrefetchSize)
+                }
+            }
         }
 
         for entry in cache.cachedPlayableIds(reason: .queuePrefetch) {

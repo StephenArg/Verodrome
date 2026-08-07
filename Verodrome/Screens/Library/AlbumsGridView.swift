@@ -3,8 +3,14 @@ import VerodromeKit
 
 struct AlbumsGridView: View {
     let albums: [AlbumGridSnapshot]
+    var columnCount: Int = 3
 
-    private let columns = [GridItem(.adaptive(minimum: 148), spacing: VerodromeTheme.gridSpacing)]
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: VerodromeTheme.gridSpacing),
+            count: max(columnCount, 1)
+        )
+    }
 
     var body: some View {
         ScrollView {
