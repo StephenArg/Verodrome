@@ -18,8 +18,23 @@ public final class PlayQueueHandler: ObservableObject {
     @Published public var shuffleMode: ShuffleMode = .off
     @Published public var playerMode: PlayerMode = .music
 
+    /// How far into the current track playback had reached, carried into every snapshot
+    /// so a relaunch resumes mid-song rather than at the start. Kept here rather than
+    /// read from the engine because the snapshot is written from queue edits too.
+    public private(set) var playbackPosition: TimeInterval = 0
+
+    /// Coalesced disk work. Context and the "Added to Queue" list are separate files, so
+    /// an enqueue can refresh the small one without rewriting the album / playlist.
+    private struct PendingWrites {
+        var context: PersistedPlayerQueue?
+        var user: [QueueItem]?
+        var forget = false
+    }
+
     private var unshuffledContext: [QueueItem] = []
     private let persister: (any PlayerQueuePersisting)?
+    private var pendingWrites = PendingWrites()
+    private var writeTask: Task<Void, Never>?
 
     public init(persister: (any PlayerQueuePersisting)? = nil) {
         self.persister = persister
@@ -56,6 +71,7 @@ public final class PlayQueueHandler: ObservableObject {
         queueGeneration += 1
         contextGeneration += 1
         userQueue.removeAll()
+        playbackPosition = 0
         PlayTrace.mark("persist queue…")
         persist()
         PlayTrace.mark("persist done; posting queueChanged")
@@ -68,7 +84,8 @@ public final class PlayQueueHandler: ObservableObject {
         let insertAt = min(currentIndex + 1, contextQueue.count)
         contextQueue.insert(contentsOf: items, at: insertAt)
         mirrorEdit(inserted: items)
-        persist()
+        // Only the "Added to Queue" file changes — the context album / playlist stays put.
+        syncAndPersistUserQueue()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
@@ -76,6 +93,8 @@ public final class PlayQueueHandler: ObservableObject {
         let items = items.map(Self.markUserQueued)
         contextQueue.append(contentsOf: items)
         mirrorEdit(inserted: items)
+        // These sit at the end of the context, outside the "Added to Queue" run, so the
+        // context file has to carry them.
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
@@ -98,7 +117,7 @@ public final class PlayQueueHandler: ObservableObject {
         }
         contextQueue.insert(contentsOf: items, at: insertAt)
         mirrorEdit(inserted: items)
-        persist()
+        syncAndPersistUserQueue()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
@@ -149,9 +168,47 @@ public final class PlayQueueHandler: ObservableObject {
         unshuffledContext.removeAll { !remaining.contains($0.entryId) }
     }
 
+    /// Where the tracks the user queued themselves sit: the run right after the playing
+    /// track, which is where every enqueue inserts. The queue screen lists these on their
+    /// own and edits them through the two calls below.
+    public var userQueuedRange: Range<Int> {
+        // Podcast playback runs off `podcastQueue`, which nothing enqueues into.
+        guard playerMode == .music else { return 0..<0 }
+        return contextQueue.userQueuedRun(after: currentIndex)
+    }
+
+    public var userQueuedItems: [QueueItem] { Array(contextQueue[userQueuedRange]) }
+
+    /// Reorders within the user-queued run. Offsets and destination are relative to that
+    /// run and clamped to it, so dragging what was queued can neither disturb the context
+    /// nor jump a row ahead of the playing track.
+    public func moveUserQueued(from source: IndexSet, to destination: Int) {
+        let range = userQueuedRange
+        guard !range.isEmpty else { return }
+        let sources = source.filter { (0..<range.count).contains($0) }.map { $0 + range.lowerBound }
+        guard !sources.isEmpty else { return }
+        move(
+            from: IndexSet(sources),
+            to: min(max(0, destination), range.count) + range.lowerBound,
+            writeUserQueueOnly: true
+        )
+    }
+
+    /// Removes rows from the user-queued run, offsets relative to the run.
+    public func removeUserQueued(at offsets: IndexSet) {
+        let range = userQueuedRange
+        let absolute = offsets.filter { (0..<range.count).contains($0) }.map { $0 + range.lowerBound }
+        guard !absolute.isEmpty else { return }
+        remove(at: IndexSet(absolute), writeUserQueueOnly: true)
+    }
+
     /// Removes queue rows. Only items the user queued themselves can be removed — the
     /// tracks a context (album, playlist, …) brought in stay for as long as it plays.
     public func remove(at offsets: IndexSet) {
+        remove(at: offsets, writeUserQueueOnly: false)
+    }
+
+    private func remove(at offsets: IndexSet, writeUserQueueOnly: Bool) {
         let removable = offsets.filter { contextQueue.indices.contains($0) && contextQueue[$0].isUserQueued }
         guard !removable.isEmpty else { return }
         // Positional arithmetic rather than an id lookup: the same song can sit in the
@@ -160,7 +217,11 @@ public final class PlayQueueHandler: ObservableObject {
         let removed = removable.sorted(by: >).map { contextQueue.remove(at: $0) }
         currentIndex = min(max(0, currentIndex - removedBefore), max(0, contextQueue.count - 1))
         mirrorEdit(removedIds: Set(removed.map(\.id)))
-        persist()
+        if writeUserQueueOnly {
+            syncAndPersistUserQueue()
+        } else {
+            persist()
+        }
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: removed)
     }
 
@@ -176,6 +237,10 @@ public final class PlayQueueHandler: ObservableObject {
     /// move so the pointer, the prefetch window, and the next-up track stay in sync with
     /// what the engine is playing.
     public func move(from source: IndexSet, to destination: Int) {
+        move(from: source, to: destination, writeUserQueueOnly: false)
+    }
+
+    private func move(from source: IndexSet, to destination: Int, writeUserQueueOnly: Bool) {
         let sources = source.filter { contextQueue.indices.contains($0) }
         guard !sources.isEmpty else { return }
         let previousIndex = currentIndex
@@ -191,7 +256,11 @@ public final class PlayQueueHandler: ObservableObject {
         // Deliberately no `queueGeneration` bump: prefetch re-evaluation treats an older
         // generation as obsolete and would delete the playing track's cached file.
         mirrorEdit()
-        persist()
+        if writeUserQueueOnly {
+            syncAndPersistUserQueue()
+        } else {
+            persist()
+        }
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
@@ -242,6 +311,7 @@ public final class PlayQueueHandler: ObservableObject {
             if currentIndex + 1 < q.count { currentIndex += 1 } else { return nil }
         }
         dropEphemeral(leftAt: departedIndex)
+        playbackPosition = 0
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
         return currentItem
@@ -250,12 +320,17 @@ public final class PlayQueueHandler: ObservableObject {
     public func retreat() -> QueueItem? {
         let q = activeQueue
         guard !q.isEmpty else { return nil }
+        let departedIndex = currentIndex
         switch repeatMode {
         case .all:
             currentIndex = (currentIndex - 1 + q.count) % q.count
         case .off, .one:
             if currentIndex > 0 { currentIndex -= 1 } else { return currentItem }
         }
+        // Same as advancing or jumping away: an "Added to Queue" listen is done once the
+        // playhead leaves it, including when the user steps back to the previous track.
+        dropEphemeral(leftAt: departedIndex)
+        playbackPosition = 0
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
         return currentItem
@@ -263,11 +338,50 @@ public final class PlayQueueHandler: ObservableObject {
 
     public func jump(to index: Int) {
         guard activeQueue.indices.contains(index) else { return }
-        let departedIndex = currentIndex
-        currentIndex = index
-        dropEphemeral(leftAt: departedIndex)
+        // Relocating the queued run can slide rows under the old playhead index, so the
+        // departed track is found again by entry id after the rewrite.
+        let departedEntryId = contextQueue.indices.contains(currentIndex)
+            ? contextQueue[currentIndex].entryId
+            : nil
+        // Leaving the playhead (forward or back) would strand the "Added to Queue" run
+        // where it was. Pull it along so it stays next up after whatever was tapped.
+        // Jumping into the run itself leaves it alone — those rows are about to play.
+        let relocated = relocateUserQueuedAroundJump(to: index)
+        if !relocated {
+            currentIndex = index
+        }
+        if let departedEntryId,
+           let departedIndex = contextQueue.firstIndex(where: { $0.entryId == departedEntryId }) {
+            dropEphemeral(leftAt: departedIndex)
+        }
+        playbackPosition = 0
         persist()
+        if relocated {
+            NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+        }
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
+    }
+
+    /// Moves the user-queued run after the playhead to right after `index`, when the jump
+    /// lands outside that run. Sets `currentIndex` to the jump target. Returns whether
+    /// the queue was rewritten.
+    @discardableResult
+    private func relocateUserQueuedAroundJump(to index: Int) -> Bool {
+        guard playerMode == .music else { return false }
+        let range = contextQueue.userQueuedRun(after: currentIndex)
+        guard !range.isEmpty else { return false }
+        // Inside the run: play that queued row where it sits.
+        guard index < range.lowerBound || index >= range.upperBound else { return false }
+        // Same row — nothing to move, and restart shouldn't reshuffle the section.
+        guard index != currentIndex else { return false }
+
+        let items = Array(contextQueue[range])
+        contextQueue.removeSubrange(range)
+        // Rows removed before the target slide it down; rows after leave it put.
+        currentIndex = index >= range.upperBound ? index - range.count : index
+        contextQueue.insert(contentsOf: items, at: currentIndex + 1)
+        mirrorEdit()
+        return true
     }
 
     public func setRepeat(_ mode: RepeatMode) { repeatMode = mode; persist() }
@@ -354,28 +468,182 @@ public final class PlayQueueHandler: ObservableObject {
         return Array(q[start...end])
     }
 
+    /// Records where playback sits in the current track, for the next snapshot. Callers
+    /// throttle this: it rewrites the whole queue file, which is far heavier than the one
+    /// value it carries.
+    public func updatePlaybackPosition(_ seconds: TimeInterval) {
+        let clamped = max(0, seconds)
+        guard abs(clamped - playbackPosition) >= 0.5 else { return }
+        playbackPosition = clamped
+        persist()
+    }
+
+    /// Empties the queue and, unless the caller is only swapping accounts, forgets the
+    /// stored one too. Stopping playback is the caller's job — the handler has no engine.
+    ///
+    /// Posts the dropped rows so their prefetched files go with them.
+    public func clear(forgetStored: Bool = true) {
+        let removed = contextQueue + podcastQueue
+        contextQueue = []
+        userQueue = []
+        podcastQueue = []
+        unshuffledContext = []
+        playbackPosition = 0
+        currentIndex = 0
+        queueGeneration += 1
+        contextGeneration += 1
+        if forgetStored {
+            pendingWrites = PendingWrites(forget: true)
+            kickWriteTask()
+        }
+        NotificationCenter.default.post(name: .verodromeQueueChanged, object: removed)
+    }
+
     public func loadFromDisk() async {
-        guard let persister else { return }
-        let snapshot = await persister.loadQueue()
-        contextQueue = snapshot.context
-        userQueue = snapshot.user
+        guard let persister, let snapshot = await persister.loadQueue() else { return }
+
+        // Context file is the album / playlist without the "Added to Queue" run. Older
+        // builds embedded that run in `context` or `user`; peel it out so merge is one path.
+        var context = snapshot.context
+        var index = min(max(0, snapshot.index), max(0, context.count - 1))
+        let restoredEntryId = context.indices.contains(index) ? context[index].entryId : nil
+
+        var user = await persister.loadUserQueue()
+        if user.isEmpty, !snapshot.user.isEmpty {
+            user = snapshot.user
+        }
+        if user.isEmpty {
+            let embedded = context.userQueuedRun(after: index)
+            if !embedded.isEmpty {
+                user = Array(context[embedded])
+                context.removeSubrange(embedded)
+            }
+        }
+
+        // Drop one-listen rows that leaked into an older context snapshot and are not the
+        // playing track. The "Added to Queue" list (including its ephemerals) is re-merged
+        // below from the side file.
+        context.removeAll { $0.isEphemeral && $0.entryId != restoredEntryId }
+        if let restoredEntryId {
+            index = context.firstIndex(where: { $0.entryId == restoredEntryId })
+                ?? min(index, max(0, context.count - 1))
+        } else {
+            index = min(index, max(0, context.count - 1))
+        }
+
+        if !user.isEmpty {
+            let insertAt = min(index + 1, context.count)
+            context.insert(contentsOf: user, at: insertAt)
+        }
+
+        contextQueue = context
+        userQueue = user
         podcastQueue = snapshot.podcast
-        currentIndex = snapshot.index
+        let userEntryIds = Set(user.map(\.entryId))
+        if snapshot.unshuffledContext.isEmpty {
+            unshuffledContext = context
+        } else if snapshot.shuffleMode == .on {
+            // Matches `mirrorEdit`: while shuffled, newly queued rows are appended to the
+            // restore-order copy rather than spliced into the middle.
+            var restored = snapshot.unshuffledContext.filter { !userEntryIds.contains($0.entryId) && !$0.isEphemeral }
+            restored.append(contentsOf: user)
+            unshuffledContext = restored
+        } else {
+            unshuffledContext = context
+        }
         queueGeneration = snapshot.generation
         repeatMode = snapshot.repeatMode
         shuffleMode = snapshot.shuffleMode
         playerMode = snapshot.playerMode
-        unshuffledContext = contextQueue
+        playbackPosition = snapshot.playbackPosition
+        if playerMode == .music, let restoredEntryId,
+           let found = context.firstIndex(where: { $0.entryId == restoredEntryId }) {
+            currentIndex = found
+        } else {
+            currentIndex = min(max(0, index), max(0, activeQueue.count - 1))
+        }
     }
 
+    /// Writes only the "Added to Queue" side file. Used when the context album / playlist
+    /// did not change — enqueue, reorder, or remove within that section.
+    private func syncAndPersistUserQueue() {
+        userQueue = userQueuedItems
+        guard persister != nil else { return }
+        pendingWrites.forget = false
+        pendingWrites.user = userQueue
+        kickWriteTask()
+    }
+
+    /// Writes the context file (without the "Added to Queue" run) and refreshes the user
+    /// side file so the two stay consistent after playhead / shuffle / replace changes.
     private func persist() {
-        guard let persister else { return }
-        let snapshot = (contextQueue, userQueue, podcastQueue, currentIndex, queueGeneration, repeatMode, shuffleMode, playerMode)
-        Task {
-            await persister.saveQueue(
-                context: snapshot.0, user: snapshot.1, podcast: snapshot.2, index: snapshot.3,
-                generation: snapshot.4, repeatMode: snapshot.5, shuffleMode: snapshot.6, playerMode: snapshot.7
-            )
+        userQueue = Array(contextQueue[userQueuedRange])
+        guard persister != nil else { return }
+        pendingWrites.forget = false
+        pendingWrites.context = contextSnapshotForDisk()
+        pendingWrites.user = userQueue
+        kickWriteTask()
+    }
+
+    /// Context as it should sit on disk: the playing album / playlist with the "Added to
+    /// Queue" run pulled out, so that run can live in its own file.
+    private func contextSnapshotForDisk() -> PersistedPlayerQueue {
+        let range = userQueuedRange
+        var context = contextQueue
+        var unshuffled = unshuffledContext
+        if !range.isEmpty {
+            let removedIds = Set(context[range].map(\.entryId))
+            context.removeSubrange(range)
+            unshuffled.removeAll { removedIds.contains($0.entryId) }
         }
+        return PersistedPlayerQueue(
+            context: context,
+            user: [],
+            podcast: podcastQueue,
+            unshuffledContext: unshuffled,
+            index: currentIndex,
+            generation: queueGeneration,
+            repeatMode: repeatMode,
+            shuffleMode: shuffleMode,
+            playerMode: playerMode,
+            playbackPosition: playbackPosition
+        )
+    }
+
+    /// Queues disk work behind whichever write is already running. A task per edit would
+    /// let two snapshots reach the store in either order — dragging a row or scrubbing
+    /// produces plenty of them — and the stored queue would end up on whichever landed last.
+    private func kickWriteTask() {
+        guard let persister else { return }
+        guard writeTask == nil else { return }
+        writeTask = Task { [weak self] in
+            while let batch = self?.takePendingWrites() {
+                if batch.forget {
+                    await persister.clearQueue()
+                    continue
+                }
+                if let context = batch.context {
+                    await persister.saveQueue(context)
+                }
+                if let user = batch.user {
+                    await persister.saveUserQueue(user)
+                }
+            }
+            self?.writeTask = nil
+        }
+    }
+
+    private func takePendingWrites() -> PendingWrites? {
+        let batch = pendingWrites
+        guard batch.context != nil || batch.user != nil || batch.forget else { return nil }
+        pendingWrites = PendingWrites()
+        return batch
+    }
+
+    /// Waits for queued writes to reach the store. Callers that are about to point the
+    /// store at another account use this so a snapshot of the queue being left behind
+    /// can't land in the next account's file.
+    public func flushPendingWrites() async {
+        await writeTask?.value
     }
 }

@@ -5,6 +5,8 @@ struct PlayerSettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var player: PlayerViewModel
 
+    @State private var showClearQueueConfirm = false
+
     private let staleOptions = [12, 18, 24]
 
     var body: some View {
@@ -58,7 +60,30 @@ struct PlayerSettingsView: View {
                     set: { _ in player.toggleOfflineMode() }
                 ))
             }
+
+            Section {
+                Button("Clear Queue", role: .destructive) {
+                    showClearQueueConfirm = true
+                }
+                .disabled(player.queue.isEmpty)
+            } header: {
+                Text("Queue")
+            } footer: {
+                Text("Verodrome reopens on the queue you left playing. Clearing it stops playback and starts the next launch empty.")
+            }
         }
         .navigationTitle("Player")
+        .confirmationDialog(
+            "Clear Queue?",
+            isPresented: $showClearQueueConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Queue", role: .destructive) {
+                player.clearQueue()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This stops playback and removes all \(player.queue.count) tracks from the queue.")
+        }
     }
 }

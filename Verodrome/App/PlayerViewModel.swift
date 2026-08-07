@@ -242,6 +242,39 @@ final class PlayerViewModel: ObservableObject {
         syncQueue()
     }
 
+    /// Positions in `queue` holding the songs the user added themselves, which the queue
+    /// screen lists as its own section. Derived from the same snapshot the rows render
+    /// from, so section offsets can't drift from what is on screen.
+    var userQueuedRange: Range<Int> { queue.userQueuedRun(after: currentIndex) }
+
+    /// Reordering and removing what the user queued needs no shuffle, unlike the rest of
+    /// the queue: that section is a list they built, not the order an album came in.
+    /// Offsets are relative to the section.
+    func moveUserQueued(from source: IndexSet, to destination: Int) {
+        facade?.moveUserQueued(from: source, to: destination)
+        syncQueue()
+    }
+
+    func removeUserQueued(at offsets: IndexSet) {
+        facade?.removeUserQueued(at: offsets)
+        syncQueue()
+    }
+
+    /// Empties the queue and forgets the one kept for the next launch.
+    func clearQueue() {
+        facade?.clearQueue()
+        queue = []
+        currentIndex = 0
+        currentItem = nil
+        nowPlaying.currentItem = nil
+        nowPlaying.isPlaying = false
+        isPlaying = false
+        lyrics = ""
+        statusMessage = ""
+        progress.currentTime = 0
+        progress.duration = 0
+    }
+
     func toggleRepeat() {
         switch repeatMode {
         case .off: repeatMode = .one

@@ -38,6 +38,8 @@ public final class AudioPlayer: ObservableObject {
     /// queue edit can tell whether the preloaded track is still the one coming up.
     private var preloadedNextItemId: String?
     private var preloadInvalidationTask: Task<Void, Never>?
+    /// True while a restored queue's track is being parked at launch.
+    private var isRestoringSession = false
 
     public init(queueHandler: PlayQueueHandler, backend: BackendAudioPlayer, settings: @escaping () -> UserSettings) {
         self.queueHandler = queueHandler
@@ -192,6 +194,12 @@ public final class AudioPlayer: ObservableObject {
     /// `backend.play` threw before audio started — a missing URL, or offline with no
     /// cached file. Fail over to a cached neighbour when there is one, otherwise park.
     private func handleLoadFailure(for item: QueueItem, position: TimeInterval, error: Error) {
+        // Restoring a queue at launch must never make noise, and every recovery path
+        // below ends in playback — leave the track parked and let the user press play.
+        if isRestoringSession {
+            log(.warning, "Restored queue couldn't load \(item.title): \(error.localizedDescription)")
+            return
+        }
         if isEffectivelyOffline {
             if let index = nextCachedIndex() {
                 PlayTrace.mark("offline — jumping to cached queue item", details: "index=\(index)")
@@ -455,6 +463,33 @@ public final class AudioPlayer: ObservableObject {
     }
 
     public func stop() { backend.stop() }
+
+    /// Parks the restored queue's track: loaded and shown, silent until the user presses
+    /// play. Used once at launch, after the backend is authenticated enough to resolve a
+    /// stream URL.
+    public func restoreSession(at position: TimeInterval) async {
+        guard queueHandler.currentItem != nil else { return }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+        PlayTrace.mark("restoring last session", details: "at=\(Int(position))s")
+        await playCurrent(startAt: position, paused: true)
+    }
+
+    /// Drops the queue along with everything the engine was holding for it. Pass
+    /// `forgetStored: false` to empty the player without discarding the queue on disk.
+    public func clearQueue(forgetStored: Bool = true) {
+        deferredWorkTask?.cancel()
+        preloadInvalidationTask?.cancel()
+        preloadedNextItemId = nil
+        backend.stop()
+        backend.clearPendingNext()
+        stalled = nil
+        statusMessage = ""
+        nowPlaying = nil
+        lyrics = ""
+        lyricsLoaded = false
+        queueHandler.clear(forgetStored: forgetStored)
+    }
 
     public func applyEqualizerBands(_ bands: [Float]) {
         backend.setEqualizerBands(bands)

@@ -10,6 +10,8 @@ public protocol PlayerControlling: AnyObject {
     var duration: TimeInterval { get }
     var queue: [QueueItem] { get }
     var currentIndex: Int { get }
+    /// Where the rows the user queued themselves sit inside `queue`.
+    var userQueuedRange: Range<Int> { get }
     /// Changes when a new context starts, so callers can tell their queue was replaced.
     var contextGeneration: Int { get }
     var repeatMode: RepeatMode { get set }
@@ -32,7 +34,12 @@ public protocol PlayerControlling: AnyObject {
     func appendContext(_ items: [QueueItem])
     func remove(at offsets: IndexSet)
     func move(from: IndexSet, to: Int)
+    /// Reorder / remove within the user-queued run, offsets relative to it.
+    func moveUserQueued(from: IndexSet, to: Int)
+    func removeUserQueued(at offsets: IndexSet)
     func jump(to index: Int)
+    /// Empties the queue and forgets the stored one.
+    func clearQueue()
     func toggleShuffle()
     func setShuffleMode(_ mode: ShuffleMode)
     func setRepeatMode(_ mode: RepeatMode)
@@ -59,6 +66,12 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
     @Published public private(set) var statusMessage: String = ""
 
+    /// The stored queue carries the scrub position, so it is rewritten as playback moves.
+    /// Doing that per tick would be a file write a second; this interval keeps a relaunch
+    /// within a few seconds of where the user was.
+    private static let positionPersistInterval: TimeInterval = 5
+    private var lastPersistedPosition: TimeInterval = 0
+
     public init(audioPlayer: AudioPlayer) {
         self.audioPlayer = audioPlayer
         audioPlayer.backend.$isPlaying
@@ -79,6 +92,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
             .sink { [weak self] time in
                 guard let self else { return }
                 self.currentTime = time
+                self.persistPositionIfDue(time)
                 // While rate ≠ 1×, refresh lock-screen elapsed so the scrubber
                 // tracks the engine instead of drifting on extrapolated time.
                 let rate = self.audioPlayer.backend.playbackRate
@@ -96,6 +110,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.$nowPlaying
             .receive(on: DispatchQueue.main)
             .sink { [weak self] item in
+                self?.lastPersistedPosition = 0
                 self?.currentItem = item
                 self?.pushNowPlaying(reloadArtwork: true)
             }
@@ -123,6 +138,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public var queue: [QueueItem] { audioPlayer.queueHandler.activeQueue }
     public var currentIndex: Int { audioPlayer.queueHandler.currentIndex }
+    public var userQueuedRange: Range<Int> { audioPlayer.queueHandler.userQueuedRange }
     public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
@@ -217,9 +233,16 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public func remove(at offsets: IndexSet) { audioPlayer.queueHandler.remove(at: offsets) }
     public func remove(at index: Int) { audioPlayer.queueHandler.remove(at: IndexSet(integer: index)) }
     public func move(from: IndexSet, to: Int) { audioPlayer.queueHandler.move(from: from, to: to) }
+    public func moveUserQueued(from: IndexSet, to: Int) { audioPlayer.queueHandler.moveUserQueued(from: from, to: to) }
+    public func removeUserQueued(at offsets: IndexSet) { audioPlayer.queueHandler.removeUserQueued(at: offsets) }
     public func jump(to index: Int) {
         audioPlayer.queueHandler.jump(to: index)
         Task { await audioPlayer.playCurrent(); refreshPublished() }
+    }
+    public func clearQueue() {
+        audioPlayer.clearQueue()
+        lastPersistedPosition = 0
+        refreshPublished()
     }
     public func toggleShuffle() { audioPlayer.queueHandler.toggleShuffle() }
     public func setRepeatMode(_ mode: RepeatMode) {
@@ -238,6 +261,26 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func setEqualizerEnabled(_ enabled: Bool) {
         audioPlayer.setEqualizerEnabled(enabled)
+    }
+
+    /// Writes the scrub position into the stored queue now. Called when the app leaves the
+    /// foreground, where the tick that would have carried it may never arrive.
+    public func persistPlaybackPosition() {
+        lastPersistedPosition = currentTime
+        audioPlayer.queueHandler.updatePlaybackPosition(currentTime)
+    }
+
+    private func persistPositionIfDue(_ time: TimeInterval) {
+        guard abs(time - lastPersistedPosition) >= Self.positionPersistInterval else { return }
+        lastPersistedPosition = time
+        audioPlayer.queueHandler.updatePlaybackPosition(time)
+    }
+
+    /// Republishes player state after something changed the queue behind the facade —
+    /// a cold-launch restore, or an account switch — neither of which arrives through the
+    /// playback events the published state normally follows.
+    public func syncPublishedState() {
+        refreshPublished()
     }
 
     private var lastArtworkLoadedItemId: String?

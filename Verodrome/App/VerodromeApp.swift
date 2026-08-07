@@ -9,6 +9,7 @@ struct VerodromeApp: App {
     @StateObject private var player = PlayerViewModel()
     @StateObject private var shuffleAll = ShuffleAllCoordinator()
     @StateObject private var themeManager: ThemeManager
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         _themeManager = StateObject(wrappedValue: ThemeManager(settings: VerodromeKit.shared.settings))
@@ -42,6 +43,12 @@ struct VerodromeApp: App {
                 }
                 .onChange(of: kit.accountStore.isLoggedIn) { _, _ in
                     themeManager.applyTheme()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // Being killed while backgrounded is the normal way this app ends, and
+                    // the tick that would have carried the scrub position never arrives.
+                    guard phase == .background else { return }
+                    kit.player?.persistPlaybackPosition()
                 }
         }
         .modelContainer(PersistentStorage.shared.container)

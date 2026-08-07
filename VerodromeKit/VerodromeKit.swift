@@ -19,6 +19,7 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var player: PlayerFacadeImpl?
     private var audioOrchestrator: AudioPlayer?
     public private(set) var queueHandler: PlayQueueHandler?
+    public private(set) var queueStore: FilePlayerQueueStore?
     public private(set) var queueCachePolicy: QueueCachePolicyManager?
     public private(set) var downloadManager: DownloadManager?
     public private(set) var artworkDownloadManager: ArtworkDownloadManager?
@@ -65,7 +66,9 @@ public final class VerodromeKit: ObservableObject {
         self.artworkDownloadManager = artManager
         artworkResolver.attach(manager: artManager)
 
-        let queue = PlayQueueHandler()
+        let queueStore = FilePlayerQueueStore(accountKey: accountStore.activeAccountKey()?.storageKey)
+        self.queueStore = queueStore
+        let queue = PlayQueueHandler(persister: queueStore)
         self.queueHandler = queue
         let backendPlayer = BackendAudioPlayer(urlProvider: urlProvider, cache: cache)
         let audio = AudioPlayer(queueHandler: queue, backend: backendPlayer, settings: { [weak self] in
@@ -76,6 +79,11 @@ public final class VerodromeKit: ObservableObject {
         self.player = facade
         facade.attachNowPlaying(nowPlayingHandler)
         facade.attachArtworkResolver(artworkResolver)
+
+        // Bring the last session's queue back before anything else reads the player, so
+        // the mini player and queue screen are populated on the first frame. The track
+        // itself is loaded further down, once the backend can hand out a stream URL.
+        await queue.loadFromDisk()
 
         let policy = QueueCachePolicyManager(
             queue: queue,
@@ -114,9 +122,37 @@ public final class VerodromeKit: ObservableObject {
 
         if accountStore.activeAccountKey() != nil {
             _ = try? await ensureActiveLibrarySyncer()
+            await restoreParkedTrack()
             // Cold launch: refresh catalog in background and resume track backfill if incomplete.
             librarySync.runBackground()
         }
+    }
+
+    /// Loads the restored queue's track paused, so the app comes back where it left off
+    /// without playing on its own. Deliberately after authentication: a song's stream URL
+    /// is minted per session and can't be restored from the stored queue.
+    private func restoreParkedTrack() async {
+        guard let queue = queueHandler, let audio = audioOrchestrator, queue.currentItem != nil else { return }
+        await audio.restoreSession(at: queue.playbackPosition)
+        player?.syncPublishedState()
+    }
+
+    /// Drops the playing queue when the library behind it goes away. The stored queue is
+    /// left alone: it belongs to the account being left, and `repointQueueStore` decides
+    /// whether that account is coming back.
+    private func clearActiveQueue() {
+        audioOrchestrator?.clearQueue(forgetStored: false)
+        player?.syncPublishedState()
+    }
+
+    /// Hands the queue store to another account, or to none. Queued writes are drained
+    /// first, so a snapshot of the account being left cannot land in the next one's file.
+    private func repointQueueStore(to key: AccountInfo.Key?, forgetCurrent: Bool) async {
+        await queueHandler?.flushPendingWrites()
+        if forgetCurrent {
+            await queueStore?.clearQueue()
+        }
+        await queueStore?.setAccount(key?.storageKey)
     }
 
     public func refreshLaunchPhase() {
@@ -140,6 +176,7 @@ public final class VerodromeKit: ObservableObject {
         )
         try accountStore.saveCredentials(storedCreds, for: info)
         accountStore.setActiveAccount(info)
+        await repointQueueStore(to: info.key, forgetCurrent: false)
         observableSettings.reload(accountKey: info.key)
         observableSettings.updateAccount { $0.apiType = apiType }
         settings.isLibrarySynced = false
@@ -257,6 +294,9 @@ public final class VerodromeKit: ObservableObject {
         backendProxy.logout()
         activeLibrarySyncer = nil
         activeLibraryIngester = nil
+        // The account is about to be removed, so its stored queue goes with it.
+        clearActiveQueue()
+        Task { await repointQueueStore(to: nil, forgetCurrent: true) }
         settings.isLibrarySynced = false
         settings.save()
         observableSettings.updateApp {
@@ -279,6 +319,10 @@ public final class VerodromeKit: ObservableObject {
         }
         accountStore.setActiveAccount(info)
         observableSettings.reload(accountKey: info.key)
+        // The playing queue points at the previous library. Empty it, leaving that
+        // account's stored queue for when the user comes back to it.
+        clearActiveQueue()
+        await repointQueueStore(to: info.key, forgetCurrent: false)
 
         guard let login = LoginCredentials(
             serverURLString: stored.credentials.serverURL,
@@ -289,6 +333,8 @@ public final class VerodromeKit: ObservableObject {
         }
         _ = try await backendProxy.login(credentials: login)
         _ = try await ensureActiveLibrarySyncer()
+        await queueHandler?.loadFromDisk()
+        await restoreParkedTrack()
 
         let hasLocalLibrary: Bool
         if let account = try activeAccount(), let repo = repository() {
@@ -319,6 +365,10 @@ public final class VerodromeKit: ObservableObject {
             activeLibrarySyncer = nil
             activeLibraryIngester = nil
             backendProxy.logout()
+            // The removed account keeps no queue; `switchToAccount` below points the
+            // store at whichever account takes over.
+            clearActiveQueue()
+            await repointQueueStore(to: nil, forgetCurrent: true)
             if let next = accountStore.allAccounts().first {
                 try? await switchToAccount(next.info)
             } else {

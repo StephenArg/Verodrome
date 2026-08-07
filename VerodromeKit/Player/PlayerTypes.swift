@@ -22,7 +22,7 @@ public enum PlayerMode: Int, Codable, CaseIterable, Sendable {
 }
 
 
-public struct QueueItem: Sendable, Hashable, Identifiable {
+public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
     /// Playable identity (song / episode / …). Not unique in the queue when the same
     /// track is queued twice — use `entryId` for list row identity.
     public var id: String { playableId + "|" + kind.rawValue }
@@ -110,6 +110,23 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
         )
     }
 
+    /// Lenient on purpose: these rows are read back from a queue written by an earlier
+    /// build, and a field added since then must not throw the whole queue away.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entryId = try c.decodeIfPresent(UUID.self, forKey: .entryId) ?? UUID()
+        playableId = try c.decode(String.self, forKey: .playableId)
+        kind = try c.decodeIfPresent(PlayableRef.Kind.self, forKey: .kind) ?? .song
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        artistName = try c.decodeIfPresent(String.self, forKey: .artistName)
+        albumName = try c.decodeIfPresent(String.self, forKey: .albumName)
+        duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+        artworkId = try c.decodeIfPresent(String.self, forKey: .artworkId)
+        directStreamURL = try c.decodeIfPresent(URL.self, forKey: .directStreamURL)
+        isUserQueued = try c.decodeIfPresent(Bool.self, forKey: .isUserQueued) ?? false
+        isEphemeral = try c.decodeIfPresent(Bool.self, forKey: .isEphemeral) ?? false
+    }
+
     public var artist: String? { artistName }
     public var album: String? { albumName }
     public var artworkURL: URL? {
@@ -131,25 +148,94 @@ public struct QueueItem: Sendable, Hashable, Identifiable {
     }
 }
 
+extension Array where Element == QueueItem {
+    /// The run of user-queued rows sitting directly after `index`: what "Add to Queue"
+    /// put in and playback hasn't reached yet.
+    ///
+    /// Taken as a contiguous run rather than every `isUserQueued` row, because a queued
+    /// row further down — `enqueueLast` puts one at the very end — plays as part of the
+    /// context around it. Presenting it alongside these would claim an order the queue
+    /// doesn't have.
+    public func userQueuedRun(after index: Int) -> Range<Int> {
+        // Qualified: inside a Sequence extension, bare min/max are the instance methods.
+        let start = Swift.min(Swift.max(0, index + 1), count)
+        var end = start
+        while end < count, self[end].isUserQueued { end += 1 }
+        return start..<end
+    }
+}
+
+/// The play queue as it is written between launches, so closing the app doesn't lose
+/// what was playing.
+public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
+    /// Context tracks only. The "Added to Queue" run is stored separately via
+    /// `PlayerQueuePersisting.saveUserQueue` and merged back in on load.
+    public var context: [QueueItem]
+    /// Legacy field from when user-queued rows lived inside this snapshot. New writes
+    /// leave it empty; load still reads it as a fallback when no side file exists.
+    public var user: [QueueItem]
+    public var podcast: [QueueItem]
+    /// The context in the order it had before shuffle, so turning shuffle off after a
+    /// relaunch restores the album / playlist order instead of freezing the shuffled one.
+    public var unshuffledContext: [QueueItem]
+    public var index: Int
+    public var generation: Int
+    public var repeatMode: RepeatMode
+    public var shuffleMode: ShuffleMode
+    public var playerMode: PlayerMode
+    /// How far into the current track playback had reached.
+    public var playbackPosition: TimeInterval
+
+    public init(
+        context: [QueueItem] = [],
+        user: [QueueItem] = [],
+        podcast: [QueueItem] = [],
+        unshuffledContext: [QueueItem] = [],
+        index: Int = 0,
+        generation: Int = 0,
+        repeatMode: RepeatMode = .off,
+        shuffleMode: ShuffleMode = .off,
+        playerMode: PlayerMode = .music,
+        playbackPosition: TimeInterval = 0
+    ) {
+        self.context = context
+        self.user = user
+        self.podcast = podcast
+        self.unshuffledContext = unshuffledContext
+        self.index = index
+        self.generation = generation
+        self.repeatMode = repeatMode
+        self.shuffleMode = shuffleMode
+        self.playerMode = playerMode
+        self.playbackPosition = playbackPosition
+    }
+
+    public var isEmpty: Bool { context.isEmpty && podcast.isEmpty }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        context = try c.decodeIfPresent([QueueItem].self, forKey: .context) ?? []
+        user = try c.decodeIfPresent([QueueItem].self, forKey: .user) ?? []
+        podcast = try c.decodeIfPresent([QueueItem].self, forKey: .podcast) ?? []
+        unshuffledContext = try c.decodeIfPresent([QueueItem].self, forKey: .unshuffledContext) ?? []
+        index = try c.decodeIfPresent(Int.self, forKey: .index) ?? 0
+        generation = try c.decodeIfPresent(Int.self, forKey: .generation) ?? 0
+        repeatMode = try c.decodeIfPresent(RepeatMode.self, forKey: .repeatMode) ?? .off
+        shuffleMode = try c.decodeIfPresent(ShuffleMode.self, forKey: .shuffleMode) ?? .off
+        playerMode = try c.decodeIfPresent(PlayerMode.self, forKey: .playerMode) ?? .music
+        playbackPosition = try c.decodeIfPresent(TimeInterval.self, forKey: .playbackPosition) ?? 0
+    }
+}
+
 public protocol PlayerQueuePersisting: AnyObject, Sendable {
-    func loadQueue() async -> (
-        context: [QueueItem],
-        user: [QueueItem],
-        podcast: [QueueItem],
-        index: Int,
-        generation: Int,
-        repeatMode: RepeatMode,
-        shuffleMode: ShuffleMode,
-        playerMode: PlayerMode
-    )
-    func saveQueue(
-        context: [QueueItem],
-        user: [QueueItem],
-        podcast: [QueueItem],
-        index: Int,
-        generation: Int,
-        repeatMode: RepeatMode,
-        shuffleMode: ShuffleMode,
-        playerMode: PlayerMode
-    ) async
+    /// The stored context queue, or nil when nothing was kept for the current account.
+    /// Does not include the "Added to Queue" run — that lives in `loadUserQueue()`.
+    func loadQueue() async -> PersistedPlayerQueue?
+    func saveQueue(_ snapshot: PersistedPlayerQueue) async
+    /// The "Added to Queue" rows waiting after the playhead. Kept in their own file so
+    /// adding a track does not rewrite the whole context.
+    func loadUserQueue() async -> [QueueItem]
+    func saveUserQueue(_ items: [QueueItem]) async
+    /// Forgets the stored queue, so the next launch starts empty.
+    func clearQueue() async
 }
