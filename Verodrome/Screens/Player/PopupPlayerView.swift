@@ -190,8 +190,17 @@ struct PopupPlayerView: View {
     }
 
     private var lyricsButtonTint: Color {
-        if showingLyrics { return .accentColor }
+        // Accent while the preference is on — including tracks with no lyrics, so the
+        // control still reads as active and can be used to turn lyrics off.
+        // Same `themeManager.accentColor` as the active speed control (not `.accentColor`,
+        // which can diverge from the themed tint in this presentation).
+        if settings.showLyricsInPlayer { return themeManager.accentColor }
         return lyricsAvailable ? .primary : Color.secondary.opacity(0.4)
+    }
+
+    /// Can open lyrics when text exists, or close the preference even when it doesn't.
+    private var lyricsToggleEnabled: Bool {
+        lyricsAvailable || settings.showLyricsInPlayer
     }
 
     private func toggleLyrics() {
@@ -222,7 +231,7 @@ struct PopupPlayerView: View {
             downloadStatus: overflowDownloadStatus,
             showRatingStars: settings.showRatingStars,
             showSongInfo: settings.showSongInfo,
-            showLyrics: showingLyrics,
+            showLyrics: settings.showLyricsInPlayer,
             hasLyrics: lyricsAvailable,
             playbackSpeed: player.playbackSpeed,
             speedMenuEnabled: player.currentItem?.isLiveStream != true,
@@ -301,20 +310,12 @@ struct PopupPlayerView: View {
         }
     }
 
-    // MARK: - Bottom action bar (AirPlay / Speed / Lyrics / Share / Queue)
+    // MARK: - Bottom action bar (AirPlay / Lyrics / Speed / Share / Queue)
 
     private var bottomActionBar: some View {
         HStack(spacing: 28) {
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
-
-            PlaybackSpeedMenuButton(
-                playbackSpeed: player.playbackSpeed,
-                isEnabled: player.currentItem?.isLiveStream != true,
-                onSelect: { player.setPlaybackSpeed($0) }
-            )
-            .frame(width: 24, height: 24)
-            .accessibilityLabel("Playback Speed")
 
             Button {
                 toggleLyrics()
@@ -323,8 +324,17 @@ struct PopupPlayerView: View {
                     .font(.title3)
                     .foregroundStyle(lyricsButtonTint)
             }
-            .disabled(!lyricsAvailable)
-            .accessibilityLabel(showingLyrics ? "Show Artwork" : "Show Lyrics")
+            .disabled(!lyricsToggleEnabled)
+            .accessibilityLabel(settings.showLyricsInPlayer ? "Show Artwork" : "Show Lyrics")
+
+            PlaybackSpeedMenuButton(
+                playbackSpeed: player.playbackSpeed,
+                isEnabled: player.currentItem?.isLiveStream != true,
+                accentColor: themeManager.accentColor,
+                onSelect: { player.setPlaybackSpeed($0) }
+            )
+            .frame(width: 24, height: 24)
+            .accessibilityLabel("Playback Speed")
 
             Spacer()
 
@@ -630,11 +640,10 @@ private struct PlayerHeader: View, Equatable {
     }
 }
 
-/// Overflow menu hosted as a `UIButton` menu. A SwiftUI `Menu` is rebuilt
-/// whenever any ancestor re-renders — which the player does continuously while
-/// playing — and that makes the open menu's rows visibly pulse. A `UIMenu` is a
-/// static snapshot, so it stays put; it is only rebuilt when `state` changes.
-private struct PlayerOverflowMenuButton: UIViewRepresentable {
+/// Overflow menu as a custom popover. System `UIMenu` clips near the top of the
+/// player and forces a scrollbar; this sizes to its content so every row is visible.
+/// Kept outside a SwiftUI `Menu` so continuous player re-renders cannot pulse rows.
+private struct PlayerOverflowMenuButton: View {
     struct MenuState: Equatable {
         var hasSong: Bool
         var isFavorite: Bool
@@ -671,215 +680,264 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     var onToggleSongInfo: () -> Void
     var onToggleLyrics: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(owner: self)
-    }
+    @State private var showMenu = false
+    @State private var showingSpeedOptions = false
 
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(
-            UIImage(
-                systemName: "ellipsis",
-                withConfiguration: UIImage.SymbolConfiguration(textStyle: .body, scale: .medium)
-                    .applying(UIImage.SymbolConfiguration(weight: .semibold))
-            ),
-            for: .normal
-        )
-        button.tintColor = .label
-        button.showsMenuAsPrimaryAction = true
-        button.menu = context.coordinator.makeMenu(for: menuState)
-        context.coordinator.renderedState = menuState
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        // Keep the action closures current without touching the menu, so an open
-        // menu is never rebuilt underneath the user.
-        context.coordinator.owner = self
-        guard context.coordinator.renderedState != menuState else { return }
-        context.coordinator.renderedState = menuState
-        button.menu = context.coordinator.makeMenu(for: menuState)
-    }
-
-    final class Coordinator {
-        var owner: PlayerOverflowMenuButton
-        var renderedState: MenuState?
-
-        init(owner: PlayerOverflowMenuButton) {
-            self.owner = owner
+    var body: some View {
+        Button {
+            showingSpeedOptions = false
+            showMenu = true
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
-
-        func makeMenu(for state: MenuState) -> UIMenu {
-            let share = UIAction(
-                title: "Share Song",
-                image: UIImage(systemName: "square.and.arrow.up")
-            ) { [weak self] _ in self?.owner.onShare() }
-
-            let favorite = UIAction(
-                title: state.isFavorite ? "Unlike Song" : "Like Song",
-                image: UIImage(systemName: state.isFavorite ? "heart.slash" : "heart"),
-                attributes: state.hasSong ? [] : .disabled
-            ) { [weak self] _ in self?.owner.onToggleFavorite() }
-
-            let download = UIAction(
-                title: Self.downloadTitle(for: state.downloadStatus),
-                image: UIImage(systemName: Self.downloadSymbol(for: state.downloadStatus)),
-                attributes: state.hasSong ? [] : .disabled
-            ) { [weak self] _ in self?.owner.onDownload() }
-
-            let addToPlaylist = UIAction(
-                title: "Add to Playlist",
-                image: UIImage(systemName: "text.badge.plus"),
-                attributes: state.hasSong ? [] : .disabled
-            ) { [weak self] _ in self?.owner.onAddToPlaylist() }
-
-            let addToQueue = UIAction(
-                title: "Add to Queue",
-                image: UIImage(systemName: "text.append"),
-                attributes: .disabled
-            ) { _ in }
-
-            let openQueue = UIAction(
-                title: "Open Queue",
-                image: UIImage(systemName: "list.bullet")
-            ) { [weak self] _ in self?.owner.onOpenQueue() }
-
-            let lyrics = UIAction(
-                title: state.showLyrics ? "Show Artwork" : "Show Lyrics",
-                image: UIImage(systemName: state.showLyrics ? "photo" : "text.quote"),
-                attributes: state.hasLyrics ? [] : .disabled
-            ) { [weak self] _ in self?.owner.onToggleLyrics() }
-
-            let hideRating = UIAction(
-                title: state.showRatingStars ? "Hide Rating Stars" : "Show Rating Stars",
-                image: UIImage(systemName: state.showRatingStars ? "star.slash" : "star")
-            ) { [weak self] _ in self?.owner.onToggleRatingStars() }
-
-            let songInfo = UIAction(
-                title: state.showSongInfo ? "Hide Song Info" : "Show Song Info",
-                image: UIImage(systemName: state.showSongInfo ? "info.circle.fill" : "info.circle")
-            ) { [weak self] _ in self?.owner.onToggleSongInfo() }
-
-            let equalizer = UIAction(
-                title: "Equalizer",
-                image: UIImage(systemName: "slider.vertical.3")
-            ) { [weak self] _ in self?.owner.onEqualizer() }
-
-            let playbackSpeed = UIMenu(
-                title: "Playback Speed",
-                image: UIImage(systemName: "timer"),
-                children: PlaybackSpeedMenuBuilder.actions(
-                    current: state.playbackSpeed,
-                    enabled: state.speedMenuEnabled
-                ) { [weak self] rate in
-                    self?.owner.onSetPlaybackSpeed(rate)
+        .buttonStyle(.plain)
+        .popover(isPresented: $showMenu, arrowEdge: .top) {
+            Group {
+                if showingSpeedOptions {
+                    speedOptionsContent
+                } else {
+                    mainMenuContent
                 }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
+            .fixedSize(horizontal: true, vertical: true)
+            .presentationCompactAdaptation(.popover)
+            .onDisappear { showingSpeedOptions = false }
+        }
+    }
+
+    private var mainMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            menuRow(title: "Share Song", systemImage: "square.and.arrow.up", action: onShare)
+
+            Divider().padding(.vertical, 4)
+
+            menuRow(
+                title: menuState.isFavorite ? "Unlike Song" : "Like Song",
+                systemImage: menuState.isFavorite ? "heart.slash" : "heart",
+                disabled: !menuState.hasSong,
+                action: onToggleFavorite
             )
+            menuRow(
+                title: Self.downloadTitle(for: menuState.downloadStatus),
+                systemImage: Self.downloadSymbol(for: menuState.downloadStatus),
+                disabled: !menuState.hasSong,
+                action: onDownload
+            )
+            menuRow(
+                title: "Add to Playlist",
+                systemImage: "text.badge.plus",
+                disabled: !menuState.hasSong,
+                action: onAddToPlaylist
+            )
+            menuRow(title: "Add to Queue", systemImage: "text.append", disabled: true) {}
+            menuRow(title: "Open Queue", systemImage: "list.bullet", action: onOpenQueue)
 
-            let sleepTimer = UIAction(
-                title: "Sleep Timer",
-                image: UIImage(systemName: "moon.zzz"),
-                attributes: .disabled
-            ) { _ in }
+            Divider().padding(.vertical, 4)
 
-            return UIMenu(children: [
-                UIMenu(options: .displayInline, children: [share]),
-                UIMenu(options: .displayInline, children: [favorite, download, addToPlaylist, addToQueue, openQueue]),
-                UIMenu(options: .displayInline, children: [lyrics, hideRating, songInfo, equalizer, playbackSpeed, sleepTimer])
-            ])
+            menuRow(
+                title: menuState.showLyrics ? "Show Artwork" : "Show Lyrics",
+                systemImage: menuState.showLyrics ? "photo" : "text.quote",
+                disabled: !(menuState.hasLyrics || menuState.showLyrics),
+                action: onToggleLyrics
+            )
+            menuRow(
+                title: menuState.showRatingStars ? "Hide Rating Stars" : "Show Rating Stars",
+                systemImage: menuState.showRatingStars ? "star.slash" : "star",
+                action: onToggleRatingStars
+            )
+            menuRow(
+                title: menuState.showSongInfo ? "Hide Song Info" : "Show Song Info",
+                systemImage: menuState.showSongInfo ? "info.circle.fill" : "info.circle",
+                action: onToggleSongInfo
+            )
+            menuRow(title: "Equalizer", systemImage: "slider.vertical.3", action: onEqualizer)
+            menuRow(title: "Sleep Timer", systemImage: "moon.zzz", disabled: true) {}
+            Button {
+                showingSpeedOptions = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "timer")
+                        .font(.body)
+                        .frame(width: 20, alignment: .center)
+                    Text("Playback Speed")
+                        .font(.body)
+                    Spacer(minLength: 12)
+                    Text(PlaybackSpeed.label(for: menuState.playbackSpeed))
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(menuState.speedMenuEnabled ? .primary : .tertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!menuState.speedMenuEnabled)
         }
+    }
 
-        private static func downloadTitle(for status: DownloadStatus) -> String {
-            switch status {
-            case .pending, .downloading: return "Cancel Download"
-            case .downloaded: return "Remove Download"
-            case .failed: return "Retry Download"
-            case .none, .partial, .cached: return "Download Song"
+    private var speedOptionsContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                showingSpeedOptions = false
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 20, alignment: .center)
+                    Text("Playback Speed")
+                        .font(.body.weight(.semibold))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider().padding(.vertical, 4)
+
+            ForEach(Array(PlaybackSpeed.options.enumerated()), id: \.offset) { _, rate in
+                Button {
+                    showMenu = false
+                    onSetPlaybackSpeed(rate)
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(PlaybackSpeed.label(for: rate))
+                            .font(.body)
+                            .frame(minWidth: 48, alignment: .leading)
+                        Spacer(minLength: 8)
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.semibold))
+                            .opacity(PlaybackSpeed.isEqual(rate, menuState.playbackSpeed) ? 1 : 0)
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
+    }
 
-        private static func downloadSymbol(for status: DownloadStatus) -> String {
-            switch status {
-            case .pending, .downloading: return "stop.circle"
-            case .downloaded: return "arrow.down.circle.fill"
-            case .failed: return "exclamationmark.circle"
-            case .none, .partial, .cached: return "arrow.down.circle"
+    private func menuRow(
+        title: String,
+        systemImage: String,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            showMenu = false
+            // Let the popover finish dismissing before presenting a sheet / share UI.
+            DispatchQueue.main.async(execute: action)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .frame(width: 20, alignment: .center)
+                Text(title)
+                    .font(.body)
             }
+            .foregroundStyle(disabled ? .tertiary : .primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+
+    private static func downloadTitle(for status: DownloadStatus) -> String {
+        switch status {
+        case .pending, .downloading: return "Cancel Download"
+        case .downloaded: return "Remove Download"
+        case .failed: return "Retry Download"
+        case .none, .partial, .cached: return "Download Song"
+        }
+    }
+
+    private static func downloadSymbol(for status: DownloadStatus) -> String {
+        switch status {
+        case .pending, .downloading: return "stop.circle"
+        case .downloaded: return "arrow.down.circle.fill"
+        case .failed: return "exclamationmark.circle"
+        case .none, .partial, .cached: return "arrow.down.circle"
         }
     }
 }
 
-/// Bottom-bar speed control. Uses `UIMenu` so an open menu does not pulse while the
-/// player re-renders on progress ticks (same reason as the overflow menu).
-private struct PlaybackSpeedMenuButton: UIViewRepresentable {
+/// Bottom-bar speed control. Custom popover (not `UIMenu`) so all rates fit without
+/// scrolling when the control sits near the bottom edge of the screen.
+private struct PlaybackSpeedMenuButton: View {
     var playbackSpeed: Float
     var isEnabled: Bool
+    /// Same accent the lyrics button uses when active.
+    var accentColor: Color
     var onSelect: (Float) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(owner: self)
+    @State private var showMenu = false
+
+    private var iconColor: Color {
+        guard isEnabled else { return Color.secondary.opacity(0.4) }
+        return PlaybackSpeed.isEqual(playbackSpeed, 1) ? .primary : accentColor
     }
 
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(
-            UIImage(
-                systemName: "timer",
-                withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
-            ),
-            for: .normal
-        )
-        button.showsMenuAsPrimaryAction = true
-        context.coordinator.apply(to: button, owner: self)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.apply(to: button, owner: self)
-    }
-
-    final class Coordinator {
-        var owner: PlaybackSpeedMenuButton
-        private var renderedSpeed: Float?
-        private var renderedEnabled: Bool?
-
-        init(owner: PlaybackSpeedMenuButton) {
-            self.owner = owner
+    var body: some View {
+        Button {
+            showMenu = true
+        } label: {
+            // `timer` renders taller than neighbors at `.title3`.
+            Image(systemName: "timer")
+                .font(.system(size: 17))
+                .foregroundStyle(iconColor)
         }
-
-        func apply(to button: UIButton, owner: PlaybackSpeedMenuButton) {
-            self.owner = owner
-            button.isEnabled = owner.isEnabled
-            button.tintColor = PlaybackSpeed.isEqual(owner.playbackSpeed, 1)
-                ? .label
-                : .tintColor
-            guard renderedSpeed.map({ !PlaybackSpeed.isEqual($0, owner.playbackSpeed) }) ?? true
-                || renderedEnabled != owner.isEnabled
-            else { return }
-            renderedSpeed = owner.playbackSpeed
-            renderedEnabled = owner.isEnabled
-            button.menu = UIMenu(children: PlaybackSpeedMenuBuilder.actions(
-                current: owner.playbackSpeed,
-                enabled: owner.isEnabled
-            ) { [weak self] rate in
-                self?.owner.onSelect(rate)
-            })
-        }
-    }
-}
-
-private enum PlaybackSpeedMenuBuilder {
-    static func actions(
-        current: Float,
-        enabled: Bool,
-        onSelect: @escaping (Float) -> Void
-    ) -> [UIAction] {
-        PlaybackSpeed.options.map { rate in
-            UIAction(
-                title: PlaybackSpeed.label(for: rate),
-                attributes: enabled ? [] : .disabled,
-                state: PlaybackSpeed.isEqual(rate, current) ? .on : .off
-            ) { _ in onSelect(rate) }
+        .disabled(!isEnabled)
+        // Grow upward from the bottom bar so the full list is on-screen.
+        .popover(isPresented: $showMenu, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(PlaybackSpeed.options.enumerated()), id: \.offset) { _, rate in
+                    Button {
+                        showMenu = false
+                        onSelect(rate)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(PlaybackSpeed.label(for: rate))
+                                .font(.body)
+                                .frame(minWidth: 48, alignment: .leading)
+                            Spacer(minLength: 8)
+                            Image(systemName: "checkmark")
+                                .font(.body.weight(.semibold))
+                                .opacity(PlaybackSpeed.isEqual(rate, playbackSpeed) ? 1 : 0)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            // Hug content so all seven rates show without a scroll view.
+            .fixedSize(horizontal: true, vertical: true)
+            .presentationCompactAdaptation(.popover)
         }
     }
 }
