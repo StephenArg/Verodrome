@@ -7,6 +7,7 @@ struct ArtistDetailView: View {
     @Query private var artists: [Artist]
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var artistAlbums: [Album] = []
     @State private var artistSongs: [Song] = []
@@ -137,9 +138,11 @@ struct ArtistDetailView: View {
         )
         PlayTrace.mark("mapping QueueItems", details: "count=\(artistSongs.count)")
         let items = artistSongs.map(QueueItem.from)
+        guard !items.isEmpty else { return }
         PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
         PlayTrace.mark("calling player.play")
         player.play(items: items, shuffle: shuffle)
+        router.openPlayer()
     }
 
     private func playSong(_ song: Song) {

@@ -17,6 +17,10 @@ struct DownloadStatusIcon: View {
     /// `.tint` to an artwork fill (album / playlist navigation chrome).
     var tint: Color = Color.accentColor
 
+    /// Cached (prefetch) glyphs use the same accent hue at reduced intensity so they
+    /// stay visible without matching a keep-forever download.
+    private static let cachedAccentOpacity: Double = 0.6
+
     private var lineWidth: CGFloat { max(1.5, size / 11) }
 
     var body: some View {
@@ -31,6 +35,11 @@ struct DownloadStatusIcon: View {
                 Image(systemName: "arrow.down.circle")
                     .font(.system(size: size))
                     .foregroundStyle(tint)
+                    .transition(.opacity.combined(with: .scale))
+            case .cached:
+                Image(systemName: "music.note.square.stack")
+                    .font(.system(size: size))
+                    .foregroundStyle(tint.opacity(Self.cachedAccentOpacity))
                     .transition(.opacity.combined(with: .scale))
             case .downloaded:
                 Image(systemName: "arrow.down.circle.fill")
@@ -142,6 +151,7 @@ struct SongDownloadStatusView: View {
         switch status {
         case .pending, .downloading: return "Cancel Download"
         case .partial: return "Partially Downloaded"
+        case .cached: return "Cached"
         case .downloaded: return "Remove Download"
         case .failed: return "Retry Download"
         case .none: return "Download"

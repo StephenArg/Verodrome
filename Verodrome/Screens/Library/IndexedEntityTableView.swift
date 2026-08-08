@@ -688,6 +688,14 @@ final class EntityTableCell: UITableViewCell {
             downloadView.tintColor = .tintColor
             downloadView.image = UIImage(systemName: "arrow.down.circle")
             downloadView.accessibilityLabel = "Partially downloaded"
+        case .cached:
+            downloadSpinner.stopAnimating()
+            downloadWidthConstraint?.constant = 14
+            downloadView.isHidden = false
+            // Same accent hue as downloaded, dialed back so prefetch reads softer.
+            downloadView.tintColor = .tintColor.withAlphaComponent(0.6)
+            downloadView.image = UIImage(systemName: "music.note.square.stack")
+            downloadView.accessibilityLabel = "Cached"
         case .downloaded:
             downloadSpinner.stopAnimating()
             downloadWidthConstraint?.constant = 14

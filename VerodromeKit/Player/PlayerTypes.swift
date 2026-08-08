@@ -21,6 +21,31 @@ public enum PlayerMode: Int, Codable, CaseIterable, Sendable {
     case podcast = 1
 }
 
+/// Sticky playback-speed options for the current play context.
+public enum PlaybackSpeed {
+    public static let options: [Float] = [2, 1.75, 1.5, 1.25, 1, 0.75, 0.5]
+
+    public static func clamp(_ rate: Float) -> Float {
+        min(max(rate, 0.5), 2)
+    }
+
+    public static func isEqual(_ lhs: Float, _ rhs: Float) -> Bool {
+        abs(lhs - rhs) < 0.001
+    }
+
+    public static func label(for rate: Float) -> String {
+        if isEqual(rate, 2) { return "2x" }
+        if isEqual(rate, 1.75) { return "1.75x" }
+        if isEqual(rate, 1.5) { return "1.5x" }
+        if isEqual(rate, 1.25) { return "1.25x" }
+        if isEqual(rate, 1) { return "1x" }
+        if isEqual(rate, 0.75) { return ".75x" }
+        if isEqual(rate, 0.5) { return ".5x" }
+        let formatted = String(format: "%g", rate)
+        return "\(formatted)x"
+    }
+}
+
 
 public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
     /// Playable identity (song / episode / …). Not unique in the queue when the same

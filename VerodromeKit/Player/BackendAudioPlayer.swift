@@ -9,8 +9,11 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     @Published public private(set) var isPlaying = false
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
-    /// Engine playback rate (1 = normal). Used for hold-to-scrub speed changes.
+    /// Engine playback rate (1 = normal). May temporarily differ from `sessionPlaybackRate`
+    /// while hold-to-scrub is active.
     @Published public private(set) var playbackRate: Float = 1
+    /// Sticky rate for the current play context. Re-applied on every new track start.
+    public private(set) var sessionPlaybackRate: Float = 1
     public var isOfflineMode = false
     public var onTrackFinished: (() -> Void)?
     /// Fires when the engine starts an entry it advanced to on its own (gapless or
@@ -226,8 +229,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         PlayTrace.mark("streamingPlayer.play(url:) call", details: "source=\(source)")
         streamingPlayer.play(url: url)
         ignoreFinishCallbacks = false
-        // Fresh track always starts at normal speed (after play — engine may reset it).
-        setRate(1)
+        // Re-assert the context speed (engine may snap back to 1× on a new URL).
+        setRate(sessionPlaybackRate)
         duration = item.isLiveStream ? 0 : item.duration
         currentTime = pendingSeek ?? 0
         stallDetector.reset()
@@ -297,7 +300,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         pendingSeek = nil
         stallDetector.reset()
         stopProgressTimer()
-        setRate(1)
+        setRate(sessionPlaybackRate)
     }
 
     public func seek(to seconds: TimeInterval) {
@@ -307,9 +310,21 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         stallDetector.extendWindow()
     }
 
+    /// Sets the sticky context rate and applies it to the engine.
+    public func setSessionPlaybackRate(_ rate: Float) {
+        sessionPlaybackRate = PlaybackSpeed.clamp(rate)
+        setRate(sessionPlaybackRate)
+    }
+
+    /// Restores the engine to the sticky context rate after a temporary hold-speed.
+    public func restoreSessionPlaybackRate() {
+        setRate(sessionPlaybackRate)
+    }
+
     /// Sets engine playback rate. Values outside a sensible range are clamped.
+    /// Does not change the sticky session rate (use `setSessionPlaybackRate` for that).
     public func setRate(_ rate: Float) {
-        let clamped = min(max(rate, 0.5), 2)
+        let clamped = PlaybackSpeed.clamp(rate)
         playbackRate = clamped
         streamingPlayer.rate = clamped
     }

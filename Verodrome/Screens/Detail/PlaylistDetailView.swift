@@ -92,7 +92,10 @@ struct PlaylistDetailView: View {
         .sheet(isPresented: $showPlaylistSelector) {
             PlaylistSelectorView { destination in
                 let tracks = songs
-                Task { try? await LibraryActions.shared.addSongs(tracks, to: destination) }
+                Task {
+                    try? await LibraryActions.shared.addSongs(tracks, to: destination)
+                    ActionToast.addedToPlaylist(destination.name)
+                }
             }
         }
         .task(id: backgroundArtworkToken) {

@@ -39,6 +39,10 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var contextGeneration = 0
     @Published var repeatMode: RepeatMode = .off
     @Published var shuffleMode: ShuffleMode = .off
+    /// Set for a queue that arrived already shuffled — Shuffle All draws a random batch
+    /// from the server, so the shuffle control reads off even though nothing about the
+    /// order is the user's choosing.
+    @Published private(set) var queueArrivedShuffled = false
     @Published var lyrics = "" {
         didSet {
             guard lyrics != oldValue else { return }
@@ -55,6 +59,8 @@ final class PlayerViewModel: ObservableObject {
     @Published var equalizerBands: [Float] = Array(repeating: 0, count: 10)
     @Published var equalizerEnabled = false
     @Published var isOfflineMode = false
+    /// Sticky playback speed for the current queue context (`1` = normal).
+    @Published private(set) var playbackSpeed: Float = 1
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
@@ -67,16 +73,21 @@ final class PlayerViewModel: ObservableObject {
         guard let impl = facade as? PlayerFacadeImpl else { return }
         self.facade = impl
         impl.$isPlaying.receive(on: DispatchQueue.main).assign(to: &$isPlaying)
+        impl.$sessionPlaybackRate.receive(on: DispatchQueue.main).assign(to: &$playbackSpeed)
         impl.$isPlaying.receive(on: DispatchQueue.main).sink { [weak self] value in
             self?.nowPlaying.isPlaying = value
         }.store(in: &cancellables)
         impl.$currentItem.receive(on: DispatchQueue.main).sink { [weak self] item in
-            self?.currentItem = item
-            self?.nowPlaying.currentItem = item
-            self?.progress.duration = impl.duration
-            self?.syncQueue()
-            self?.repeatMode = impl.repeatMode
-            self?.shuffleMode = impl.shuffleMode
+            guard let self else { return }
+            // Queue before `currentItem`: ShuffleAllCoordinator watches `$currentItem` and
+            // checks whether its seed is already in `queue`. Publishing the item first
+            // left that check looking at the previous context and clearing the session.
+            self.syncQueue()
+            self.currentItem = item
+            self.nowPlaying.currentItem = item
+            self.progress.duration = impl.duration
+            self.repeatMode = impl.repeatMode
+            self.shuffleMode = impl.shuffleMode
         }.store(in: &cancellables)
         impl.$currentTime.receive(on: DispatchQueue.main).sink { [weak self] time in
             guard let self else { return }
@@ -111,11 +122,20 @@ final class PlayerViewModel: ObservableObject {
     ///   - index: Track to start on. When nil, Shuffle picks a random track and Play
     ///     starts on the first.
     ///   - shuffle: Explicit shuffle state for the new context; nil keeps the current one.
-    func play(items: [QueueItem], startAt index: Int? = nil, shuffle: Bool? = nil) {
+    ///   - arrivedShuffled: The items are already in random order (Shuffle All). Shuffle
+    ///     stays off so there is no original order to restore, but the queue is still
+    ///     treated as user-arrangeable.
+    func play(
+        items: [QueueItem],
+        startAt index: Int? = nil,
+        shuffle: Bool? = nil,
+        arrivedShuffled: Bool = false
+    ) {
         guard !items.isEmpty else {
             PlayTrace.error("PlayerViewModel.play — empty items")
             return
         }
+        queueArrivedShuffled = arrivedShuffled
         let mode: ShuffleMode? = shuffle.map { $0 ? .on : .off }
         let startIndex: Int
         if let index, items.indices.contains(index) {
@@ -131,12 +151,19 @@ final class PlayerViewModel: ObservableObject {
             "PlayerViewModel.play → Task",
             details: "count=\(items.count) startAt=\(startIndex) title=\(items[startIndex].title)"
         )
+        let seedEntryId = items[startIndex].entryId
         Task(priority: .userInitiated) {
             PlayTrace.mark("PlayerViewModel Task running (await facade)")
             await facade?.play(items: items, startAt: startIndex, shuffle: mode)
+            // A newer `play` may have replaced the context while we were awaiting.
+            let stillOurs = facade?.currentItem?.entryId == seedEntryId
+                || (facade?.queue.contains { $0.entryId == seedEntryId } ?? false)
+            guard stillOurs else { return }
             syncQueue(fallback: items)
             currentItem = facade?.currentItem
             shuffleMode = facade?.shuffleMode ?? shuffleMode
+            // Re-assert after the await so the flag matches the context that landed.
+            queueArrivedShuffled = arrivedShuffled
             progress.duration = facade?.duration ?? items[startIndex].duration
             PlayTrace.mark("PlayerViewModel UI state updated after facade")
         }
@@ -144,10 +171,11 @@ final class PlayerViewModel: ObservableObject {
 
     /// Queues items to play next for one listen only — they leave the queue, and the
     /// cache, as soon as playback moves past them.
-    func addToQueueTemporarily(_ items: [QueueItem]) {
+    func addToQueueTemporarily(_ items: [QueueItem], at insertAt: Int? = nil) {
         guard !items.isEmpty else { return }
-        facade?.enqueueEphemeral(items)
+        facade?.enqueueEphemeral(items, at: insertAt)
         syncQueue()
+        ActionToast.addedToQueue()
     }
 
     /// Extends the playing context. Unlike `addToQueueTemporarily`, these are not
@@ -210,7 +238,14 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func endHoldSpeed() {
-        facade?.setPlaybackRate(1)
+        facade?.restoreSessionPlaybackRate()
+    }
+
+    /// Sets sticky playback speed for the current play context.
+    func setPlaybackSpeed(_ rate: Float) {
+        guard currentItem?.isLiveStream != true else { return }
+        facade?.setSessionPlaybackRate(rate)
+        playbackSpeed = facade?.sessionPlaybackRate ?? PlaybackSpeed.clamp(rate)
     }
 
     /// Asks the player to look up lyrics for the current track now, for when the
@@ -225,20 +260,29 @@ final class PlayerViewModel: ObservableObject {
         progress.currentTime = clamped
     }
 
-    /// Reordering is offered only for a shuffled queue — played in order, the queue is the
-    /// album / playlist exactly as the user asked for it.
+    /// Records that the queue playing was handed over pre-shuffled, so the queue screen
+    /// offers the same rearranging a locally shuffled one does.
+    func markQueueArrivedShuffled() {
+        queueArrivedShuffled = true
+    }
+
+    /// Any non-empty queue can be rearranged. An ordered album / playlist is not sacred —
+    /// playing it again rebuilds the queue from the source.
+    var isQueueReorderable: Bool { !queue.isEmpty }
+
     func moveQueue(from source: IndexSet, to destination: Int) {
-        guard shuffleMode == .on else { return }
+        guard isQueueReorderable else { return }
         facade?.move(from: source, to: destination)
         syncQueue()
     }
 
-    /// Only songs the user queued themselves ("Add to Queue") can be taken back out.
+    /// Drops rows from the queue, context tracks included. The playing one stays:
+    /// removing it would leave the engine on a track no longer listed.
     func removeFromQueue(at offsets: IndexSet) {
-        guard shuffleMode == .on else { return }
-        let removable = offsets.filter { queue.indices.contains($0) && queue[$0].isUserQueued }
+        guard isQueueReorderable else { return }
+        let removable = offsets.filter { queue.indices.contains($0) && $0 != currentIndex }
         guard !removable.isEmpty else { return }
-        facade?.remove(at: IndexSet(removable))
+        facade?.removeRows(at: IndexSet(removable))
         syncQueue()
     }
 
@@ -271,6 +315,7 @@ final class PlayerViewModel: ObservableObject {
         isPlaying = false
         lyrics = ""
         statusMessage = ""
+        playbackSpeed = facade?.sessionPlaybackRate ?? 1
         progress.currentTime = 0
         progress.duration = 0
     }

@@ -27,7 +27,8 @@ struct SongActionsModifier: ViewModifier {
         case .pending, .downloading: return "Cancel Download"
         case .downloaded: return "Remove Download"
         case .failed: return "Retry Download"
-        case .none, .partial: return "Download"
+        // Cached is still free to promote to a keep-forever download.
+        case .none, .partial, .cached: return "Download"
         }
     }
 
@@ -36,7 +37,7 @@ struct SongActionsModifier: ViewModifier {
         case .pending, .downloading: return "stop.circle"
         case .downloaded: return "arrow.down.circle.fill"
         case .failed: return "exclamationmark.circle"
-        case .none, .partial: return "arrow.down.circle"
+        case .none, .partial, .cached: return "arrow.down.circle"
         }
     }
 
@@ -51,7 +52,10 @@ struct SongActionsModifier: ViewModifier {
             }
             .sheet(isPresented: $showPlaylistSelector) {
                 PlaylistSelectorView { playlist in
-                    Task { try? await LibraryActions.shared.addSongs([song], to: playlist) }
+                    Task {
+                        try? await LibraryActions.shared.addSongs([song], to: playlist)
+                        ActionToast.addedToPlaylist(playlist.name)
+                    }
                 }
             }
     }
@@ -65,7 +69,7 @@ struct SongActionsModifier: ViewModifier {
         }
 
         Button {
-            Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+            Task { await ActionToast.toggleFavorite(song: song) }
         } label: {
             Label(
                 song.isFavorite ? "Unfavorite" : "Favorite",
@@ -130,7 +134,7 @@ struct SongActionsModifier: ViewModifier {
             .tint(.blue)
         case "favorite":
             Button {
-                Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+                Task { await ActionToast.toggleFavorite(song: song) }
             } label: {
                 Label("Favorite", systemImage: "heart")
             }

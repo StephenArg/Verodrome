@@ -102,23 +102,36 @@ public final class PlayQueueHandler: ObservableObject {
     /// Queues tracks for a single listen: they play after the current one and leave the
     /// queue the moment playback moves past them, taking their prefetched file with them.
     ///
-    /// Inserted after any temporary run already waiting, so adding two albums in a row
-    /// plays them in the order they were added rather than in reverse.
-    public func enqueueEphemeral(_ items: [QueueItem]) {
+    /// - Parameter at: Absolute queue index to insert at. Clamped into the "Added to Queue"
+    ///   run (right after the playhead through the end of that run). `nil` appends after
+    ///   any temporary rows already waiting, so adding two albums in a row plays them in
+    ///   the order they were added rather than in reverse.
+    public func enqueueEphemeral(_ items: [QueueItem], at insertAt: Int? = nil) {
         guard !items.isEmpty else { return }
         let items = items.map { item -> QueueItem in
             var copy = Self.markUserQueued(item)
             copy.isEphemeral = true
             return copy
         }
-        var insertAt = min(currentIndex + 1, contextQueue.count)
-        while insertAt < contextQueue.count, contextQueue[insertAt].isEphemeral {
-            insertAt += 1
-        }
-        contextQueue.insert(contentsOf: items, at: insertAt)
+        let position = ephemeralInsertIndex(at: insertAt)
+        contextQueue.insert(contentsOf: items, at: position)
         mirrorEdit(inserted: items)
         syncAndPersistUserQueue()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
+    }
+
+    /// Where a temporary add lands: an explicit index clamped to the queued run, or the
+    /// default "after every ephemeral already waiting" slot.
+    private func ephemeralInsertIndex(at insertAt: Int?) -> Int {
+        let lower = min(currentIndex + 1, contextQueue.count)
+        let run = userQueuedRange
+        let upper = run.isEmpty ? lower : run.upperBound
+        guard let insertAt else {
+            var end = lower
+            while end < contextQueue.count, contextQueue[end].isEphemeral { end += 1 }
+            return end
+        }
+        return min(max(insertAt, lower), upper)
     }
 
     /// Drops a temporary row the playhead just left. Posting the removal on
@@ -199,24 +212,36 @@ public final class PlayQueueHandler: ObservableObject {
         let range = userQueuedRange
         let absolute = offsets.filter { (0..<range.count).contains($0) }.map { $0 + range.lowerBound }
         guard !absolute.isEmpty else { return }
-        remove(at: IndexSet(absolute), writeUserQueueOnly: true)
+        remove(at: IndexSet(absolute), writeUserQueueOnly: true, userQueuedOnly: true)
     }
 
     /// Removes queue rows. Only items the user queued themselves can be removed — the
     /// tracks a context (album, playlist, …) brought in stay for as long as it plays.
     public func remove(at offsets: IndexSet) {
-        remove(at: offsets, writeUserQueueOnly: false)
+        remove(at: offsets, writeUserQueueOnly: false, userQueuedOnly: true)
     }
 
-    private func remove(at offsets: IndexSet, writeUserQueueOnly: Bool) {
-        let removable = offsets.filter { contextQueue.indices.contains($0) && contextQueue[$0].isUserQueued }
+    /// Removes rows whoever put them there, for a queue whose order is the user's rather
+    /// than a context's — a shuffle, where there is no album ordering left to protect.
+    public func removeRows(at offsets: IndexSet) {
+        remove(at: offsets, writeUserQueueOnly: false, userQueuedOnly: false)
+    }
+
+    /// The playing track is never removed: dropping it would leave the engine on a track
+    /// the queue no longer lists.
+    private func remove(at offsets: IndexSet, writeUserQueueOnly: Bool, userQueuedOnly: Bool) {
+        let removable = offsets.filter {
+            contextQueue.indices.contains($0)
+                && $0 != currentIndex
+                && (!userQueuedOnly || contextQueue[$0].isUserQueued)
+        }
         guard !removable.isEmpty else { return }
         // Positional arithmetic rather than an id lookup: the same song can sit in the
         // queue twice (context copy plus a queued copy), so ids are not unique.
         let removedBefore = removable.filter { $0 < currentIndex }.count
         let removed = removable.sorted(by: >).map { contextQueue.remove(at: $0) }
         currentIndex = min(max(0, currentIndex - removedBefore), max(0, contextQueue.count - 1))
-        mirrorEdit(removedIds: Set(removed.map(\.id)))
+        mirrorEdit(removedEntryIds: Set(removed.map(\.entryId)))
         if writeUserQueueOnly {
             syncAndPersistUserQueue()
         } else {

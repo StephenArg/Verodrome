@@ -35,7 +35,8 @@ public final class RemoteCommandCenterHandler {
         center.stopCommand.isEnabled = true
         // Sticky rate control where the system surfaces it (Watch / some Now Playing UIs).
         center.changePlaybackRateCommand.isEnabled = true
-        center.changePlaybackRateCommand.supportedPlaybackRates = [0.5, 1.0, 2.0]
+        center.changePlaybackRateCommand.supportedPlaybackRates =
+            PlaybackSpeed.options.map { NSNumber(value: $0) }
 
         // Remote command callbacks are not guaranteed to be on the main queue.
         // Use dedicated play/pause (not toggle) so lock-screen buttons stay correct.
@@ -53,14 +54,14 @@ public final class RemoteCommandCenterHandler {
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
-                // A remote skip should leave temporary hold-speed behind.
-                self?.player?.setPlaybackRate(1)
+                // Leave temporary hold-speed behind; keep the sticky session rate.
+                self?.player?.restoreSessionPlaybackRate()
                 self?.player?.next()
             }
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
-                self?.player?.setPlaybackRate(1)
+                self?.player?.restoreSessionPlaybackRate()
                 self?.player?.previous()
             }
         }
@@ -83,12 +84,12 @@ public final class RemoteCommandCenterHandler {
                 return .commandFailed
             }
             return Self.performOnMain {
-                self?.applyRate(Float(event.playbackRate))
+                self?.applySessionRate(Float(event.playbackRate))
             }
         }
     }
 
-    /// Hold next → 2×, hold previous → 0.5×; release → 1×.
+    /// Hold next → 2×, hold previous → 0.5×; release → session rate.
     nonisolated private static func handleSeekEvent(
         _ event: MPRemoteCommandEvent,
         rate: Float,
@@ -101,7 +102,7 @@ public final class RemoteCommandCenterHandler {
             guard let player else { return }
             // Live streams have nothing useful to speed through.
             if player.currentItem?.isLiveStream == true {
-                player.setPlaybackRate(1)
+                player.restoreSessionPlaybackRate()
                 return
             }
             switch event.type {
@@ -111,7 +112,7 @@ public final class RemoteCommandCenterHandler {
                 }
                 player.setPlaybackRate(rate)
             case .endSeeking:
-                player.setPlaybackRate(1)
+                player.restoreSessionPlaybackRate()
             @unknown default:
                 break
             }
@@ -119,11 +120,11 @@ public final class RemoteCommandCenterHandler {
     }
 
     @MainActor
-    private func applyRate(_ rate: Float) {
+    private func applySessionRate(_ rate: Float) {
         if rate != 1, player?.isPlaying != true {
             player?.play()
         }
-        player?.setPlaybackRate(rate)
+        player?.setSessionPlaybackRate(rate)
     }
 
     nonisolated private static func performOnMain(_ work: @escaping @MainActor () -> Void) -> MPRemoteCommandHandlerStatus {

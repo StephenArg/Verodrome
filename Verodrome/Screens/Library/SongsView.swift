@@ -51,9 +51,9 @@ struct SongsView: View {
                         count: model.rowCount,
                         noun: "song",
                         isShuffleBusy: shuffle.isStarting,
-                        // Shuffle All draws from the whole library; a typed filter or a
-                        // downloaded-only view can't be honoured by the random endpoint.
-                        isShuffleDisabled: !searchText.isEmpty || downloadedOnly,
+                        // Downloaded-only has a local walk of its own; a typed filter is
+                        // still a selection no random source can reproduce.
+                        isShuffleDisabled: !searchText.isEmpty,
                         onShuffle: shuffleAll
                     )
                 ),
@@ -121,7 +121,10 @@ struct SongsView: View {
         // Only on success — raising an empty player would be a worse answer than the
         // button simply not having worked.
         Task {
-            if await shuffle.shuffleAll() { router.openPlayer() }
+            let started = downloadedOnly
+                ? await shuffle.shuffleDownloaded()
+                : await shuffle.shuffleAll()
+            if started { router.openPlayer() }
         }
     }
 

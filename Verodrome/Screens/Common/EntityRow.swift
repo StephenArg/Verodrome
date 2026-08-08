@@ -78,6 +78,7 @@ struct EntityRow: View {
         case .pending: return "Waiting to download"
         case .downloading: return "Downloading"
         case .partial: return "Partially downloaded"
+        case .cached: return "Cached"
         case .downloaded: return "Downloaded"
         case .failed: return "Download failed"
         case .none: return ""

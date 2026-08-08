@@ -19,23 +19,20 @@ struct LibrarySortMenu: View {
                 Button {
                     selection = option
                 } label: {
-                    if selection == option {
-                        Label(option.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(option.displayName)
-                    }
+                    // Always a Label so the title column stays put whether or not the
+                    // checkmark is drawn — bare Text sits flush left and drifts.
+                    checkmarkLabel(option.displayName, checked: selection == option)
                 }
             }
 
             if let downloadedOnly {
                 Section {
-                    Toggle("Downloaded", isOn: Binding(
-                        get: { downloadedOnly.wrappedValue },
-                        set: {
-                            downloadedOnly.wrappedValue = $0
-                            settings.save()
-                        }
-                    ))
+                    Button {
+                        downloadedOnly.wrappedValue.toggle()
+                        settings.save()
+                    } label: {
+                        checkmarkLabel("Downloaded", checked: downloadedOnly.wrappedValue)
+                    }
                 }
             }
         } label: {
@@ -45,6 +42,16 @@ struct LibrarySortMenu: View {
         // is lost on relaunch without this.
         .onChange(of: selection) { _, _ in
             settings.save()
+        }
+    }
+
+    /// Reserves the leading checkmark column even when unchecked, so titles line up.
+    private func checkmarkLabel(_ title: String, checked: Bool) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: "checkmark")
+                .opacity(checked ? 1 : 0)
         }
     }
 }

@@ -121,7 +121,10 @@ struct PopupPlayerView: View {
                 case .addToPlaylist:
                     if let song = currentSong {
                         PlaylistSelectorView { playlist in
-                            Task { try? await LibraryActions.shared.addSongs([song], to: playlist) }
+                            Task {
+                                try? await LibraryActions.shared.addSongs([song], to: playlist)
+                                ActionToast.addedToPlaylist(playlist.name)
+                            }
                         }
                     }
                 case .equalizer:
@@ -221,12 +224,15 @@ struct PopupPlayerView: View {
             showSongInfo: settings.showSongInfo,
             showLyrics: showingLyrics,
             hasLyrics: lyricsAvailable,
+            playbackSpeed: player.playbackSpeed,
+            speedMenuEnabled: player.currentItem?.isLiveStream != true,
             onDismiss: { dismiss() },
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
             onShare: { presentShareSheet() },
             onAddToPlaylist: { bottomPanel = .addToPlaylist },
             onOpenQueue: { bottomPanel = .queue },
             onEqualizer: { bottomPanel = .equalizer },
+            onSetPlaybackSpeed: { player.setPlaybackSpeed($0) },
             onToggleRatingStars: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     settings.showRatingStars.toggle()
@@ -295,12 +301,20 @@ struct PopupPlayerView: View {
         }
     }
 
-    // MARK: - Bottom action bar (AirPlay / Lyrics / Share / Queue)
+    // MARK: - Bottom action bar (AirPlay / Speed / Lyrics / Share / Queue)
 
     private var bottomActionBar: some View {
         HStack(spacing: 28) {
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
+
+            PlaybackSpeedMenuButton(
+                playbackSpeed: player.playbackSpeed,
+                isEnabled: player.currentItem?.isLiveStream != true,
+                onSelect: { player.setPlaybackSpeed($0) }
+            )
+            .frame(width: 24, height: 24)
+            .accessibilityLabel("Playback Speed")
 
             Button {
                 toggleLyrics()
@@ -338,7 +352,7 @@ struct PopupPlayerView: View {
     private var favoriteButton: some View {
         if let song = currentSong {
             Button {
-                Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+                Task { await ActionToast.toggleFavorite(song: song) }
             } label: {
                 Image(systemName: song.isFavorite ? "heart.fill" : "heart")
                     .font(.system(size: 24))
@@ -372,6 +386,7 @@ struct PopupPlayerView: View {
         case .pending: return "Waiting to download"
         case .downloading: return "Downloading"
         case .partial: return "Partially downloaded"
+        case .cached: return "Cached"
         case .downloaded: return "Downloaded"
         case .failed: return "Download failed"
         case .none: return ""
@@ -436,30 +451,10 @@ struct PopupPlayerView: View {
     }
 
     private func presentShareSheet() {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
-        var top = root
-        while let presented = top.presentedViewController { top = presented }
-        top.present(makeShareController(), animated: true)
-    }
-
-    private func makeShareController() -> UIViewController {
-        var items: [Any] = []
-        if let title = player.currentItem?.title, let artist = player.currentItem?.artist, !artist.isEmpty {
-            items.append("\(title) — \(artist)")
-        } else if let title = player.currentItem?.title {
-            items.append(title)
-        }
-        if items.isEmpty { items.append("Now Playing") }
-        let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
-        let host = UIViewController()
-        host.modalPresentationStyle = .overFullScreen
-        host.view.backgroundColor = .clear
-        activity.completionWithItemsHandler = { _, _, _, _ in
-            host.dismiss(animated: true)
-        }
-        host.present(activity, animated: true)
-        return host
+        presentSongShareSheet(
+            title: player.currentItem?.title,
+            artist: player.currentItem?.artist
+        )
     }
 
     private func resolveCurrentSong() -> Song? {
@@ -543,12 +538,15 @@ private struct PlayerHeader: View, Equatable {
     let showSongInfo: Bool
     let showLyrics: Bool
     let hasLyrics: Bool
+    let playbackSpeed: Float
+    let speedMenuEnabled: Bool
     let onDismiss: () -> Void
     let onOpenAlbum: () -> Void
     let onShare: () -> Void
     let onAddToPlaylist: () -> Void
     let onOpenQueue: () -> Void
     let onEqualizer: () -> Void
+    let onSetPlaybackSpeed: (Float) -> Void
     let onToggleRatingStars: () -> Void
     let onToggleSongInfo: () -> Void
     let onToggleLyrics: () -> Void
@@ -589,12 +587,14 @@ private struct PlayerHeader: View, Equatable {
                         showRatingStars: showRatingStars,
                         showSongInfo: showSongInfo,
                         showLyrics: showLyrics,
-                        hasLyrics: hasLyrics
+                        hasLyrics: hasLyrics,
+                        playbackSpeed: playbackSpeed,
+                        speedMenuEnabled: speedMenuEnabled
                     ),
                     onShare: onShare,
                     onToggleFavorite: {
                         guard let song else { return }
-                        Task { try? await LibraryActions.shared.toggleFavorite(song: song) }
+                        Task { await ActionToast.toggleFavorite(song: song) }
                     },
                     onDownload: {
                         guard let song else { return }
@@ -603,6 +603,7 @@ private struct PlayerHeader: View, Equatable {
                     onAddToPlaylist: onAddToPlaylist,
                     onOpenQueue: onOpenQueue,
                     onEqualizer: onEqualizer,
+                    onSetPlaybackSpeed: onSetPlaybackSpeed,
                     onToggleRatingStars: onToggleRatingStars,
                     onToggleSongInfo: onToggleSongInfo,
                     onToggleLyrics: onToggleLyrics
@@ -624,6 +625,8 @@ private struct PlayerHeader: View, Equatable {
             && lhs.showSongInfo == rhs.showSongInfo
             && lhs.showLyrics == rhs.showLyrics
             && lhs.hasLyrics == rhs.hasLyrics
+            && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
+            && lhs.speedMenuEnabled == rhs.speedMenuEnabled
     }
 }
 
@@ -640,6 +643,20 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
         var showSongInfo: Bool
         var showLyrics: Bool
         var hasLyrics: Bool
+        var playbackSpeed: Float
+        var speedMenuEnabled: Bool
+
+        static func == (lhs: MenuState, rhs: MenuState) -> Bool {
+            lhs.hasSong == rhs.hasSong
+                && lhs.isFavorite == rhs.isFavorite
+                && lhs.downloadStatus == rhs.downloadStatus
+                && lhs.showRatingStars == rhs.showRatingStars
+                && lhs.showSongInfo == rhs.showSongInfo
+                && lhs.showLyrics == rhs.showLyrics
+                && lhs.hasLyrics == rhs.hasLyrics
+                && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
+                && lhs.speedMenuEnabled == rhs.speedMenuEnabled
+        }
     }
 
     var menuState: MenuState
@@ -649,6 +666,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
     var onAddToPlaylist: () -> Void
     var onOpenQueue: () -> Void
     var onEqualizer: () -> Void
+    var onSetPlaybackSpeed: (Float) -> Void
     var onToggleRatingStars: () -> Void
     var onToggleSongInfo: () -> Void
     var onToggleLyrics: () -> Void
@@ -747,6 +765,17 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
                 image: UIImage(systemName: "slider.vertical.3")
             ) { [weak self] _ in self?.owner.onEqualizer() }
 
+            let playbackSpeed = UIMenu(
+                title: "Playback Speed",
+                image: UIImage(systemName: "timer"),
+                children: PlaybackSpeedMenuBuilder.actions(
+                    current: state.playbackSpeed,
+                    enabled: state.speedMenuEnabled
+                ) { [weak self] rate in
+                    self?.owner.onSetPlaybackSpeed(rate)
+                }
+            )
+
             let sleepTimer = UIAction(
                 title: "Sleep Timer",
                 image: UIImage(systemName: "moon.zzz"),
@@ -756,7 +785,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             return UIMenu(children: [
                 UIMenu(options: .displayInline, children: [share]),
                 UIMenu(options: .displayInline, children: [favorite, download, addToPlaylist, addToQueue, openQueue]),
-                UIMenu(options: .displayInline, children: [lyrics, hideRating, songInfo, equalizer, sleepTimer])
+                UIMenu(options: .displayInline, children: [lyrics, hideRating, songInfo, equalizer, playbackSpeed, sleepTimer])
             ])
         }
 
@@ -765,7 +794,7 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             case .pending, .downloading: return "Cancel Download"
             case .downloaded: return "Remove Download"
             case .failed: return "Retry Download"
-            case .none, .partial: return "Download Song"
+            case .none, .partial, .cached: return "Download Song"
             }
         }
 
@@ -774,8 +803,83 @@ private struct PlayerOverflowMenuButton: UIViewRepresentable {
             case .pending, .downloading: return "stop.circle"
             case .downloaded: return "arrow.down.circle.fill"
             case .failed: return "exclamationmark.circle"
-            case .none, .partial: return "arrow.down.circle"
+            case .none, .partial, .cached: return "arrow.down.circle"
             }
+        }
+    }
+}
+
+/// Bottom-bar speed control. Uses `UIMenu` so an open menu does not pulse while the
+/// player re-renders on progress ticks (same reason as the overflow menu).
+private struct PlaybackSpeedMenuButton: UIViewRepresentable {
+    var playbackSpeed: Float
+    var isEnabled: Bool
+    var onSelect: (Float) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(owner: self)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(
+            UIImage(
+                systemName: "timer",
+                withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)
+            ),
+            for: .normal
+        )
+        button.showsMenuAsPrimaryAction = true
+        context.coordinator.apply(to: button, owner: self)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.apply(to: button, owner: self)
+    }
+
+    final class Coordinator {
+        var owner: PlaybackSpeedMenuButton
+        private var renderedSpeed: Float?
+        private var renderedEnabled: Bool?
+
+        init(owner: PlaybackSpeedMenuButton) {
+            self.owner = owner
+        }
+
+        func apply(to button: UIButton, owner: PlaybackSpeedMenuButton) {
+            self.owner = owner
+            button.isEnabled = owner.isEnabled
+            button.tintColor = PlaybackSpeed.isEqual(owner.playbackSpeed, 1)
+                ? .label
+                : .tintColor
+            guard renderedSpeed.map({ !PlaybackSpeed.isEqual($0, owner.playbackSpeed) }) ?? true
+                || renderedEnabled != owner.isEnabled
+            else { return }
+            renderedSpeed = owner.playbackSpeed
+            renderedEnabled = owner.isEnabled
+            button.menu = UIMenu(children: PlaybackSpeedMenuBuilder.actions(
+                current: owner.playbackSpeed,
+                enabled: owner.isEnabled
+            ) { [weak self] rate in
+                self?.owner.onSelect(rate)
+            })
+        }
+    }
+}
+
+private enum PlaybackSpeedMenuBuilder {
+    static func actions(
+        current: Float,
+        enabled: Bool,
+        onSelect: @escaping (Float) -> Void
+    ) -> [UIAction] {
+        PlaybackSpeed.options.map { rate in
+            UIAction(
+                title: PlaybackSpeed.label(for: rate),
+                attributes: enabled ? [] : .disabled,
+                state: PlaybackSpeed.isEqual(rate, current) ? .on : .off
+            ) { _ in onSelect(rate) }
         }
     }
 }

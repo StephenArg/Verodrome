@@ -29,10 +29,14 @@ public protocol PlayerControlling: AnyObject {
     func enqueueNext(_ items: [QueueItem])
     func enqueueLast(_ items: [QueueItem])
     /// Queues items for one listen; they leave the queue and the cache once played.
-    func enqueueEphemeral(_ items: [QueueItem])
+    /// `at` is an absolute queue index clamped into the "Added to Queue" run; pass `nil`
+    /// to append after any temporary rows already waiting.
+    func enqueueEphemeral(_ items: [QueueItem], at insertAt: Int?)
     /// Extends the playing context rather than adding user-queued items.
     func appendContext(_ items: [QueueItem])
     func remove(at offsets: IndexSet)
+    /// Removes rows whoever queued them, for a queue the user owns the order of.
+    func removeRows(at offsets: IndexSet)
     func move(from: IndexSet, to: Int)
     /// Reorder / remove within the user-queued run, offsets relative to it.
     func moveUserQueued(from: IndexSet, to: Int)
@@ -48,6 +52,12 @@ public protocol PlayerControlling: AnyObject {
 
 @MainActor
 public protocol PlayerFacade: PlayerControlling {}
+
+extension PlayerControlling {
+    public func enqueueEphemeral(_ items: [QueueItem]) {
+        enqueueEphemeral(items, at: nil)
+    }
+}
 
 @MainActor
 public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
@@ -65,6 +75,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     @Published public private(set) var lyricsLoaded = false
     /// Non-empty while playback is stalled, e.g. waiting for the network to come back.
     @Published public private(set) var statusMessage: String = ""
+    /// Sticky playback speed for the current play context. Resets when the context is replaced.
+    @Published public private(set) var sessionPlaybackRate: Float = 1
 
     /// The stored queue carries the scrub position, so it is rewritten as playback moves.
     /// Doing that per tick would be a file write a second; this interval keeps a relaunch
@@ -85,6 +97,16 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
                     elapsed: self.currentTime,
                     rate: self.audioPlayer.backend.playbackRate
                 )
+            }
+            .store(in: &cancellables)
+        // A new play context (or cleared queue) drops any sticky speed.
+        // No `receive(on:)` — queue mutations already happen on the main actor, and
+        // the reset must land before the next `play(item:)` re-asserts session rate.
+        audioPlayer.queueHandler.$contextGeneration
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.setSessionPlaybackRate(1)
             }
             .store(in: &cancellables)
         audioPlayer.backend.$currentTime
@@ -140,6 +162,11 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public var currentIndex: Int { audioPlayer.queueHandler.currentIndex }
     public var userQueuedRange: Range<Int> { audioPlayer.queueHandler.userQueuedRange }
     public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
+
+    /// Test seam for session-speed coverage without playing audio.
+    var test_queueHandler: PlayQueueHandler { audioPlayer.queueHandler }
+    var test_enginePlaybackRate: Float { audioPlayer.backend.playbackRate }
+    var test_engineSessionRate: Float { audioPlayer.backend.sessionPlaybackRate }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
         set {
@@ -226,12 +253,37 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         )
     }
 
+    /// Sets the sticky playback speed for the current play context.
+    public func setSessionPlaybackRate(_ rate: Float) {
+        let clamped = PlaybackSpeed.clamp(rate)
+        sessionPlaybackRate = clamped
+        audioPlayer.backend.setSessionPlaybackRate(clamped)
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
+    }
+
+    /// Restores the engine to the sticky context speed after a temporary hold-speed.
+    public func restoreSessionPlaybackRate() {
+        audioPlayer.backend.restoreSessionPlaybackRate()
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
+    }
+
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }
     public func enqueueLast(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueLast(items) }
-    public func enqueueEphemeral(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueEphemeral(items) }
+    public func enqueueEphemeral(_ items: [QueueItem], at insertAt: Int? = nil) {
+        audioPlayer.queueHandler.enqueueEphemeral(items, at: insertAt)
+    }
     public func appendContext(_ items: [QueueItem]) { audioPlayer.queueHandler.appendContext(items) }
     public func remove(at offsets: IndexSet) { audioPlayer.queueHandler.remove(at: offsets) }
     public func remove(at index: Int) { audioPlayer.queueHandler.remove(at: IndexSet(integer: index)) }
+    public func removeRows(at offsets: IndexSet) { audioPlayer.queueHandler.removeRows(at: offsets) }
     public func move(from: IndexSet, to: Int) { audioPlayer.queueHandler.move(from: from, to: to) }
     public func moveUserQueued(from: IndexSet, to: Int) { audioPlayer.queueHandler.moveUserQueued(from: from, to: to) }
     public func removeUserQueued(at offsets: IndexSet) { audioPlayer.queueHandler.removeUserQueued(at: offsets) }

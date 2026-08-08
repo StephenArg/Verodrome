@@ -180,6 +180,34 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertTrue(handler.activeQueue[1].isUserQueued)
     }
 
+    /// A drag-to-queue drop names an absolute index; the copy has to land there rather
+    /// than always appending after the temporary run.
+    func testEphemeralInsertAtLandsInsideTheQueuedRun() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.enqueueEphemeral([
+            QueueItem(playableId: "a", title: "A"),
+            QueueItem(playableId: "b", title: "B")
+        ])
+
+        handler.enqueueEphemeral([QueueItem(playableId: "mid", title: "Mid")], at: 2)
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "a", "mid", "b", "1", "2"])
+        XCTAssertTrue(handler.activeQueue[2].isEphemeral)
+    }
+
+    func testEphemeralInsertAtClampsInsideTheQueuedRun() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "a", title: "A")])
+
+        // Ahead of the playhead and past the run both collapse to the run's edges.
+        handler.enqueueEphemeral([QueueItem(playableId: "early", title: "Early")], at: 0)
+        handler.enqueueEphemeral([QueueItem(playableId: "late", title: "Late")], at: 99)
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "early", "a", "late", "1", "2"])
+    }
+
     func testEphemeralItemLeavesQueueOncePlayed() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(3), startAt: 0)
@@ -362,6 +390,42 @@ final class PlayQueueHandlerTests: XCTestCase {
 
         handler.remove(at: IndexSet(integer: 1))
         XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2", "3", "4"])
+    }
+
+    func testRemoveRowsTakesContextRowsToo() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(5), startAt: 0)
+
+        handler.removeRows(at: IndexSet(integer: 2))
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "3", "4"])
+    }
+
+    func testRemoveRowsNeverTakesThePlayingTrack() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(5), startAt: 0)
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "1")
+
+        handler.removeRows(at: IndexSet(integer: 1))
+
+        XCTAssertEqual(handler.activeQueue.count, 5)
+        XCTAssertEqual(handler.currentItem?.playableId, "1")
+    }
+
+    /// The same song can sit in the queue twice, so removing one copy has to leave the
+    /// restore-order list holding the other.
+    func testRemoveRowsWhileShuffledKeepsTheOtherCopyOfTheSameSong() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(4), startAt: 0)
+        handler.toggleShuffle()
+        handler.enqueueLast([QueueItem(playableId: "2", title: "Song 2")])
+
+        let duplicate = handler.activeQueue.lastIndex { $0.playableId == "2" }!
+        handler.removeRows(at: IndexSet(integer: duplicate))
+        handler.toggleShuffle()
+
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "2", "3"])
     }
 
     func testRemovingRowAbovePlayingTrackKeepsPointerOnIt() {

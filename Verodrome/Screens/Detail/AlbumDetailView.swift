@@ -80,7 +80,10 @@ struct AlbumDetailView: View {
         .sheet(isPresented: $showPlaylistSelector) {
             PlaylistSelectorView { playlist in
                 let songs = tracks
-                Task { try? await LibraryActions.shared.addSongs(songs, to: playlist) }
+                Task {
+                    try? await LibraryActions.shared.addSongs(songs, to: playlist)
+                    ActionToast.addedToPlaylist(playlist.name)
+                }
             }
         }
         .task(id: albums.first?.artworkToken) {

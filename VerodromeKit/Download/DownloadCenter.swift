@@ -10,6 +10,9 @@ public enum DownloadStatus: Equatable, Sendable {
     case downloading(Double)
     /// Some, but not all, tracks of an album/playlist are on disk.
     case partial
+    /// On disk only because the player / queue prefetched it — not a keep-forever download.
+    case cached
+    /// Explicitly kept offline (user download, favorites, playlist cache, …).
     case downloaded
     case failed
 }
