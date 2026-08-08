@@ -145,4 +145,31 @@ final class LibraryListFetchTests: XCTestCase {
         )
         XCTAssertEqual(try context.fetch(descriptor).map(\.remoteId), ["1"])
     }
+
+    /// Songs' "Downloaded" filter is `relFilePath != nil`, alone and composed with search.
+    func testDownloadedOnlyPredicateFiltersInTheStore() throws {
+        let (context, account) = try makeContext()
+        let local = Song(remoteId: "1", title: "Cached", account: account)
+        local.relFilePath = "song/1.mp3"
+        let remote = Song(remoteId: "2", title: "Streamed", account: account)
+        for song in [local, remote] { context.insert(song) }
+        try context.save()
+
+        let downloaded = FetchDescriptor<Song>(
+            predicate: #Predicate<Song> { $0.relFilePath != nil },
+            sortBy: [SortDescriptor(\Song.sortTitle)]
+        )
+        XCTAssertEqual(try context.fetch(downloaded).map(\.remoteId), ["1"])
+
+        let search = "stream"
+        let downloadedSearch = FetchDescriptor<Song>(
+            predicate: #Predicate<Song> { song in
+                song.relFilePath != nil
+                    && (song.title.localizedStandardContains(search)
+                        || song.artistName?.localizedStandardContains(search) == true
+                        || song.albumTitle?.localizedStandardContains(search) == true)
+            }
+        )
+        XCTAssertTrue(try context.fetch(downloadedSearch).isEmpty)
+    }
 }

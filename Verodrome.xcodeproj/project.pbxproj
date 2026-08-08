@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		026C06B27AC76431C9013DCC /* LibraryShuffleCountBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */; };
 		0271BA4A66E55B4F74FFD631 /* PlayerDownloadPreparationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F716E49C739CFF345661C9D3 /* PlayerDownloadPreparationHandler.swift */; };
 		03FF22CCA200362B9F4B4368 /* LibrarySortMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */; };
 		04B7F7A2E3D599042E3E014B /* ArtistDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A84B2BC8C7CFF93BCB7A83CC /* ArtistDetailView.swift */; };
@@ -401,6 +402,7 @@
 		A400AC51A734F86D8636BD58 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A70D97F807C231B5EE392AEC /* DebouncedSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebouncedSearch.swift; sourceTree = "<group>"; };
 		A84B2BC8C7CFF93BCB7A83CC /* ArtistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistDetailView.swift; sourceTree = "<group>"; };
+		A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryShuffleCountBar.swift; sourceTree = "<group>"; };
 		A8B564AA857B3A843B461378 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
 		A9CD3677B2BC20B044B4D99E /* DownloadCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadCenter.swift; sourceTree = "<group>"; };
 		AB433FECDADD7C512A376D45 /* ApiModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiModels.swift; sourceTree = "<group>"; };
@@ -719,6 +721,7 @@
 				73F26A44B4C1FC940C85D7B7 /* LibraryHubView.swift */,
 				457920C92CBA44515C67150A /* LibraryLayoutMenu.swift */,
 				9FDC7F3D99782678E5A704CB /* LibraryListModel.swift */,
+				A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */,
 				1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */,
 				FFCD4665337B0FCF33E6F28D /* PlaylistsView.swift */,
 				5B8F8B9F367AA22D1B5E4216 /* PodcastsView.swift */,
@@ -1404,6 +1407,7 @@
 				B308284C1F3C1F82AA93CA62 /* LibraryLayoutMenu.swift in Sources */,
 				8787B43F7AB910318C3B3D30 /* LibraryListModel.swift in Sources */,
 				A74F8A59159B6DA7C717FBAE /* LibrarySettingsView.swift in Sources */,
+				026C06B27AC76431C9013DCC /* LibraryShuffleCountBar.swift in Sources */,
 				03FF22CCA200362B9F4B4368 /* LibrarySortMenu.swift in Sources */,
 				DD429F009EF6762CF0686E9D /* LibrarySyncProgressBar.swift in Sources */,
 				887DF2EC8C469EAED9E1BCBC /* LoginView.swift in Sources */,

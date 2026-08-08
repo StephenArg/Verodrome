@@ -105,6 +105,11 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     var onSelect: (Item, [Item]) -> Void
     var onAddToQueue: ((Item) -> Void)?
     var onRequestActions: ((String) -> Void)?
+    /// Scrolls away above the first row, so chrome that belongs to the list can leave
+    /// with the large title instead of holding height on a screen full of rows.
+    var header: AnyView?
+    /// Distance scrolled past the top of the content, safe-area inset already removed.
+    var onScroll: ((CGFloat) -> Void)?
 
     init(
         sections: [LibraryRowSection<Item>],
@@ -114,7 +119,9 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         downloadRevision: Int = 0,
         onSelect: @escaping (Item, [Item]) -> Void,
         onAddToQueue: ((Item) -> Void)? = nil,
-        onRequestActions: ((String) -> Void)? = nil
+        onRequestActions: ((String) -> Void)? = nil,
+        header: AnyView? = nil,
+        onScroll: ((CGFloat) -> Void)? = nil
     ) {
         self.sections = sections
         self.playingId = playingId
@@ -124,6 +131,8 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         self.onSelect = onSelect
         self.onAddToQueue = onAddToQueue
         self.onRequestActions = onRequestActions
+        self.header = header
+        self.onScroll = onScroll
     }
 
     func makeUIViewController(context: Context) -> IndexedEntityTableController<Item> {
@@ -131,6 +140,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         controller.onSelect = onSelect
         controller.onAddToQueue = onAddToQueue
         controller.onRequestActions = onRequestActions
+        controller.onScroll = onScroll
         return controller
     }
 
@@ -138,7 +148,9 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         controller.onSelect = onSelect
         controller.onAddToQueue = onAddToQueue
         controller.onRequestActions = onRequestActions
+        controller.onScroll = onScroll
         controller.downloadRevision = downloadRevision
+        controller.setHeader(header)
         controller.apply(
             sections: sections,
             playingId: playingId,
@@ -153,6 +165,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     var onSelect: ((Item, [Item]) -> Void)?
     var onAddToQueue: ((Item) -> Void)?
     var onRequestActions: ((String) -> Void)?
+    var onScroll: ((CGFloat) -> Void)?
     var downloadRevision = 0
 
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -164,6 +177,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private var appliedFingerprint = ""
     private var appliedDownloadRevision = 0
     private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
+    private var headerHost: UIHostingController<AnyView>?
+    private var headerWidth: CGFloat = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -183,6 +198,87 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(retryVisibleArtwork),
+            name: .backendAuthenticated,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        sizeHeaderToFit()
+    }
+
+    /// Installs (or updates) the SwiftUI view that scrolls above the first row.
+    /// `tableHeaderView` is frame-laid-out, so the hosting view has to be measured by
+    /// hand whenever its content or the table's width changes.
+    func setHeader(_ header: AnyView?) {
+        guard let header else {
+            guard let host = headerHost else { return }
+            tableView.tableHeaderView = nil
+            host.willMove(toParent: nil)
+            host.view.removeFromSuperview()
+            host.removeFromParent()
+            headerHost = nil
+            headerWidth = 0
+            return
+        }
+
+        if let host = headerHost {
+            host.rootView = header
+            // New content can be a different height even at the same width.
+            headerWidth = 0
+            sizeHeaderToFit()
+            return
+        }
+
+        let host = UIHostingController(rootView: header)
+        host.view.backgroundColor = .clear
+        // The header sits inside the scroll view; letting it claim the safe area would
+        // pad it by the nav bar's inset on every layout pass.
+        host.safeAreaRegions = []
+        addChild(host)
+        host.didMove(toParent: self)
+        headerHost = host
+        tableView.tableHeaderView = host.view
+        headerWidth = 0
+        sizeHeaderToFit()
+    }
+
+    private func sizeHeaderToFit() {
+        guard let host = headerHost, let headerView = tableView.tableHeaderView else { return }
+        let width = tableView.bounds.width
+        guard width > 0 else { return }
+        let height = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        guard width != headerWidth || abs(headerView.frame.height - height) > 0.5 else { return }
+        headerWidth = width
+        headerView.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        // Reassigning is what makes the table adopt the new header height.
+        tableView.tableHeaderView = headerView
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        onScroll?(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+    }
+
+    /// Rows that asked for art before cold-launch login finished never get `willDisplay` again.
+    @objc private func retryVisibleArtwork() {
+        for case let cell as EntityTableCell in tableView.visibleCells {
+            guard let indexPath = tableView.indexPath(for: cell),
+                  let item = item(at: indexPath) else { continue }
+            cell.beginArtworkLoadIfNeeded(
+                token: item.artworkToken,
+                symbol: item.symbol,
+                priority: .userInitiated
+            )
+        }
     }
 
     func apply(
@@ -623,6 +719,8 @@ final class EntityTableCell: UITableViewCell {
 
     func beginArtworkLoadIfNeeded(token: String?, symbol: String, priority: TaskPriority) {
         guard let token, !token.isEmpty else { return }
+        // Keep an in-flight load (including one waiting on cold-launch auth).
+        if artworkTask != nil, artworkToken == token { return }
         if artworkView.image != nil,
            ArtworkImageCache.shared.image(for: token, size: ArtworkPixelSize.thumbnail) != nil {
             return
@@ -639,6 +737,7 @@ final class EntityTableCell: UITableViewCell {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.artworkToken == token else { return }
+                self.artworkTask = nil
                 if let image {
                     self.artworkView.contentMode = .scaleAspectFill
                     self.artworkView.tintColor = nil

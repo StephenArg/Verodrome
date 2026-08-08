@@ -65,12 +65,14 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
     /// per-size `fileExists` sweeps that every cold cache probe used to pay.
     private func indexCacheDirectoryIfNeeded() {
         guard !didIndexCacheDirectory else { return }
-        didIndexCacheDirectory = true
+        // Only mark indexed after a successful listing. A transient failure must not leave
+        // the session treating a full disk cache as empty forever.
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: cacheDirectory,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         ) else { return }
+        didIndexCacheDirectory = true
         // File names are cache keys, so the listing is the lookup table.
         for file in files where memory[file.lastPathComponent] == nil {
             memory[file.lastPathComponent] = file
@@ -462,6 +464,19 @@ public final class ArtworkResolver: ObservableObject {
         self.manager = manager
     }
 
+    /// UI can appear (and request covers) a few frames before `initialize` attaches the
+    /// download manager. Wait briefly rather than treating that race as a permanent miss.
+    private nonisolated func resolvedManager(timeout: Duration = .seconds(10)) async -> ArtworkDownloadManager? {
+        if let manager { return manager }
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if Task.isCancelled { return nil }
+            if let manager { return manager }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return manager
+    }
+
     private func memoryKey(token: String, size: Int) -> String {
         "\(token)|s\(size)"
     }
@@ -481,7 +496,7 @@ public final class ArtworkResolver: ObservableObject {
         guard let token, !token.isEmpty else { return nil }
         let key = memoryKey(token: token, size: size)
         if let cached = memory[key] { return cached }
-        guard let manager else {
+        guard let manager = await resolvedManager() else {
             return URL(string: token)
         }
         if let url = await manager.resolveURL(for: token, kind: kind, size: size, prefetchToDisk: prefetchToDisk) {
@@ -503,7 +518,7 @@ public final class ArtworkResolver: ObservableObject {
         kind: ArtworkKind = .album,
         size: Int = 300
     ) async -> UIImage? {
-        guard let manager else { return nil }
+        guard let manager = await resolvedManager() else { return nil }
         return await manager.loadImage(for: token, kind: kind, size: size)
     }
 
@@ -511,13 +526,13 @@ public final class ArtworkResolver: ObservableObject {
     /// fetches the requested size. Never hits the network, and returns nil when the
     /// requested size is already local.
     public nonisolated func downgradedImage(for token: String?, size: Int) async -> UIImage? {
-        guard let manager else { return nil }
+        guard let manager = await resolvedManager() else { return nil }
         return await manager.downgradedCachedImage(for: token, size: size)
     }
 
     /// True when `loadImage` for this size will be served from disk rather than the network.
     public nonisolated func hasLocalRender(for token: String?, size: Int) async -> Bool {
-        guard let manager else { return false }
+        guard let manager = await resolvedManager() else { return false }
         return await manager.hasLocalRender(for: token, size: size)
     }
 

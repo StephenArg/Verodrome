@@ -18,6 +18,8 @@ struct LibraryReloadKey: Equatable {
     let search: String
     let sort: LibrarySortOption
     let isSyncing: Bool
+    /// Songs list: only rows with a local file. Other screens leave this false.
+    var downloadedOnly: Bool = false
     /// Bumped by screens that pull from the server before their rows are final.
     var version: Int = 0
 }
@@ -28,6 +30,8 @@ struct LibraryFetchRequest: Sendable {
     let sort: LibrarySortOption
     /// Set only for the head pass that draws the top of the list before the rest.
     let headLimit: Int?
+    /// Songs list: only rows with a local file.
+    var downloadedOnly: Bool = false
 
     var limit: Int? { headLimit }
 
@@ -100,6 +104,8 @@ final class LibraryListModel<Item: LibraryRow> {
     /// selection until the new rows land. Section headers key off this so they don't
     /// disappear from rows that are still grouped by letter.
     private(set) var appliedSort: LibrarySortOption = .titleAZ
+    /// Matches the download filter of the rows currently on screen (or being fetched).
+    private var appliedDownloadedOnly = false
 
     var isSectioned: Bool { appliedSort.isAlphabetical }
 
@@ -121,22 +127,31 @@ final class LibraryListModel<Item: LibraryRow> {
         self.fetch = fetch
     }
 
-    func load(search: String, sort: LibrarySortOption) async {
+    func load(search: String, sort: LibrarySortOption, downloadedOnly: Bool = false) async {
         generation += 1
         let generation = self.generation
 
-        if !hasRows(for: sort), let cached: LibraryListPage<Item> = LibrarySectionCache.shared.page(for: cacheKey(for: sort)) {
+        if !hasRows(for: sort, downloadedOnly: downloadedOnly),
+           let cached: LibraryListPage<Item> = LibrarySectionCache.shared.page(
+            for: cacheKey(for: sort, downloadedOnly: downloadedOnly)
+           ) {
             sections = cached.sections
             rowCount = cached.count
             appliedSort = sort
+            appliedDownloadedOnly = downloadedOnly
             isPartial = false
         }
 
         // Draw the top of the list before reading the whole table. Restricted to an
         // empty search so the head fetch only needs its section-bucket predicate; a
         // filtered list is small enough that the full pass is already quick.
-        if !hasRows(for: sort), supportsHeadPage, search.isEmpty {
-            let request = LibraryFetchRequest(search: search, sort: sort, headLimit: Self.headLimit)
+        if !hasRows(for: sort, downloadedOnly: downloadedOnly), supportsHeadPage, search.isEmpty {
+            let request = LibraryFetchRequest(
+                search: search,
+                sort: sort,
+                headLimit: Self.headLimit,
+                downloadedOnly: downloadedOnly
+            )
             let head = await PerfTrace.measureAsync("LibraryList.head", details: baseCacheKey) {
                 await fetch(request)
             }
@@ -145,11 +160,17 @@ final class LibraryListModel<Item: LibraryRow> {
                 sections = head.sections
                 rowCount = head.count
                 appliedSort = sort
+                appliedDownloadedOnly = downloadedOnly
                 isPartial = true
             }
         }
 
-        let request = LibraryFetchRequest(search: search, sort: sort, headLimit: nil)
+        let request = LibraryFetchRequest(
+            search: search,
+            sort: sort,
+            headLimit: nil,
+            downloadedOnly: downloadedOnly
+        )
         let full = await PerfTrace.measureAsync("LibraryList.full", details: baseCacheKey) {
             await fetch(request)
         }
@@ -157,17 +178,19 @@ final class LibraryListModel<Item: LibraryRow> {
         sections = full.sections
         rowCount = full.count
         appliedSort = sort
+        appliedDownloadedOnly = downloadedOnly
         isPartial = false
-        LibrarySectionCache.shared.store(full, for: cacheKey(for: sort))
+        LibrarySectionCache.shared.store(full, for: cacheKey(for: sort, downloadedOnly: downloadedOnly))
     }
 
-    private func hasRows(for sort: LibrarySortOption) -> Bool {
-        !sections.isEmpty && appliedSort == sort
+    private func hasRows(for sort: LibrarySortOption, downloadedOnly: Bool) -> Bool {
+        !sections.isEmpty && appliedSort == sort && appliedDownloadedOnly == downloadedOnly
     }
 
-    /// Cached per ordering, so switching sorts never paints rows in the previous order.
-    private func cacheKey(for sort: LibrarySortOption) -> String {
-        "\(baseCacheKey).\(sort.rawValue)"
+    /// Cached per ordering and download filter, so flipping either never paints the
+    /// previous filter's rows.
+    private func cacheKey(for sort: LibrarySortOption, downloadedOnly: Bool) -> String {
+        "\(baseCacheKey).\(sort.rawValue).dl=\(downloadedOnly)"
     }
 }
 

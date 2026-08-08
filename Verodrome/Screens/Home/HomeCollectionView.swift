@@ -91,6 +91,24 @@ final class HomeCollectionViewController: UICollectionViewController {
         }
 
         configureDataSource()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(retryVisibleArtwork),
+            name: .backendAuthenticated,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Visible tiles that raced ahead of cold-launch login stay on placeholders otherwise.
+    @objc private func retryVisibleArtwork() {
+        for case let cell as HomeTileCell in collectionView.visibleCells {
+            cell.loadArtworkIfNeeded()
+        }
     }
 
     private static func createLayout() -> UICollectionViewCompositionalLayout {

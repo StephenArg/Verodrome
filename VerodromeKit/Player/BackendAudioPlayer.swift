@@ -143,6 +143,14 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         isCrossfading = false
     }
 
+    /// Drops the identity of the outgoing stream so a late EOF or gapless hand-off cannot
+    /// advance the queue, without stopping audio yet — the replacement `play(item:)` cuts
+    /// over once its URL is ready.
+    public func abandonCurrentPlayback() {
+        clearPendingNext()
+        currentPlayURL = ""
+    }
+
     /// Clock seed for a track the engine advanced to by itself (gapless / crossfade).
     /// The engine is already playing it; we only need to reset our published clock.
     public func adoptEngineAdvancedTrack(duration newDuration: TimeInterval) {
@@ -280,6 +288,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func stop() {
         ignoreFinishCallbacks = true
         preferPaused = false
+        clearPendingNext()
         currentPlayURL = ""
         streamingPlayer.stop()
         ignoreFinishCallbacks = false

@@ -190,6 +190,7 @@ public final class VerodromeKit: ObservableObject {
         }
         launchPhase = .main
         NotificationCenter.default.post(name: .accountChanged, object: info)
+        NotificationCenter.default.post(name: .backendAuthenticated, object: nil)
         librarySync.runBackground()
     }
 
@@ -391,6 +392,7 @@ public final class VerodromeKit: ObservableObject {
               let stored = accountStore.allAccounts().first(where: { $0.info.key == key }) else {
             return nil
         }
+        var didAuthenticate = false
         if !backendProxy.isAuthenticated {
             guard let login = LoginCredentials(
                 serverURLString: stored.credentials.serverURL,
@@ -400,6 +402,7 @@ public final class VerodromeKit: ObservableObject {
                 throw BackendError.invalidURL
             }
             _ = try await backendProxy.login(credentials: login)
+            didAuthenticate = true
         }
         // The ingester runs on its own ModelActor so sync writes never touch the main
         // thread; the account row is resolved lazily inside that actor's context.
@@ -426,6 +429,9 @@ public final class VerodromeKit: ObservableObject {
         }
         scrobbleSyncer = scrobble
         audioOrchestrator?.attachScrobbleSyncer(scrobble)
+        if didAuthenticate {
+            NotificationCenter.default.post(name: .backendAuthenticated, object: nil)
+        }
         return syncer
     }
 

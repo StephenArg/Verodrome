@@ -1,115 +1,53 @@
 import SwiftUI
 
-/// Header row for a library list: an optional shuffle button on the left and a
-/// filter field that stays collapsed to a circular magnifying-glass button until
-/// it's tapped, so a list that's usually browsed rather than searched keeps its
-/// full height for rows.
+/// Full-width filter field for a library list. Always open: the list it heads is long
+/// enough that filtering is a normal way to use it, and a field that is already there
+/// costs one tap less than one that has to be revealed.
 struct LibraryFilterBar: View {
     let prompt: String
     @Binding var text: String
-    /// Omitted when the list has nothing to shuffle.
-    var onShuffle: (() -> Void)?
-    /// Shuffling a whole library is a server round trip, and a slow one on some
-    /// Subsonic builds, so the button says so rather than looking unresponsive.
-    var isShuffleBusy = false
 
-    @State private var isExpanded = false
     @FocusState private var isFocused: Bool
 
-    private let controlDiameter: CGFloat = 40
-    private let spacing: CGFloat = 10
-    private let horizontalPadding: CGFloat = 16
+    private let height: CGFloat = 40
 
     var body: some View {
-        GeometryReader { proxy in
-            // The field grows into the space the shuffle button doesn't occupy, so
-            // expanding never covers it.
-            let leadingWidth = onShuffle == nil ? 0 : controlDiameter + spacing
-            let expandedWidth = max(controlDiameter, proxy.size.width - leadingWidth)
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
 
-            HStack(spacing: spacing) {
-                if let onShuffle {
-                    shuffleButton(action: onShuffle)
+            TextField(prompt, text: $text)
+                .focused($isFocused)
+                .submitLabel(.done)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                // A TextField's intrinsic width tracks its text, which would push the
+                // clear button out of the field once enough is typed.
+                .frame(minWidth: 0, maxWidth: .infinity)
+
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                    isFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
-                filterField
-                    .frame(width: isExpanded ? expandedWidth : controlDiameter, alignment: .leading)
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear filter")
+                .transition(.opacity)
             }
         }
-        .frame(height: controlDiameter)
-        .padding(.horizontal, horizontalPadding)
+        .padding(.horizontal, 12)
+        .frame(height: height)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemFill))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
-    }
-
-    private func shuffleButton(action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if isShuffleBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    ShuffleControlIcon()
-                        .frame(width: 18, height: 18)
-                        .foregroundStyle(Color.primary)
-                }
-            }
-            .frame(width: controlDiameter, height: controlDiameter)
-            .background(Circle().fill(Color(uiColor: .secondarySystemFill)))
-        }
-        .buttonStyle(.plain)
-        .disabled(isShuffleBusy)
-        .accessibilityLabel("Shuffle all")
-    }
-
-    private var filterField: some View {
-        HStack(spacing: 4) {
-            Button(action: toggle) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isExpanded ? Color.secondary : Color.primary)
-                    .frame(width: controlDiameter, height: controlDiameter)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isExpanded ? "Hide filter" : "Filter")
-
-            if isExpanded {
-                TextField(prompt, text: $text)
-                    .focused($isFocused)
-                    .submitLabel(.done)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .transition(.opacity)
-
-                if !text.isEmpty {
-                    Button {
-                        text = ""
-                        isFocused = true
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear filter")
-                    .transition(.opacity)
-                }
-            }
-        }
-        .padding(.trailing, isExpanded ? 14 : 0)
-        .frame(height: controlDiameter)
-        .background(Capsule().fill(Color(uiColor: .secondarySystemFill)))
-        .clipShape(Capsule())
-    }
-
-    /// Collapsing clears the text: a hidden field still filtering the list would
-    /// leave missing rows with nothing on screen to explain them.
-    private func toggle() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-            isExpanded.toggle()
-            if !isExpanded {
-                text = ""
-            }
-        }
-        isFocused = isExpanded
+        .animation(.easeOut(duration: 0.15), value: text.isEmpty)
     }
 }

@@ -3,6 +3,7 @@ import VerodromeKit
 
 struct QueueView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     /// Dismisses the hosting sheet (full-player queue). Nil when embedded (e.g. iPad inspector).
     var onDismiss: (() -> Void)? = nil
@@ -163,9 +164,19 @@ struct QueueView: View {
                 artworkURL: item.artworkId,
                 symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
                 isPlaying: player.currentItem?.entryId == item.entryId
-                    || (player.currentItem == nil && player.currentIndex == offset)
+                    || (player.currentItem == nil && player.currentIndex == offset),
+                downloadStatus: downloadStatus(for: item)
             )
         }
         .buttonStyle(.plain)
+    }
+
+    /// Same glyph album / playlist rows use next to the artist — only library songs
+    /// carry a downloadable file; radio and the like stay unmarked.
+    private func downloadStatus(for item: QueueItem) -> DownloadStatus? {
+        guard item.kind == .song else { return nil }
+        let isDownloaded = VerodromeKit.shared.playableCache?
+            .fileURL(forPlayableId: item.playableId, kind: item.kind) != nil
+        return downloadCenter.status(for: item.playableId, isDownloaded: isDownloaded)
     }
 }

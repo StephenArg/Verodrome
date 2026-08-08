@@ -26,11 +26,34 @@ public final class BackendURLProvider: StreamURLProviding, @unchecked Sendable {
     }
 
     public func artworkURL(forArtId artId: String, kind: ArtworkKind, size: Int?) async throws -> URL {
+        // Absolute URLs (Ampache signed art, podcast images) don't need a session.
+        if artId.hasPrefix("http://") || artId.hasPrefix("https://"),
+           let absolute = URL(string: artId) {
+            return absolute
+        }
+        // Cold launch shows the library before `ensureActiveLibrarySyncer` finishes login.
+        // Panels request covers immediately; without waiting they get a hard miss and never
+        // retry, so the grid stays blank until the user opens an album (which loads later).
+        guard await waitUntilAuthenticated() else {
+            throw BackendError.notAuthenticated
+        }
         let ref = ArtworkRef(id: artId, kind: kind)
         guard let url = backend.generateArtworkURL(for: ref, size: size) else {
             throw BackendError.invalidURL
         }
         return url
+    }
+
+    /// Suspends until the backend has an authenticated API, or the timeout elapses.
+    private func waitUntilAuthenticated(timeout: Duration = .seconds(30)) async -> Bool {
+        if backend.isAuthenticated { return true }
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if Task.isCancelled { return false }
+            if backend.isAuthenticated { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return backend.isAuthenticated
     }
 }
 

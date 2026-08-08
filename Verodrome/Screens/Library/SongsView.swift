@@ -15,23 +15,24 @@ struct SongsView: View {
     @State private var debouncedSearch = ""
     @State private var actionsSong: Song?
     @State private var showActions = false
+    @State private var isScrolledDown = false
     @State private var model = LibraryListModel<LibrarySongRowSnapshot>(cacheKey: "songs") { request in
         await SongsView.fetchPage(request)
     }
 
     private var sort: LibrarySortOption { settings.librarySort.songs }
+    private var downloadedOnly: Bool { settings.songsDownloadedOnly }
+
+    /// The filter stays put while it's holding a query — hiding it would leave the
+    /// missing rows unexplained — and otherwise leaves with the large title on scroll.
+    private var showsFilterBar: Bool { !isScrolledDown || !searchText.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            LibraryFilterBar(
-                prompt: "Filter songs",
-                text: $searchText,
-                // The server picks the tracks, and no backend's random endpoint takes a
-                // free-text filter — offering the button while one is typed would just
-                // ignore it.
-                onShuffle: searchText.isEmpty ? shuffleAll : nil,
-                isShuffleBusy: shuffle.isStarting
-            )
+            if showsFilterBar {
+                LibraryFilterBar(prompt: "Filter songs", text: $searchText)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             IndexedEntityTableView(
                 sections: model.sections,
                 playingId: nowPlaying.currentItem?.playableId,
@@ -44,9 +45,22 @@ struct SongsView: View {
                 onRequestActions: { compoundId in
                     actionsSong = resolveSong(compoundRemoteId: compoundId)
                     showActions = actionsSong != nil
-                }
+                },
+                header: AnyView(
+                    LibraryShuffleCountBar(
+                        count: model.rowCount,
+                        noun: "song",
+                        isShuffleBusy: shuffle.isStarting,
+                        // Shuffle All draws from the whole library; a typed filter or a
+                        // downloaded-only view can't be honoured by the random endpoint.
+                        isShuffleDisabled: !searchText.isEmpty || downloadedOnly,
+                        onShuffle: shuffleAll
+                    )
+                ),
+                onScroll: handleScroll
             )
         }
+        .animation(.easeOut(duration: 0.2), value: showsFilterBar)
         .navigationTitle("Songs")
         .debouncedSearch(text: $searchText) { newValue in
             debouncedSearch = newValue
@@ -55,16 +69,25 @@ struct SongsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 LibrarySortMenu(
                     selection: $settings.librarySort.songs,
-                    options: LibrarySortOption.songOptions
+                    options: LibrarySortOption.songOptions,
+                    downloadedOnly: $settings.songsDownloadedOnly
                 )
             }
         }
-        .perfAppear("Songs", details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on")")
-        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
-            await model.load(search: debouncedSearch, sort: sort)
+        .perfAppear(
+            "Songs",
+            details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on") downloadedOnly=\(downloadedOnly)"
+        )
+        .task(id: LibraryReloadKey(
+            search: debouncedSearch,
+            sort: sort,
+            isSyncing: librarySync.isSyncing,
+            downloadedOnly: downloadedOnly
+        )) {
+            await model.load(search: debouncedSearch, sort: sort, downloadedOnly: downloadedOnly)
         }
         .refreshable {
-            await model.load(search: debouncedSearch, sort: sort)
+            await model.load(search: debouncedSearch, sort: sort, downloadedOnly: downloadedOnly)
         }
         .sheet(isPresented: $showActions) {
             if let song = actionsSong {
@@ -83,6 +106,15 @@ struct SongsView: View {
                 .presentationDetents([.medium])
             }
         }
+    }
+
+    /// Hiding the filter grows the table and shifts its content, which reads back here as
+    /// another scroll. Showing and hiding therefore use marks far enough apart that the
+    /// shift can't immediately flip the state again.
+    private func handleScroll(_ offset: CGFloat) {
+        let shouldHide = isScrolledDown ? offset > 8 : offset > 40
+        guard shouldHide != isScrolledDown else { return }
+        isScrolledDown = shouldHide
     }
 
     private func shuffleAll() {
@@ -109,10 +141,10 @@ struct SongsView: View {
         // after it.
         player.play(items: items, startAt: 0, shuffle: false)
 
-        // Only unfiltered, for the same reason the Shuffle All button hides while a
-        // filter is typed: the rows on screen are then the user's own selection, and no
-        // backend's random endpoint can reproduce it.
-        if searchText.isEmpty, let first = items.first {
+        // Only unfiltered, for the same reason Shuffle All disables while a filter is
+        // typed or downloaded-only is on: the rows on screen are then the user's own
+        // selection, and no backend's random endpoint can reproduce it.
+        if searchText.isEmpty, !downloadedOnly, let first = items.first {
             shuffle.trackSongsLibrary(seededBy: first)
         }
     }
@@ -181,16 +213,39 @@ struct SongsView: View {
     ///
     /// The letter range is bounded to ASCII because `sortTitle` is case-folded, and
     /// anything folding above "z" sections as "?" and renders with the symbols.
+    ///
+    /// Downloaded-only is `relFilePath != nil` — the same signal `isDownloadedLocally`
+    /// uses — and is folded into every branch so CoreData still gets a single
+    /// translatable predicate.
     private static func predicate(for request: LibraryFetchRequest) -> Predicate<Song>? {
-        if request.isHeadPass {
-            guard request.sort.isAlphabetical else { return nil }
-            if request.sort.showsSymbolsFirst {
-                return #Predicate<Song> { $0.sortTitle < "a" }
-            }
-            return #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
-        }
+        let downloadedOnly = request.downloadedOnly
         let search = request.search
-        guard !search.isEmpty else { return nil }
+
+        if request.isHeadPass {
+            guard request.sort.isAlphabetical else {
+                return downloadedOnly ? #Predicate<Song> { $0.relFilePath != nil } : nil
+            }
+            if request.sort.showsSymbolsFirst {
+                return downloadedOnly
+                    ? #Predicate<Song> { $0.sortTitle < "a" && $0.relFilePath != nil }
+                    : #Predicate<Song> { $0.sortTitle < "a" }
+            }
+            return downloadedOnly
+                ? #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" && $0.relFilePath != nil }
+                : #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
+        }
+
+        if search.isEmpty {
+            return downloadedOnly ? #Predicate<Song> { $0.relFilePath != nil } : nil
+        }
+        if downloadedOnly {
+            return #Predicate<Song> { song in
+                song.relFilePath != nil
+                    && (song.title.localizedStandardContains(search)
+                        || song.artistName?.localizedStandardContains(search) == true
+                        || song.albumTitle?.localizedStandardContains(search) == true)
+            }
+        }
         return #Predicate<Song> { song in
             song.title.localizedStandardContains(search)
                 || song.artistName?.localizedStandardContains(search) == true

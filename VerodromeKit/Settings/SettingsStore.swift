@@ -24,6 +24,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var isLibrarySynced: Bool = false
     @Published public var libraryDisplayType: LibraryDisplayType = .list
     @Published public var librarySort: LibrarySortSelection = .default
+    /// Songs list only: when on, the list shows tracks that have a local file.
+    @Published public var songsDownloadedOnly: Bool = false
     @Published public var playerDisplayStyle: PlayerDisplayStyle = .standard
     @Published public var showMiniLyrics: Bool = true
     /// Whether the full-screen player shows lyrics in place of the artwork.
@@ -47,6 +49,7 @@ public final class SettingsStore: ObservableObject {
         var isLibrarySynced: Bool
         var libraryDisplayType: LibraryDisplayType
         var librarySort: LibrarySortSelection
+        var songsDownloadedOnly: Bool
         var playerDisplayStyle: PlayerDisplayStyle
         var showMiniLyrics: Bool
         var showLyricsInPlayer: Bool
@@ -69,6 +72,7 @@ public final class SettingsStore: ObservableObject {
             isLibrarySynced: Bool,
             libraryDisplayType: LibraryDisplayType,
             librarySort: LibrarySortSelection,
+            songsDownloadedOnly: Bool,
             playerDisplayStyle: PlayerDisplayStyle,
             showMiniLyrics: Bool,
             showLyricsInPlayer: Bool,
@@ -90,6 +94,7 @@ public final class SettingsStore: ObservableObject {
             self.isLibrarySynced = isLibrarySynced
             self.libraryDisplayType = libraryDisplayType
             self.librarySort = librarySort
+            self.songsDownloadedOnly = songsDownloadedOnly
             self.playerDisplayStyle = playerDisplayStyle
             self.showMiniLyrics = showMiniLyrics
             self.showLyricsInPlayer = showLyricsInPlayer
@@ -114,6 +119,7 @@ public final class SettingsStore: ObservableObject {
             isLibrarySynced = try c.decode(Bool.self, forKey: .isLibrarySynced)
             libraryDisplayType = try c.decode(LibraryDisplayType.self, forKey: .libraryDisplayType)
             librarySort = try c.decodeIfPresent(LibrarySortSelection.self, forKey: .librarySort) ?? .default
+            songsDownloadedOnly = try c.decodeIfPresent(Bool.self, forKey: .songsDownloadedOnly) ?? false
             playerDisplayStyle = try c.decode(PlayerDisplayStyle.self, forKey: .playerDisplayStyle)
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
             showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
@@ -147,6 +153,7 @@ public final class SettingsStore: ObservableObject {
             isLibrarySynced: isLibrarySynced,
             libraryDisplayType: libraryDisplayType,
             librarySort: librarySort,
+            songsDownloadedOnly: songsDownloadedOnly,
             playerDisplayStyle: playerDisplayStyle,
             showMiniLyrics: showMiniLyrics,
             showLyricsInPlayer: showLyricsInPlayer,
@@ -245,6 +252,7 @@ public final class SettingsStore: ObservableObject {
             isLibrarySynced = snapshot.isLibrarySynced
             libraryDisplayType = snapshot.libraryDisplayType
             librarySort = snapshot.librarySort
+            songsDownloadedOnly = snapshot.songsDownloadedOnly
             playerDisplayStyle = snapshot.playerDisplayStyle
             showMiniLyrics = snapshot.showMiniLyrics
             showLyricsInPlayer = snapshot.showLyricsInPlayer

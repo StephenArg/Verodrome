@@ -8,6 +8,8 @@ public extension Notification.Name {
     static let accountChanged = Notification.Name("com.verodrome.accountChanged")
     static let queueCacheReevaluate = Notification.Name("com.verodrome.queueCacheReevaluate")
     static let foregroundRefresh = Notification.Name("com.verodrome.foregroundRefresh")
+    /// Backend session is ready after cold-launch login (artwork / stream URLs can be minted).
+    static let backendAuthenticated = Notification.Name("com.verodrome.backendAuthenticated")
 
     // Aliases used by player stack
     static let verodromeQueueChanged = queueChanged

@@ -40,6 +40,15 @@ public final class AudioPlayer: ObservableObject {
     private var preloadInvalidationTask: Task<Void, Never>?
     /// True while a restored queue's track is being parked at launch.
     private var isRestoringSession = false
+    /// Bumped when a wholly new context is about to replace the queue. Finish / gapless
+    /// handlers that still belong to the outgoing stream compare against this so they
+    /// cannot `advance()` the queue we are installing (e.g. Shuffle All while the
+    /// previous track hits EOF during stream-URL resolution).
+    private var playbackEpoch = 0
+    /// Epoch of the stream that successfully began playing. Stale finish callbacks from
+    /// before `playbackEpoch` moved on are ignored even if they already passed the
+    /// backend's URL guard.
+    private var activePlaybackEpoch = 0
 
     public init(queueHandler: PlayQueueHandler, backend: BackendAudioPlayer, settings: @escaping () -> UserSettings) {
         self.queueHandler = queueHandler
@@ -127,13 +136,21 @@ public final class AudioPlayer: ObservableObject {
         backend.setRepeatOne(repeatOne)
         backend.isOfflineMode = user.isOfflineMode
         PlayTrace.mark("backend.configure done")
+        let epoch = playbackEpoch
         do {
             try await backend.play(item: item, maxBitrate: bitrate, format: format, startAt: startAt, startPaused: paused)
+            // A newer `play(items:)` may have abandoned this load while the URL was in flight.
+            guard epoch == playbackEpoch else {
+                PlayTrace.mark("playCurrent discarded — playback epoch moved on")
+                return
+            }
+            activePlaybackEpoch = epoch
             consecutivePlayFailures = 0
             stalled = nil
             statusMessage = ""
             PlayTrace.mark("backend.play returned OK")
         } catch {
+            guard epoch == playbackEpoch else { return }
             PlayTrace.error("backend.play failed", details: "\(error)")
             handleLoadFailure(for: item, position: startAt, error: error)
             return
@@ -323,6 +340,12 @@ public final class AudioPlayer: ObservableObject {
     /// Natural end-of-track only. Manual next/previous go through `playNext` /
     /// `playPrevious` and always move in the queue, even when repeat-one is on.
     private func handleTrackFinished() {
+        // Outgoing-stream finishes that were already past the backend URL guard when a
+        // new context was installed must not advance the replacement queue.
+        guard activePlaybackEpoch == playbackEpoch else {
+            PlayTrace.mark("ignoring stale track finished", details: "active=\(activePlaybackEpoch) epoch=\(playbackEpoch)")
+            return
+        }
         if queueHandler.repeatMode == .one {
             PlayTrace.mark("repeat one — replaying current")
             Task { await playCurrent() }
@@ -350,6 +373,10 @@ public final class AudioPlayer: ObservableObject {
     /// queue pointer and refresh published metadata only — calling `playCurrent()` here
     /// would restart the already-playing audio from zero and destroy the gapless join.
     private func handleEngineAdvance() {
+        guard activePlaybackEpoch == playbackEpoch else {
+            PlayTrace.mark("ignoring stale gapless advance", details: "active=\(activePlaybackEpoch) epoch=\(playbackEpoch)")
+            return
+        }
         guard !isAdvancing else { return }
         // Stale gapless preload must not steal a repeat-one finish — queue index stays,
         // restart the current item. Manual skips never enter this path.
@@ -395,6 +422,15 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("AudioPlayer.play(items:)", details: "count=\(items.count) startAt=\(index) first=\(items.first?.title ?? "nil")")
         consecutivePlayFailures = 0
         stalled = nil
+        // Invalidate the outgoing stream *before* installing the new queue. `playCurrent`
+        // suspends while resolving a stream URL; a late EOF / gapless callback from the
+        // previous track would otherwise `advance()` past the song we meant to start on
+        // (Shuffle All is the usual way to hit this — the random batch can take seconds).
+        playbackEpoch += 1
+        deferredWorkTask?.cancel()
+        preloadInvalidationTask?.cancel()
+        preloadedNextItemId = nil
+        backend.abandonCurrentPlayback()
         queueHandler.replaceContext(with: items, startAt: index)
         PlayTrace.mark("replaceContext returned")
         await playCurrent()

@@ -72,6 +72,12 @@ struct ArtworkView: View {
                 isDownloading = false
                 await loadArtwork(hasStandIn: cached != nil)
             }
+            // Cold-start panels can finish before backend login; retry once the session is up.
+            .onReceive(NotificationCenter.default.publisher(for: .backendAuthenticated)) { _ in
+                guard loadFailed, let token, !token.isEmpty else { return }
+                loadFailed = false
+                Task { await loadArtwork(hasStandIn: image != nil) }
+            }
     }
 
     @ViewBuilder
