@@ -1,16 +1,21 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import VerodromeKit
 
 struct AlbumsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
+    @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @Environment(\.modelContext) private var modelContext
     @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
     @State private var selectedId: String?
+    @State private var playlistSongs: [Song] = []
+    @State private var showPlaylistSelector = false
     @State private var model = LibraryListModel<LibraryRowSnapshot>(cacheKey: "albums") { request in
         await AlbumsView.fetchPage(request)
     }
@@ -28,7 +33,11 @@ struct AlbumsView: View {
     var body: some View {
         Group {
             if let columns = settings.libraryDisplayType.gridColumnCount {
-                AlbumsGridView(albums: gridAlbums, columnCount: columns)
+                AlbumsGridView(
+                    albums: gridAlbums,
+                    columnCount: columns,
+                    contextMenu: albumSwiftUIContextMenu(for:)
+                )
             } else {
                 IndexedEntityTableView(
                     sections: model.sections,
@@ -36,7 +45,9 @@ struct AlbumsView: View {
                     isPartial: model.isPartial,
                     isSectioned: model.isSectioned,
                     downloadRevision: downloadRevision,
-                    onSelect: { item, _ in selectedId = item.id }
+                    onSelect: { item, _ in selectedId = item.id },
+                    // Same choices as song rows, minus "Go to Album".
+                    makeContextMenu: albumContextMenu(for:)
                 )
             }
         }
@@ -47,6 +58,15 @@ struct AlbumsView: View {
         }
         .navigationDestination(item: $selectedId) { id in
             AlbumDetailView(albumID: id)
+        }
+        .sheet(isPresented: $showPlaylistSelector) {
+            PlaylistSelectorView { playlist in
+                let songs = playlistSongs
+                Task {
+                    try? await LibraryActions.shared.addSongs(songs, to: playlist)
+                    ActionToast.addedToPlaylist(playlist.name)
+                }
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -68,6 +88,211 @@ struct AlbumsView: View {
 
     private var gridAlbums: [AlbumGridSnapshot] {
         model.sections.flatMap(\.items).map(AlbumGridSnapshot.init)
+    }
+
+    // MARK: - Context menu
+
+    private func albumContextMenu(for item: LibraryRowSnapshot) -> UIMenu? {
+        let album = resolveAlbum(compoundRemoteId: item.id)
+        let summary = SongsDownloadSummary(
+            songRemoteIds: item.songRemoteIds,
+            downloadedIds: item.downloadedSongIds,
+            trackTotal: item.trackTotal,
+            center: downloadCenter
+        )
+
+        var primary: [UIMenuElement] = []
+        primary.append(UIAction(
+            title: album?.isFavorite == true ? "Unlike" : "Like",
+            image: UIImage(systemName: album?.isFavorite == true ? "heart.slash" : "heart"),
+            attributes: album == nil ? .disabled : []
+        ) { _ in
+            guard let album else { return }
+            Task {
+                let liking = !album.isFavorite
+                try? await LibraryActions.shared.toggleFavorite(album: album)
+                ActionToast.songLiked(liking)
+            }
+        })
+        primary.append(UIAction(
+            title: "Add to Queue",
+            image: UIImage(systemName: "text.append"),
+            attributes: album == nil ? .disabled : []
+        ) { _ in
+            guard let album else { return }
+            Task { await addAlbumToQueue(album) }
+        })
+        primary.append(UIAction(
+            title: "Share",
+            image: UIImage(systemName: "square.and.arrow.up"),
+            attributes: album == nil ? .disabled : []
+        ) { _ in
+            guard let album else { return }
+            shareAlbum(album)
+        })
+
+        var secondary: [UIMenuElement] = []
+        secondary.append(UIAction(
+            title: "Add to Playlist",
+            image: UIImage(systemName: "text.badge.plus"),
+            attributes: album == nil ? .disabled : []
+        ) { _ in
+            guard let album else { return }
+            Task { await presentPlaylistSelector(for: album) }
+        })
+        secondary.append(UIAction(
+            title: albumDownloadActionTitle(for: summary),
+            image: UIImage(systemName: albumDownloadActionSymbol(for: summary)),
+            attributes: album == nil ? .disabled : []
+        ) { _ in
+            guard let album else { return }
+            Task { await toggleAlbumDownload(album, summary: summary) }
+        })
+
+        return UIMenu(children: [
+            UIMenu(options: .displayInline, children: primary),
+            UIMenu(options: .displayInline, children: secondary)
+        ])
+    }
+
+    @ViewBuilder
+    private func albumSwiftUIContextMenu(for snapshot: AlbumGridSnapshot) -> some View {
+        let album = resolveAlbum(compoundRemoteId: snapshot.id)
+        let summary = album.map { SongsDownloadSummary(album: $0, center: downloadCenter) }
+            ?? SongsDownloadSummary(
+                songRemoteIds: [],
+                downloadedIds: [],
+                trackTotal: 0,
+                center: downloadCenter
+            )
+
+        Button {
+            guard let album else { return }
+            Task {
+                let liking = !album.isFavorite
+                try? await LibraryActions.shared.toggleFavorite(album: album)
+                ActionToast.songLiked(liking)
+            }
+        } label: {
+            Label(
+                album?.isFavorite == true ? "Unlike" : "Like",
+                systemImage: album?.isFavorite == true ? "heart.slash" : "heart"
+            )
+        }
+        .disabled(album == nil)
+
+        Button {
+            guard let album else { return }
+            Task { await addAlbumToQueue(album) }
+        } label: {
+            Label("Add to Queue", systemImage: "text.append")
+        }
+        .disabled(album == nil)
+
+        Button {
+            guard let album else { return }
+            shareAlbum(album)
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+        .disabled(album == nil)
+
+        Divider()
+
+        Button {
+            guard let album else { return }
+            Task { await presentPlaylistSelector(for: album) }
+        } label: {
+            Label("Add to Playlist", systemImage: "text.badge.plus")
+        }
+        .disabled(album == nil)
+
+        Button {
+            guard let album else { return }
+            Task { await toggleAlbumDownload(album, summary: summary) }
+        } label: {
+            Label(
+                albumDownloadActionTitle(for: summary),
+                systemImage: albumDownloadActionSymbol(for: summary)
+            )
+        }
+        .disabled(album == nil)
+    }
+
+    private func albumDownloadActionTitle(for summary: SongsDownloadSummary) -> String {
+        if summary.isWorking || summary.isWaiting { return "Cancel Downloads" }
+        if summary.isFullyDownloaded { return "Remove Downloads" }
+        if summary.isPartiallyDownloaded { return "Download Remaining" }
+        return "Download"
+    }
+
+    private func albumDownloadActionSymbol(for summary: SongsDownloadSummary) -> String {
+        if summary.isWorking || summary.isWaiting { return "stop.circle" }
+        if summary.isFullyDownloaded { return "trash" }
+        return "arrow.down.circle"
+    }
+
+    private func shareAlbum(_ album: Album) {
+        ShareComposer.present(
+            ShareSubject(
+                resourceType: .album,
+                resourceIds: [album.remoteId],
+                title: album.title,
+                subtitle: album.artistName ?? "Unknown Artist",
+                artwork: album.artworkToken.map { ArtworkRef(id: $0, kind: .album) }
+            )
+        )
+    }
+
+    private func addAlbumToQueue(_ album: Album) async {
+        let songs = await ensureSongs(for: album)
+        guard !songs.isEmpty else { return }
+        player.addToQueueTemporarily(
+            songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
+        )
+    }
+
+    private func presentPlaylistSelector(for album: Album) async {
+        let songs = await ensureSongs(for: album)
+        guard !songs.isEmpty else { return }
+        playlistSongs = songs
+        showPlaylistSelector = true
+    }
+
+    private func toggleAlbumDownload(_ album: Album, summary: SongsDownloadSummary) async {
+        let songs = await ensureSongs(for: album)
+        guard !songs.isEmpty else { return }
+        if summary.isWorking || summary.isWaiting {
+            await LibraryActions.shared.cancelDownloads(songs: songs)
+        } else if summary.isFullyDownloaded {
+            await LibraryActions.shared.removeDownloads(songs: songs)
+        } else {
+            await LibraryActions.shared.downloadRemaining(songs: songs)
+        }
+    }
+
+    private func ensureSongs(for album: Album) async -> [Song] {
+        var songs = sortedSongs(for: album)
+        if songs.isEmpty {
+            try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(albumId: album.remoteId)
+            songs = sortedSongs(for: album)
+        }
+        return songs
+    }
+
+    private func sortedSongs(for album: Album) -> [Song] {
+        album.songs.sorted {
+            ($0.disc ?? 0, $0.track ?? 0) < ($1.disc ?? 0, $1.track ?? 0)
+        }
+    }
+
+    private func resolveAlbum(compoundRemoteId: String) -> Album? {
+        let id = compoundRemoteId
+        var descriptor = FetchDescriptor<Album>(
+            predicate: #Predicate<Album> { $0.compoundRemoteId == id }
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
     }
 
     private static func fetchPage(_ request: LibraryFetchRequest) async -> LibraryListPage<LibraryRowSnapshot> {

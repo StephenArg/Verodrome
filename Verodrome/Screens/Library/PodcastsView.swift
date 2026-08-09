@@ -17,7 +17,9 @@ struct PodcastsView: View {
                     symbol: "mic.fill"
                 )
             }
+            .listRowBackground(Color(.systemBackground))
         }
+        .listStyle(.plain)
         .navigationTitle("Podcasts")
     }
 }

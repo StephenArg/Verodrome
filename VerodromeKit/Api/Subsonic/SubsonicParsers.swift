@@ -362,6 +362,47 @@ enum SubsonicParsers {
         }
     }
 
+    /// `getShares`, `createShare` and `updateShare` all answer with the same `<shares>`
+    /// envelope, so one parser covers all three.
+    static func parseShares(data: Data) throws -> [ShareRef] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let nodes = root.firstChild(named: "shares")?.children(named: "share") ?? root.descendants(named: "share")
+
+        return nodes.compactMap { node -> ShareRef? in
+            guard let id = node.attributes["id"], !id.isEmpty else { return nil }
+            let entries = node.children(named: "entry")
+
+            return ShareRef(
+                id: id,
+                url: node.attributes["url"].flatMap(URL.init(string:)),
+                description: node.attributes["description"]?.nilIfEmpty,
+                // Servers that leave `description` blank still name the first entry, and
+                // an unlabelled row in the Shared list is worse than a track title.
+                contentsLabel: entries.first?.attributes["title"] ?? entries.first?.attributes["name"],
+                resourceType: shareResourceType(entries: entries),
+                owner: node.attributes["username"]?.nilIfEmpty,
+                created: dateValue(node.attributes["created"]),
+                expires: dateValue(node.attributes["expires"]),
+                lastVisited: dateValue(node.attributes["lastVisited"]),
+                visitCount: intValue(node.attributes["visitCount"]) ?? 0,
+                // Not part of the Subsonic protocol at any version; a backend that knows
+                // better fills this in afterwards.
+                isDownloadable: nil,
+                entryCount: entries.count
+            )
+        }
+    }
+
+    /// Subsonic never states what a share points at, so it has to be read off the
+    /// entries: a lone directory is an album, anything else is treated as tracks.
+    private static func shareResourceType(entries: [XmlNode]) -> ShareResourceType? {
+        guard entries.count == 1, let entry = entries.first else {
+            return entries.isEmpty ? nil : .song
+        }
+        return entry.attributes["isDir"] == "true" ? .album : .song
+    }
+
     static func parseCreatedPlaylistId(data: Data) throws -> String {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
@@ -482,9 +523,14 @@ enum SubsonicParsers {
         return nil
     }
 
+    /// Go's `encoding/xml` writes timestamps as RFC 3339 *Nano*, so a value may or may
+    /// not carry fractional seconds depending on what was stored.
     private static func dateValue(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
         let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: raw)
     }
 }

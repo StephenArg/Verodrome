@@ -1,25 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
   <total_count>3</total_count>
+  <md5>1f2e3d4c5b6a7988990a1b2c3d4e5f60</md5>
   <playlist id="12">
-    <name>Road Trip</name>
-    <owner>vero</owner>
+    <name><![CDATA[Road Trip]]></name>
+    <owner><![CDATA[vero]]></owner>
+    <user id="2">
+      <username><![CDATA[vero]]></username>
+    </user>
     <items>24</items>
-    <songcount>24</songcount>
     <type>private</type>
+    <art><![CDATA[https://music.example.com/image.php?object_id=12&object_type=playlist]]></art>
+    <has_access>1</has_access>
+    <has_collaborate>1</has_collaborate>
+    <has_art>1</has_art>
+    <flag>0</flag>
+    <rating>0</rating>
+    <averagerating>0</averagerating>
+    <last_update>1739059200</last_update>
+    <time>5820</time>
   </playlist>
   <playlist id="smart_3">
-    <name>Highest Rated</name>
-    <owner>vero</owner>
+    <name><![CDATA[Highest Rated]]></name>
+    <owner><![CDATA[vero]]></owner>
+    <user id="2">
+      <username><![CDATA[vero]]></username>
+    </user>
     <items>50</items>
-    <songcount>50</songcount>
     <type>public</type>
+    <has_access>1</has_access>
+    <flag>0</flag>
+    <last_update>1739059200</last_update>
   </playlist>
   <playlist id="41">
-    <name>Shared Mix</name>
-    <owner>someone_else</owner>
+    <name><![CDATA[Shared Mix]]></name>
+    <owner><![CDATA[someone_else]]></owner>
+    <user id="7">
+      <username><![CDATA[someone_else]]></username>
+    </user>
     <items>9</items>
-    <songcount>9</songcount>
     <type>public</type>
+    <has_access>0</has_access>
+    <flag>0</flag>
+    <last_update>1739059200</last_update>
   </playlist>
 </root>

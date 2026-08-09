@@ -1,9 +1,14 @@
 import Alamofire
 import Foundation
 
-/// Low-level Ampache XML API transport and request signing.
+/// Low-level Ampache XML API transport and session handling.
+///
+/// Ampache picks its dialect from the *first digit* of the `version` sent at handshake
+/// (`substr($version, 0, 1)` in `ApiHandler`), and each dialect has its own method table.
+/// This client speaks API 6, which is the first version to expose live streams, playlist
+/// sharing, and the `podcast_*` family under stable names.
 public final class AmpacheServerApi: @unchecked Sendable {
-    public static let clientVersion = "440004"
+    public static let clientVersion = "600000"
     /// Ampache caps every request at 5000 rows for performance and clamps silently.
     public static let maxResultsPerRequest = 5000
 
@@ -12,11 +17,13 @@ public final class AmpacheServerApi: @unchecked Sendable {
     private var username: String
     private var password: String
 
+    /// The session id returned by `handshake` as `<auth>`. Ampache authenticates every
+    /// later call by looking this value up directly (`Session::exists('api', $auth)`),
+    /// so there is nothing to sign per request.
     public private(set) var token: String?
-    public private(set) var apiKey: String?
     public private(set) var serverVersion: String?
 
-    public var isAuthenticated: Bool { token != nil && apiKey != nil }
+    public var isAuthenticated: Bool { token != nil }
 
     public init(baseURL: URL = URL(string: "http://localhost")!, session: Session = .default) {
         self.baseURL = baseURL
@@ -50,12 +57,11 @@ public final class AmpacheServerApi: @unchecked Sendable {
                 "version": Self.clientVersion,
                 "user": username
             ],
-            signed: false
+            authenticated: false
         )
 
         let handshake = try AmpacheParsers.parseHandshake(data: data)
         token = handshake.token
-        apiKey = handshake.apiKey
         serverVersion = handshake.version
 
         return ServerInfo(
@@ -73,19 +79,24 @@ public final class AmpacheServerApi: @unchecked Sendable {
     // MARK: - Library reads
 
     public func getGenres(limit: Int = 500, offset: Int = 0) async throws -> Data {
-        try await request(action: "get_genres", parameters: pageParameters(limit: limit, offset: offset))
+        try await request(action: "genres", parameters: pageParameters(limit: limit, offset: offset))
     }
 
     public func getArtists(filter: String? = nil, limit: Int = 500, offset: Int = 0) async throws -> Data {
         var params = pageParameters(limit: limit, offset: offset)
         if let filter { params["filter"] = filter }
-        return try await request(action: "get_artists", parameters: params)
+        return try await request(action: "artists", parameters: params)
     }
 
+    /// `albums` filters by *name*, so narrowing to an artist needs the dedicated
+    /// `artist_albums` action rather than a `filter` on the general list.
     public func getAlbums(artistId: String? = nil, limit: Int = 500, offset: Int = 0) async throws -> Data {
         var params = pageParameters(limit: limit, offset: offset)
-        if let artistId { params["filter"] = artistId }
-        return try await request(action: "get_albums", parameters: params)
+        guard let artistId else {
+            return try await request(action: "albums", parameters: params)
+        }
+        params["filter"] = artistId
+        return try await request(action: "artist_albums", parameters: params)
     }
 
     public func getNewestAlbums(limit: Int = 50, offset: Int = 0) async throws -> Data {
@@ -126,34 +137,48 @@ public final class AmpacheServerApi: @unchecked Sendable {
         return try await request(action: "stats", parameters: params)
     }
 
+    /// `include=songs` nests the track list under `<tracks>`, which saves the follow-up
+    /// `album_songs` call the album screen would otherwise need.
     public func getAlbum(id: String) async throws -> Data {
-        try await request(action: "album", parameters: ["filter": id])
+        try await request(action: "album", parameters: ["filter": id, "include": "songs"])
     }
 
+    /// `songs` filters by *title*, so an album's tracks come from `album_songs`.
     public func getSongs(albumId: String? = nil, limit: Int = 500, offset: Int = 0) async throws -> Data {
         var params = pageParameters(limit: limit, offset: offset)
-        if let albumId { params["filter"] = albumId }
-        return try await request(action: "get_songs", parameters: params)
+        guard let albumId else {
+            return try await request(action: "songs", parameters: params)
+        }
+        params["filter"] = albumId
+        return try await request(action: "album_songs", parameters: params)
     }
 
     public func getSong(id: String) async throws -> Data {
-        try await request(action: "get_song", parameters: ["filter": id])
+        try await request(action: "song", parameters: ["filter": id])
     }
 
     public func getPlaylists(limit: Int = 500, offset: Int = 0) async throws -> Data {
-        try await request(action: "get_playlists", parameters: pageParameters(limit: limit, offset: offset))
+        try await request(action: "playlists", parameters: pageParameters(limit: limit, offset: offset))
     }
 
     public func getPlaylist(id: String) async throws -> Data {
-        try await request(action: "get_playlist", parameters: ["filter": id])
+        try await request(action: "playlist", parameters: ["filter": id])
+    }
+
+    /// The playlist object itself only carries a track *count*; the ordered entries are
+    /// a separate call, and the order is what index-based removal and reordering need.
+    public func getPlaylistSongs(id: String, limit: Int = AmpacheServerApi.maxResultsPerRequest, offset: Int = 0) async throws -> Data {
+        var params = pageParameters(limit: limit, offset: offset)
+        params["filter"] = id
+        return try await request(action: "playlist_songs", parameters: params)
     }
 
     public func getPodcasts(limit: Int = 500, offset: Int = 0) async throws -> Data {
-        try await request(action: "get_podcasts", parameters: pageParameters(limit: limit, offset: offset))
+        try await request(action: "podcasts", parameters: pageParameters(limit: limit, offset: offset))
     }
 
     public func getPodcast(id: String) async throws -> Data {
-        try await request(action: "get_podcast", parameters: ["filter": id])
+        try await request(action: "podcast", parameters: ["filter": id, "include": "episodes"])
     }
 
     public func getRadios(limit: Int = 500, offset: Int = 0) async throws -> Data {
@@ -178,8 +203,8 @@ public final class AmpacheServerApi: @unchecked Sendable {
         _ = try await request(
             action: "flag",
             parameters: [
-                "object_type": objectType,
-                "object_id": objectId,
+                "type": objectType,
+                "id": objectId,
                 "flag": flagged ? "1" : "0"
             ]
         )
@@ -187,75 +212,115 @@ public final class AmpacheServerApi: @unchecked Sendable {
 
     public func setRating(objectId: String, objectType: String = "song", rating: Int) async throws {
         _ = try await request(
-            action: "set_rating",
+            action: "rate",
             parameters: [
-                "object_type": objectType,
-                "object_id": objectId,
+                "type": objectType,
+                "id": objectId,
                 "rating": String(rating)
             ]
         )
     }
 
+    /// Ampache's `scrobble` matches on song/artist/album *names*, which is only useful
+    /// for tracks the server may not hold. `record_play` is the id-based equivalent and
+    /// is what a client playing from this library wants.
     public func scrobble(songId: String, timestamp: Date, duration: TimeInterval?) async throws {
-        var params: [String: String] = [
-            "id": songId,
-            "date": String(Int(timestamp.timeIntervalSince1970))
-        ]
-        if let duration {
-            params["length"] = String(Int(duration))
-        }
-        _ = try await request(action: "scrobble", parameters: params)
+        _ = duration
+        _ = try await request(
+            action: "record_play",
+            parameters: [
+                "id": songId,
+                "date": String(Int(timestamp.timeIntervalSince1970)),
+                "client": "Verodrome"
+            ]
+        )
     }
 
     public func createPlaylist(name: String) async throws -> Data {
-        try await request(action: "create_playlist", parameters: ["name": name, "type": "private"])
+        try await request(action: "playlist_create", parameters: ["name": name, "type": "private"])
     }
 
     public func renamePlaylist(id: String, name: String) async throws {
-        _ = try await request(action: "rename_playlist", parameters: ["filter": id, "name": name])
+        _ = try await request(action: "playlist_edit", parameters: ["filter": id, "name": name])
     }
 
     public func playlistAdd(playlistId: String, songId: String) async throws {
-        _ = try await request(action: "playlist_add", parameters: ["filter": playlistId, "song": songId])
+        _ = try await request(action: "playlist_add_song", parameters: ["filter": playlistId, "song": songId])
     }
 
     public func playlistRemove(playlistId: String, songId: String) async throws {
-        _ = try await request(action: "playlist_remove", parameters: ["filter": playlistId, "song": songId])
+        _ = try await request(action: "playlist_remove_song", parameters: ["filter": playlistId, "song": songId])
     }
 
     public func deletePlaylist(id: String) async throws {
-        _ = try await request(action: "delete_playlist", parameters: ["filter": id])
+        _ = try await request(action: "playlist_delete", parameters: ["filter": id])
+    }
+
+    // MARK: - Sharing
+
+    public func getShares(limit: Int = 500, offset: Int = 0) async throws -> Data {
+        try await request(action: "shares", parameters: pageParameters(limit: limit, offset: offset))
+    }
+
+    public func createShare(objectId: String, objectType: String, description: String?, expireDays: Int?) async throws -> Data {
+        var params = ["filter": objectId, "type": objectType]
+        if let description, !description.isEmpty { params["description"] = description }
+        if let expireDays { params["expires"] = String(expireDays) }
+        return try await request(action: "share_create", parameters: params)
+    }
+
+    public func editShare(
+        id: String,
+        description: String?,
+        allowDownload: Bool?,
+        expireDays: Int?
+    ) async throws {
+        var params = ["filter": id]
+        if let description { params["description"] = description }
+        if let allowDownload { params["download"] = allowDownload ? "1" : "0" }
+        if let expireDays { params["expires"] = String(expireDays) }
+        _ = try await request(action: "share_edit", parameters: params)
+    }
+
+    public func deleteShare(id: String) async throws {
+        _ = try await request(action: "share_delete", parameters: ["filter": id])
     }
 
     // MARK: - Media URLs
 
     public func streamURL(for songId: String, maxBitrate: Int?, format: StreamFormat?) -> URL? {
-        buildMediaURL(action: "stream", objectId: songId, maxBitrate: maxBitrate, format: format)
+        var params: [String: String] = ["id": songId, "type": "song"]
+        // Ampache wants bits per second here, not the kbps the rest of the app speaks.
+        if let maxBitrate { params["bitrate"] = String(maxBitrate * 1000) }
+        if let format { params["format"] = format.rawValue }
+        return try? buildURL(action: "stream", parameters: params)
     }
 
     public func downloadURL(for songId: String) -> URL? {
-        buildMediaURL(action: "download", objectId: songId, maxBitrate: nil, format: nil)
+        try? buildURL(action: "download", parameters: ["id": songId, "type": "song", "format": StreamFormat.raw.rawValue])
     }
 
-    public func artworkURL(for objectId: String, size: Int?) -> URL? {
-        var params: [String: String] = ["id": objectId]
-        if let size { params["size"] = String(size) }
-        return try? buildSignedURL(action: "get_art", parameters: params)
+    public func artworkURL(for objectId: String, kind: ArtworkKind, size: Int?) -> URL? {
+        var params: [String: String] = ["id": objectId, "type": kind.rawValue]
+        // `size` is a `WxH` string in API 6; a bare number is rejected.
+        if let size { params["size"] = "\(size)x\(size)" }
+        return try? buildURL(action: "get_art", parameters: params)
     }
 
     // MARK: - Transport
 
     public func request(action: String, parameters: [String: String] = [:]) async throws -> Data {
-        try await rawRequest(action: action, parameters: parameters, signed: true)
+        try await rawRequest(action: action, parameters: parameters, authenticated: true)
     }
 
-    private func rawRequest(action: String, parameters: [String: String], signed: Bool) async throws -> Data {
+    private func rawRequest(action: String, parameters: [String: String], authenticated: Bool) async throws -> Data {
         var params = parameters
         params["action"] = action
+        params["version"] = Self.clientVersion
 
-        if signed {
-            guard isAuthenticated else { throw BackendApiError.notAuthenticated }
-            params.merge(try signedParameters()) { _, new in new }
+        if authenticated {
+            guard let token else { throw BackendApiError.notAuthenticated }
+            params["auth"] = token
         }
 
         let response = await session.request(xmlEndpoint, parameters: params)
@@ -264,7 +329,7 @@ public final class AmpacheServerApi: @unchecked Sendable {
             .response
 
         if let error = response.error {
-            throw BackendApiError.server(error.localizedDescription)
+            throw BackendApiError.from(status: response.response?.statusCode, message: error.localizedDescription)
         }
 
         guard let data = response.data, !data.isEmpty else {
@@ -275,16 +340,6 @@ public final class AmpacheServerApi: @unchecked Sendable {
         return data
     }
 
-    private func signedParameters() throws -> [String: String] {
-        guard let apiKey, let token else { throw BackendApiError.notAuthenticated }
-        let timestamp = CryptoHelpers.unixTimestamp()
-        return [
-            "auth": CryptoHelpers.sha256Hex(timestamp + apiKey),
-            "timestamp": timestamp,
-            "token": token
-        ]
-    }
-
     private func pageParameters(limit: Int, offset: Int) -> [String: String] {
         [
             "limit": String(limit),
@@ -292,21 +347,13 @@ public final class AmpacheServerApi: @unchecked Sendable {
         ]
     }
 
-    private func buildMediaURL(action: String, objectId: String, maxBitrate: Int?, format: StreamFormat?) -> URL? {
-        var params: [String: String] = ["id": objectId]
-        if let maxBitrate { params["bitrate"] = String(maxBitrate) }
-        if let format { params["type"] = format.rawValue }
-        return try? buildSignedURL(action: action, parameters: params)
-    }
-
-    private func buildSignedURL(action: String, parameters: [String: String]) throws -> URL {
-        guard isAuthenticated else { throw BackendApiError.notAuthenticated }
+    private func buildURL(action: String, parameters: [String: String]) throws -> URL {
+        guard let token else { throw BackendApiError.notAuthenticated }
         var components = URLComponents(url: xmlEndpoint, resolvingAgainstBaseURL: false)
         var items = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
         items.append(URLQueryItem(name: "action", value: action))
-        for (key, value) in try signedParameters() {
-            items.append(URLQueryItem(name: key, value: value))
-        }
+        items.append(URLQueryItem(name: "version", value: Self.clientVersion))
+        items.append(URLQueryItem(name: "auth", value: token))
         components?.queryItems = items
         guard let url = components?.url else { throw BackendApiError.invalidURL }
         return url

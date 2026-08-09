@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <total_count>2</total_count>
+  <share id="4">
+    <name><![CDATA[Living Fields]]></name>
+    <user><![CDATA[vero]]></user>
+    <allow_stream>1</allow_stream>
+    <allow_download>1</allow_download>
+    <creation_date>1785542400</creation_date>
+    <lastvisit_date>1785715200</lastvisit_date>
+    <object_type><![CDATA[album]]></object_type>
+    <object_id>55</object_id>
+    <expire_days>7</expire_days>
+    <max_counter>0</max_counter>
+    <counter>3</counter>
+    <secret><![CDATA[a1b2c3]]></secret>
+    <public_url><![CDATA[https://music.example.com/share.php?id=4&secret=a1b2c3]]></public_url>
+    <description><![CDATA[Album for Jo]]></description>
+  </share>
+  <share id="5">
+    <name><![CDATA[Blue Line]]></name>
+    <user><![CDATA[vero]]></user>
+    <allow_stream>1</allow_stream>
+    <allow_download>0</allow_download>
+    <creation_date>1785542400</creation_date>
+    <lastvisit_date>0</lastvisit_date>
+    <object_type><![CDATA[song]]></object_type>
+    <object_id>331</object_id>
+    <expire_days>0</expire_days>
+    <max_counter>0</max_counter>
+    <counter>0</counter>
+    <secret><![CDATA[d4e5f6]]></secret>
+    <public_url><![CDATA[https://music.example.com/share.php?id=5&secret=d4e5f6]]></public_url>
+    <description><![CDATA[]]></description>
+  </share>
+</root>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="navidrome" serverVersion="0.58.0" openSubsonic="true">
+  <shares>
+    <share id="ab12cd" url="https://music.example.com/share/ab12cd" description="Living Fields" username="vero" created="2026-08-01T10:15:00.123456789Z" expires="2026-09-01T10:15:00Z" lastVisited="2026-08-04T18:02:11Z" visitCount="7">
+      <entry id="55" isDir="true" title="Living Fields" artist="Portico" coverArt="al-55"/>
+    </share>
+    <share id="ef34gh" url="https://music.example.com/share/ef34gh" description="Blue Line" username="vero" created="2026-08-05T09:00:00Z" visitCount="0">
+      <entry id="331" isDir="false" title="Blue Line" artist="Portico" album="Living Fields" duration="214"/>
+    </share>
+  </shares>
+</subsonic-response>

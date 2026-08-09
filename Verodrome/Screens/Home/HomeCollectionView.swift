@@ -27,6 +27,7 @@ private enum HomeBoardItem: Hashable {
 struct HomeStatsBarState: Equatable {
     var albumCount: Int
     var songCount: Int
+    var isCountProvisional: Bool
     var isShuffleBusy: Bool
     var isShuffleDisabled: Bool
 }
@@ -82,6 +83,7 @@ final class HomeCollectionViewController: UICollectionViewController {
     private var stats = HomeStatsBarState(
         albumCount: 0,
         songCount: 0,
+        isCountProvisional: true,
         isShuffleBusy: false,
         isShuffleDisabled: true
     )
@@ -239,6 +241,7 @@ final class HomeCollectionViewController: UICollectionViewController {
                 cell.configure(
                     albumCount: self.stats.albumCount,
                     songCount: self.stats.songCount,
+                    isCountProvisional: self.stats.isCountProvisional,
                     isShuffleBusy: self.stats.isShuffleBusy,
                     isShuffleDisabled: self.stats.isShuffleDisabled,
                     onShuffle: { [weak self] in self?.onShuffle?() }
@@ -387,6 +390,7 @@ final class HomeStatsCell: UICollectionViewCell {
     func configure(
         albumCount: Int,
         songCount: Int,
+        isCountProvisional: Bool,
         isShuffleBusy: Bool,
         isShuffleDisabled: Bool,
         onShuffle: @escaping () -> Void
@@ -397,6 +401,7 @@ final class HomeStatsCell: UICollectionViewCell {
                     (albumCount, "Album"),
                     (songCount, "Song")
                 ],
+                isCountProvisional: isCountProvisional,
                 isShuffleBusy: isShuffleBusy,
                 isShuffleDisabled: isShuffleDisabled,
                 onShuffle: onShuffle

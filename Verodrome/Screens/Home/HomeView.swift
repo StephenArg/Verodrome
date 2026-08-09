@@ -75,6 +75,11 @@ struct HomeView: View {
     @State private var randomSeed = Int.random(in: Int.min...Int.max)
     @State private var sectionTiles: [HomeSection: [HomeTileItem]] = [:]
     @State private var libraryTotals = HomeLibraryTotals()
+    /// False until the first store count lands — zeros before that aren't a real empty library.
+    @State private var hasLoadedLibraryTotals = false
+    /// True only while a post-sync recount is in flight — keeps the previous tally soft
+    /// until the new one lands, without tying blur to the whole background sync.
+    @State private var isRefreshingLibraryTotals = false
     @State private var didRequestInitialRefresh = false
     @State private var selectedAlbumId: String?
     @State private var selectedPlaylistId: String?
@@ -96,6 +101,11 @@ struct HomeView: View {
             stats: HomeStatsBarState(
                 albumCount: libraryTotals.albums,
                 songCount: libraryTotals.songs,
+                // Don't key off `librarySync.isSyncing`: Navidrome's background job holds
+                // that flag through the full track backfill, which would keep Home blurred
+                // for minutes. Show the last settled tally; soften only before the first
+                // count and during the brief post-sync recount.
+                isCountProvisional: !hasLoadedLibraryTotals || isRefreshingLibraryTotals,
                 isShuffleBusy: shuffle.isStarting,
                 isShuffleDisabled: libraryTotals.songs == 0
             ),
@@ -111,6 +121,9 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle(account.homeTitle)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                HomeAccountButton()
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showEditor = true } label: {
                     Image(systemName: "slider.horizontal.3")
@@ -150,6 +163,7 @@ struct HomeView: View {
             // Only once the writes have stopped — reloading mid-sync competes with ingest
             // for the store and produced the slowest loads by far.
             guard wasSyncing, !isSyncing else { return }
+            isRefreshingLibraryTotals = true
             Task {
                 await loadTiles()
                 await loadLibraryTotals()
@@ -196,8 +210,11 @@ struct HomeView: View {
     private func loadLibraryTotals() async {
         let totals = await Self.fetchLibraryTotals()
         guard !Task.isCancelled else { return }
-        guard totals != libraryTotals else { return }
-        libraryTotals = totals
+        if totals != libraryTotals {
+            libraryTotals = totals
+        }
+        hasLoadedLibraryTotals = true
+        isRefreshingLibraryTotals = false
     }
 
     private static func fetchLibraryTotals() async -> HomeLibraryTotals {

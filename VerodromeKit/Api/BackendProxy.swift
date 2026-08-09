@@ -65,6 +65,8 @@ public final class BackendProxy: BackendApi, @unchecked Sendable {
         try await requireActive().ping()
     }
 
+    public var sharing: ShareManaging? { activeApi?.sharing }
+
     public func logout() {
         activeApi = nil
     }

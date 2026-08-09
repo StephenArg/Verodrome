@@ -78,6 +78,8 @@ struct RootTabView: View {
                 DirectoriesView()
             case .favorites:
                 FavoritesView()
+            case .shared:
+                SharedView()
             }
         }
     }

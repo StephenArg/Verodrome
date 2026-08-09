@@ -129,6 +129,19 @@ struct ArtistDetailView: View {
 
     private var artistOptionsMenu: some View {
         Menu {
+            if let artist = artists.first {
+                ShareMenuButton(
+                    subject: ShareSubject(
+                        resourceType: .artist,
+                        resourceIds: [artist.remoteId],
+                        title: artist.name,
+                        subtitle: headerSubtitle(for: artist),
+                        artwork: backgroundArtworkToken.map { ArtworkRef(id: $0, kind: .artist) }
+                    )
+                )
+                Divider()
+            }
+
             Button {
                 let token = backgroundArtworkToken
                 Task { await ArtworkTintResolver.shared.refresh(key: tintKey, token: token) }

@@ -89,7 +89,7 @@ struct QueueRowMenu: View {
             }
 
             menuRow(title: "Share", systemImage: "square.and.arrow.up") {
-                presentSongShareSheet(title: item.title, artist: item.artist)
+                presentNowPlayingShare(item: item)
             }
 
             Divider().padding(.vertical, 4)

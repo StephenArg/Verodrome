@@ -112,6 +112,8 @@ struct SongActionsModifier: ViewModifier {
         } label: {
             Label("Add to Playlist", systemImage: "text.badge.plus")
         }
+
+        ShareMenuButton(subject: .song(song))
     }
 
     @ViewBuilder

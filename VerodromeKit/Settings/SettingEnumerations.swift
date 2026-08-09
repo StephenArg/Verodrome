@@ -115,6 +115,7 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     case downloads
     case directories
     case favorites
+    case shared
 
     public var id: String { rawValue }
 
@@ -139,6 +140,7 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
         case .downloads: "Downloads"
         case .directories: "Directories"
         case .favorites: "Favorites"
+        case .shared: "Shared"
         }
     }
 
@@ -158,6 +160,7 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
         case .downloads: "arrow.down.circle.fill"
         case .directories: "folder.fill"
         case .favorites: "heart.fill"
+        case .shared: "square.and.arrow.up"
         }
     }
 
@@ -185,6 +188,7 @@ public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiab
     case downloads
     case directories
     case favorites
+    case shared
 
     public var id: String { rawValue }
 
@@ -200,6 +204,7 @@ public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiab
         case .downloads: "Downloads"
         case .directories: "Directories"
         case .favorites: "Favorites"
+        case .shared: "Shared"
         }
     }
 
@@ -215,13 +220,14 @@ public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiab
         case .downloads: "arrow.down.circle.fill"
         case .directories: "folder.fill"
         case .favorites: "heart.fill"
+        case .shared: "square.and.arrow.up"
         }
     }
 
-    /// Matches the historical hardcoded library hub order.
+    /// Matches the historical hardcoded library hub order, with newer sections appended.
     public static let defaultVisible: [LibraryCategory] = [
         .artists, .albums, .songs, .genres, .playlists,
-        .podcasts, .radios, .downloads, .directories, .favorites
+        .podcasts, .radios, .downloads, .directories, .favorites, .shared
     ]
 
     /// Deduplicate and guarantee at least one category.

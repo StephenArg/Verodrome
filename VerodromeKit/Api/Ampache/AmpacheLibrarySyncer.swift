@@ -254,23 +254,16 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 
     public func removeFromPlaylist(playlistId: String, entryIndices: [Int]) async throws {
-        let data = try await server.getPlaylist(id: playlistId)
-        let playlists = try AmpacheParsers.parsePlaylists(data: data)
-        guard let playlist = playlists.first else { return }
+        let ordered = try await playlistSongIds(playlistId: playlistId)
 
         for index in entryIndices.sorted(by: >) {
-            guard playlist.songIds.indices.contains(index) else { continue }
-            let songId = playlist.songIds[index]
-            try await server.playlistRemove(playlistId: playlistId, songId: songId)
+            guard ordered.indices.contains(index) else { continue }
+            try await server.playlistRemove(playlistId: playlistId, songId: ordered[index])
         }
     }
 
     public func reorderPlaylist(playlistId: String, songIds: [String]) async throws {
-        let data = try await server.getPlaylist(id: playlistId)
-        let playlists = try AmpacheParsers.parsePlaylists(data: data)
-        guard let playlist = playlists.first else { return }
-
-        for songId in playlist.songIds {
+        for songId in try await playlistSongIds(playlistId: playlistId) {
             try await server.playlistRemove(playlistId: playlistId, songId: songId)
         }
         try await addToPlaylist(playlistId: playlistId, songIds: songIds)
@@ -278,13 +271,37 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
 
     public func syncPlaylistDown(id: String) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
-        let data = try await server.getPlaylist(id: id)
-        let songs = try AmpacheParsers.parsePlaylistSongs(data: data)
+
+        let songs = try AmpacheParsers.parsePlaylistSongs(data: try await server.getPlaylistSongs(id: id))
         if !songs.isEmpty {
             try await ingestor.ingest(songs: songs)
         }
-        let playlists = try AmpacheParsers.parsePlaylists(data: data)
-        try await ingestor.ingest(playlists: playlists)
+
+        // The playlist object carries a track count but not the tracks themselves, so the
+        // entries come from the call above and are grafted on before ingesting.
+        let playlists = try AmpacheParsers.parsePlaylists(data: try await server.getPlaylist(id: id))
+        let withEntries = playlists.map { playlist -> IngestPlaylist in
+            guard playlist.id == id, playlist.songIds.isEmpty else { return playlist }
+            return IngestPlaylist(
+                id: playlist.id,
+                name: playlist.name,
+                songCount: playlist.songCount ?? songs.count,
+                owner: playlist.owner,
+                isPublic: playlist.isPublic,
+                isSmart: playlist.isSmart,
+                isReadOnly: playlist.isReadOnly,
+                songIds: songs.map(\.id),
+                artId: playlist.artId
+            )
+        }
+        try await ingestor.ingest(playlists: withEntries)
+    }
+
+    /// Playlist entries in server order, which is what index-based removal and full
+    /// reordering both address.
+    private func playlistSongIds(playlistId: String) async throws -> [String] {
+        let data = try await server.getPlaylistSongs(id: playlistId)
+        return try AmpacheParsers.parsePlaylistSongs(data: data).map(\.id)
     }
 
     public func syncPodcasts() async throws {

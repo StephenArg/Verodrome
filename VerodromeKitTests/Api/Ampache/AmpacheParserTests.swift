@@ -42,6 +42,51 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertNil(songs[2].rating)
     }
 
+    /// API 6 nests the related object and puts its label in a `<name>` child, so reading
+    /// the element's own text yields nothing. Getting this wrong leaves every row in the
+    /// library with a blank artist and album.
+    func testSongParserReadsNestedArtistAndAlbumNames() throws {
+        let songs = try AmpacheParsers.parseSongs(data: try fixture("ampache_songs.xml"))
+        XCTAssertEqual(songs[0].artistId, "10")
+        XCTAssertEqual(songs[0].artistName, "Portico")
+        XCTAssertEqual(songs[0].albumId, "55")
+        XCTAssertEqual(songs[0].albumName, "Living Fields")
+    }
+
+    /// Ampache calls the codec `format`; `type` on a song means something else entirely
+    /// from API 5 onwards.
+    func testSongParserReadsFormatAndDisc() throws {
+        let songs = try AmpacheParsers.parseSongs(data: try fixture("ampache_songs.xml"))
+        XCTAssertEqual(songs[0].format, "flac")
+        XCTAssertEqual(songs[0].discNumber, 1)
+        XCTAssertEqual(songs[0].isFavorite, true)
+        XCTAssertEqual(songs[1].isFavorite, false)
+        XCTAssertNil(songs[2].isFavorite)
+    }
+
+    /// Every Ampache text value arrives wrapped in CDATA, which `XMLParser` reports
+    /// through a separate callback from ordinary character data.
+    func testParserReadsCDATAWrappedText() throws {
+        let genres = try AmpacheParsers.parseGenres(data: try fixture("ampache_genres.xml"))
+        XCTAssertEqual(genres[0].name, "Dance")
+    }
+
+    /// The session id is the only credential later calls carry, and it arrives as the
+    /// text of `<auth>` — not as an attribute, and with no api key alongside it.
+    func testHandshakeParserReadsSessionToken() throws {
+        let handshake = try AmpacheParsers.parseHandshake(data: try fixture("ampache_handshake.xml"))
+        XCTAssertEqual(handshake.token, "c1f2e3d4a5b60718293a4b5c6d7e8f90")
+        XCTAssertEqual(handshake.version, "6.6.1")
+    }
+
+    /// `playlist_songs` answers at the document root rather than nested in a playlist,
+    /// and its order is what index-based removal addresses.
+    func testPlaylistSongsParserPreservesOrder() throws {
+        let songs = try AmpacheParsers.parsePlaylistSongs(data: try fixture("ampache_playlist_songs.xml"))
+        XCTAssertEqual(songs.map(\.id), ["901", "902"])
+        XCTAssertEqual(songs[1].artistName, "Delta")
+    }
+
     /// The song crawl sizes its progress bar from the collection total the server
     /// repeats on every page.
     func testTotalCountParser() throws {

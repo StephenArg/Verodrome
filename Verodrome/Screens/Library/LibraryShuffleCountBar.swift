@@ -7,6 +7,8 @@ import SwiftUI
 /// the table's scrollable header, where SwiftUI environment objects don't reach.
 struct LibraryShuffleCountBar: View {
     let countText: String
+    /// Soft-focus the tally while a head page / sync still owns an incomplete number.
+    var isCountProvisional = false
     var isShuffleBusy = false
     /// Shuffle draws from the whole library, which no backend's random endpoint can
     /// narrow to a typed filter — so it steps aside while one is active.
@@ -18,6 +20,7 @@ struct LibraryShuffleCountBar: View {
         noun: String,
         secondaryCount: Int? = nil,
         secondaryNoun: String? = nil,
+        isCountProvisional: Bool = false,
         isShuffleBusy: Bool = false,
         isShuffleDisabled: Bool = false,
         onShuffle: @escaping () -> Void
@@ -28,6 +31,7 @@ struct LibraryShuffleCountBar: View {
         }
         self.init(
             counts: parts,
+            isCountProvisional: isCountProvisional,
             isShuffleBusy: isShuffleBusy,
             isShuffleDisabled: isShuffleDisabled,
             onShuffle: onShuffle
@@ -37,6 +41,7 @@ struct LibraryShuffleCountBar: View {
     /// e.g. `[(12, "Artist"), (40, "Album"), (900, "Song")]` → "12 Artists · 40 Albums · 900 Songs".
     init(
         counts: [(Int, String)],
+        isCountProvisional: Bool = false,
         isShuffleBusy: Bool = false,
         isShuffleDisabled: Bool = false,
         onShuffle: @escaping () -> Void
@@ -44,6 +49,7 @@ struct LibraryShuffleCountBar: View {
         self.countText = counts.map { count, noun in
             "\(count.formatted()) \(count == 1 ? noun : noun + "s")"
         }.joined(separator: " · ")
+        self.isCountProvisional = isCountProvisional
         self.isShuffleBusy = isShuffleBusy
         self.isShuffleDisabled = isShuffleDisabled
         self.onShuffle = onShuffle
@@ -51,11 +57,13 @@ struct LibraryShuffleCountBar: View {
 
     init(
         countText: String,
+        isCountProvisional: Bool = false,
         isShuffleBusy: Bool = false,
         isShuffleDisabled: Bool = false,
         onShuffle: @escaping () -> Void
     ) {
         self.countText = countText
+        self.isCountProvisional = isCountProvisional
         self.isShuffleBusy = isShuffleBusy
         self.isShuffleDisabled = isShuffleDisabled
         self.onShuffle = onShuffle
@@ -66,6 +74,10 @@ struct LibraryShuffleCountBar: View {
             Text(countText)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .blur(radius: isCountProvisional ? 5 : 0)
+                .opacity(isCountProvisional ? 0.85 : 1)
+                .animation(.easeOut(duration: 0.25), value: isCountProvisional)
+                .accessibilityLabel(isCountProvisional ? "Counting library" : countText)
 
             Spacer(minLength: 0)
 

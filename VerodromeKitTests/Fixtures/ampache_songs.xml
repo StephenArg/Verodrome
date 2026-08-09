@@ -1,29 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
+  <total_count>3</total_count>
+  <md5>0d2c1c1d2b1c9c1e2f3a4b5c6d7e8f90</md5>
   <song id="331">
-    <title>Blue Line</title>
-    <artist id="10">Portico</artist>
-    <album id="55">Living Fields</album>
+    <name><![CDATA[Blue Line]]></name>
+    <title><![CDATA[Blue Line]]></title>
+    <artist id="10"><name><![CDATA[Portico]]></name>
+    <prefix><![CDATA[]]></prefix>
+    <basename><![CDATA[Portico]]></basename>
+</artist>
+    <album id="55"><name><![CDATA[Living Fields]]></name>
+    <prefix><![CDATA[The]]></prefix>
+    <basename><![CDATA[Living Fields]]></basename>
+</album>
+    <disk><![CDATA[1]]></disk>
     <track>3</track>
+    <genre id="6"><name><![CDATA[Dance]]></name></genre>
     <time>214</time>
-    <type>flac</type>
-    <playcount>17</playcount>
+    <year>2019</year>
+    <format>flac</format>
+    <stream_format>flac</stream_format>
+    <bitrate>986000</bitrate>
+    <mime><![CDATA[audio/flac]]></mime>
+    <art><![CDATA[https://music.example.com/image.php?object_id=55&object_type=album]]></art>
+    <has_art>1</has_art>
+    <flag>1</flag>
     <rating>4</rating>
     <averagerating>2.5</averagerating>
+    <playcount>17</playcount>
   </song>
   <song id="332">
-    <title>Second Track</title>
-    <artist id="10">Portico</artist>
-    <album id="55">Living Fields</album>
+    <name><![CDATA[Second Track]]></name>
+    <title><![CDATA[Second Track]]></title>
+    <artist id="10"><name><![CDATA[Portico]]></name>
+</artist>
+    <album id="55"><name><![CDATA[Living Fields]]></name>
+</album>
+    <disk><![CDATA[1]]></disk>
+    <track>4</track>
     <time>180</time>
-    <type>mp3</type>
+    <format>mp3</format>
+    <flag>0</flag>
     <preciserating>2.6</preciserating>
   </song>
   <song id="333">
-    <title>Third Track</title>
-    <artist id="10">Portico</artist>
-    <album id="55">Living Fields</album>
+    <name><![CDATA[Third Track]]></name>
+    <title><![CDATA[Third Track]]></title>
+    <artist id="10"><name><![CDATA[Portico]]></name>
+</artist>
+    <album id="55"><name><![CDATA[Living Fields]]></name>
+</album>
+    <track>5</track>
     <time>95</time>
-    <type>mp3</type>
+    <format>mp3</format>
   </song>
 </root>

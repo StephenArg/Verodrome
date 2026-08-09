@@ -362,6 +362,7 @@ public final class VerodromeKit: ObservableObject {
         backendProxy.logout()
         activeLibrarySyncer = nil
         activeLibraryIngester = nil
+        ShareActions.shared.reset()
         // The account is about to be removed, so its stored queue goes with it.
         clearActiveQueue()
         Task { await repointQueueStore(to: nil, forgetCurrent: true) }
@@ -434,6 +435,7 @@ public final class VerodromeKit: ObservableObject {
             activeLibrarySyncer = nil
             activeLibraryIngester = nil
             backendProxy.logout()
+            ShareActions.shared.reset()
             // The removed account keeps no queue; `switchToAccount` below points the
             // store at whichever account takes over.
             clearActiveQueue()

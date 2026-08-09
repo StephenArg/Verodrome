@@ -645,10 +645,7 @@ struct PopupPlayerView: View {
     }
 
     private func presentShareSheet() {
-        presentSongShareSheet(
-            title: player.currentItem?.title,
-            artist: player.currentItem?.artist
-        )
+        presentNowPlayingShare(item: player.currentItem)
     }
 
     private func resolveCurrentSong() -> Song? {

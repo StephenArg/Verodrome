@@ -16,6 +16,7 @@ public final class SettingsStore: ObservableObject {
         static let appSettings = "com.verodrome.settings.app"
         static let userSettings = "com.verodrome.settings.user"
         static let accountSettingsPrefix = "com.verodrome.settings.account."
+        static let didAddSharedCategory = "com.verodrome.settings.migration.sharedCategory"
     }
 
     // MARK: - UI-facing published properties
@@ -167,7 +168,20 @@ public final class SettingsStore: ObservableObject {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         loadSnapshot()
+        addSharedCategoryOnce()
         syncTypedStoresFromPublished()
+    }
+
+    /// The visible library categories are persisted as a list, so an install that
+    /// predates a new section never sees it. The flag is what makes this a one-off:
+    /// someone who removes Shared on purpose should not get it back next launch.
+    private func addSharedCategoryOnce() {
+        guard !defaults.bool(forKey: Keys.didAddSharedCategory) else { return }
+        defaults.set(true, forKey: Keys.didAddSharedCategory)
+
+        guard !enabledLibraryCategories.contains(.shared) else { return }
+        enabledLibraryCategories.append(.shared)
+        save()
     }
 
     public func save() {

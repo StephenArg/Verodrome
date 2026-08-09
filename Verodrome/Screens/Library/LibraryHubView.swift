@@ -59,6 +59,7 @@ struct LibraryHubView: View {
         case .downloads: DownloadsView()
         case .directories: DirectoriesView()
         case .favorites: FavoritesView()
+        case .shared: SharedView()
         }
     }
 }

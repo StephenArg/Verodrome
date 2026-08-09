@@ -193,10 +193,15 @@ struct AlbumDetailView: View {
             }
             .disabled(tracks.isEmpty)
 
-            // Text for now — swap the item for a share URL once albums have one.
-            ShareLink(item: "\(album.title) — \(album.displayArtist)") {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
+            ShareMenuButton(
+                subject: ShareSubject(
+                    resourceType: .album,
+                    resourceIds: [album.remoteId],
+                    title: album.title,
+                    subtitle: album.displayArtist,
+                    artwork: album.artworkToken.map { ArtworkRef(id: $0, kind: .album) }
+                )
+            )
 
             Divider()
 

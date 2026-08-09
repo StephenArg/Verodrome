@@ -28,8 +28,10 @@ struct RadiosView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color(.systemBackground))
                     .disabled(radio.streamURL == nil)
                 }
+                .listStyle(.plain)
             }
         }
         .navigationTitle("Radios")

@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
+  <total_count>1</total_count>
   <song id="42">
-    <title>Song One</title>
-    <artist id="1">Alpha</artist>
-    <album id="2">Debut</album>
-    <lyrics>Ampache line one
-Ampache line two</lyrics>
+    <name><![CDATA[Song One]]></name>
+    <title><![CDATA[Song One]]></title>
+    <artist id="1"><name><![CDATA[Alpha]]></name>
+</artist>
+    <album id="2"><name><![CDATA[Debut]]></name>
+</album>
+    <time>201</time>
+    <format>mp3</format>
+    <lyrics><![CDATA[Ampache line one
+Ampache line two]]></lyrics>
   </song>
 </root>

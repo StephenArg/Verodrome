@@ -79,6 +79,14 @@ open class GenericXmlParser: NSObject, XMLParserDelegate {
         currentText += string
     }
 
+    /// `XMLParser` reports CDATA through its own callback rather than `foundCharacters`.
+    /// Ampache wraps nearly every text value — names, titles, urls, descriptions — in
+    /// CDATA, so without this every one of them parses as an empty string.
+    public func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+        guard let string = String(data: CDATABlock, encoding: .utf8) else { return }
+        currentText += string
+    }
+
     public func parser(
         _ parser: XMLParser,
         didEndElement elementName: String,

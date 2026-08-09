@@ -10,9 +10,6 @@ struct SettingsHostView: View {
                 NavigationLink { DisplaySettingsView() } label: {
                     Label("Display", systemImage: "paintbrush")
                 }
-                NavigationLink { AccountSettingsView() } label: {
-                    Label("Account", systemImage: "person.crop.circle")
-                }
                 NavigationLink { LibrarySettingsView() } label: {
                     Label("Library", systemImage: "books.vertical")
                 }

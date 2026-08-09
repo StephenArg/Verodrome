@@ -29,6 +29,17 @@ struct MainContainerView: View {
                 .presentationCornerRadius(24)
                 .presentationBackgroundInteraction(.disabled)
         }
+        .task {
+            // Settled here rather than in the menus that need it: a context menu's
+            // contents are built synchronously, so they can't wait on a round trip to
+            // find out whether this server shares at all.
+            await ShareActions.shared.capabilities()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accountChanged)) { _ in
+            // Sharing is a property of the server and the account's permissions on it.
+            ShareActions.shared.reset()
+            Task { await ShareActions.shared.capabilities() }
+        }
     }
 
     private var usesOverlayMiniPlayer: Bool {

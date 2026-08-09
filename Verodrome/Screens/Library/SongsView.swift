@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import VerodromeKit
 
 struct SongsView: View {
@@ -10,11 +11,12 @@ struct SongsView: View {
     @EnvironmentObject private var shuffle: ShuffleAllCoordinator
     @EnvironmentObject private var router: AppRouter
     @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
-    @State private var actionsSong: Song?
-    @State private var showActions = false
+    @State private var selectedAlbumId: String?
+    @State private var playlistTarget: Song?
     @State private var isScrolledDown = false
     @State private var model = LibraryListModel<LibrarySongRowSnapshot>(cacheKey: "songs") { request in
         await SongsView.fetchPage(request)
@@ -39,17 +41,14 @@ struct SongsView: View {
                 isPartial: model.isPartial,
                 isSectioned: model.isSectioned,
                 onSelect: play,
-                onAddToQueue: { item in
-                    player.addToQueueTemporarily([item.queueItem])
-                },
-                onRequestActions: { compoundId in
-                    actionsSong = resolveSong(compoundRemoteId: compoundId)
-                    showActions = actionsSong != nil
-                },
+                // Same actions as the queue row ellipsis menu.
+                makeContextMenu: songContextMenu(for:),
                 header: AnyView(
                     LibraryShuffleCountBar(
                         count: model.rowCount,
                         noun: "song",
+                        // Head page reports only its own row count until the full fetch lands.
+                        isCountProvisional: model.isPartial,
                         isShuffleBusy: shuffle.isStarting,
                         // Downloaded-only has a local walk of its own; a typed filter is
                         // still a selection no random source can reproduce.
@@ -62,6 +61,15 @@ struct SongsView: View {
         }
         .animation(.easeOut(duration: 0.2), value: showsFilterBar)
         .navigationTitle("Songs")
+        .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+        .sheet(item: $playlistTarget) { song in
+            PlaylistSelectorView { playlist in
+                Task {
+                    try? await LibraryActions.shared.addSongs([song], to: playlist)
+                    ActionToast.addedToPlaylist(playlist.name)
+                }
+            }
+        }
         .debouncedSearch(text: $searchText) { newValue in
             debouncedSearch = newValue
         }
@@ -89,22 +97,86 @@ struct SongsView: View {
         .refreshable {
             await model.load(search: debouncedSearch, sort: sort, downloadedOnly: downloadedOnly)
         }
-        .sheet(isPresented: $showActions) {
-            if let song = actionsSong {
-                NavigationStack {
-                    List {
-                        EntityRow(
-                            title: song.title,
-                            subtitle: "\(song.displayArtist) · \(song.displayAlbum)",
-                            artworkURL: song.artworkToken
-                        )
-                        .songActions(song)
-                    }
-                    .navigationTitle(song.title)
-                    .navigationBarTitleDisplayMode(.inline)
-                }
-                .presentationDetents([.medium])
-            }
+    }
+
+    /// Mirrors `QueueRowMenu` so a long-press here offers the same choices as the
+    /// queue's trailing ellipsis.
+    private func songContextMenu(for item: LibrarySongRowSnapshot) -> UIMenu? {
+        let song = resolveSong(compoundRemoteId: item.id)
+        let status = downloadCenter.status(
+            for: item.remoteId,
+            isDownloaded: song?.isDownloadedLocally ?? false
+        )
+
+        var primary: [UIMenuElement] = []
+        primary.append(UIAction(
+            title: song?.isFavorite == true ? "Unlike" : "Like",
+            image: UIImage(systemName: song?.isFavorite == true ? "heart.slash" : "heart"),
+            attributes: song == nil ? .disabled : []
+        ) { _ in
+            guard let song else { return }
+            Task { await ActionToast.toggleFavorite(song: song) }
+        })
+        primary.append(UIAction(
+            title: "Add to Queue",
+            image: UIImage(systemName: "text.append")
+        ) { [player] _ in
+            player.addToQueueTemporarily([item.queueItem])
+        })
+        primary.append(UIAction(
+            title: "Share",
+            image: UIImage(systemName: "square.and.arrow.up")
+        ) { _ in
+            presentNowPlayingShare(item: item.queueItem)
+        })
+
+        var secondary: [UIMenuElement] = []
+        if let albumId = song?.album?.compoundRemoteId {
+            secondary.append(UIAction(
+                title: "Go to Album",
+                image: UIImage(systemName: "square.stack")
+            ) { _ in
+                selectedAlbumId = albumId
+            })
+        }
+        secondary.append(UIAction(
+            title: "Add to Playlist",
+            image: UIImage(systemName: "text.badge.plus"),
+            attributes: song == nil ? .disabled : []
+        ) { _ in
+            playlistTarget = song
+        })
+        secondary.append(UIAction(
+            title: downloadActionTitle(for: status),
+            image: UIImage(systemName: downloadActionSymbol(for: status)),
+            attributes: song == nil ? .disabled : []
+        ) { _ in
+            guard let song else { return }
+            Task { await LibraryActions.shared.downloadOrCancel(song: song) }
+        })
+
+        return UIMenu(children: [
+            UIMenu(options: .displayInline, children: primary),
+            UIMenu(options: .displayInline, children: secondary)
+        ])
+    }
+
+    private func downloadActionTitle(for status: DownloadStatus) -> String {
+        switch status {
+        case .pending, .downloading: return "Cancel Download"
+        case .waiting: return "Download Now"
+        case .downloaded: return "Remove Download"
+        case .failed: return "Retry Download"
+        case .none, .partial, .cached: return "Download"
+        }
+    }
+
+    private func downloadActionSymbol(for status: DownloadStatus) -> String {
+        switch status {
+        case .pending, .downloading: return "stop.circle"
+        case .downloaded: return "arrow.down.circle.fill"
+        case .failed: return "exclamationmark.circle"
+        case .none, .waiting, .partial, .cached: return "arrow.down.circle"
         }
     }
 

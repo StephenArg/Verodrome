@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
-  <artist id="10"><name>Gamma</name><albums>3</albums><songs>42</songs></artist>
-  <artist id="11"><name>Delta</name><albumcount>1</albumcount><songcount>8</songcount></artist>
+  <artist id="10">
+    <name><![CDATA[Gamma]]></name>
+    <prefix><![CDATA[]]></prefix>
+    <basename><![CDATA[Gamma]]></basename>
+    <albums>3</albums>
+    <albumcount>3</albumcount>
+    <songs>42</songs>
+    <songcount>42</songcount>
+    <art><![CDATA[https://music.example.com/image.php?object_id=10&object_type=artist]]></art>
+    <has_art>1</has_art>
+    <flag>0</flag>
+    <rating>0</rating>
+    <averagerating>0</averagerating>
+  </artist>
+  <artist id="11">
+    <name><![CDATA[Delta]]></name>
+    <albums>1</albums>
+    <albumcount>1</albumcount>
+    <songs>8</songs>
+    <songcount>8</songcount>
+    <flag>0</flag>
+  </artist>
 </root>

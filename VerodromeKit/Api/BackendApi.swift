@@ -5,6 +5,17 @@ public enum BackendApiError: Error, Sendable, LocalizedError {
     case unsupportedOperation(String)
     case invalidURL
     case server(String)
+    /// The server answered, but with a status that carries meaning of its own —
+    /// Navidrome replies `501` in plain text for endpoints an admin has switched off,
+    /// which is not expressible in the Subsonic error envelope.
+    case http(status: Int, message: String)
+    case notImplemented
+
+    /// Builds the most specific case an HTTP failure supports.
+    static func from(status: Int?, message: String) -> BackendApiError {
+        guard let status else { return .server(message) }
+        return status == 501 ? .notImplemented : .http(status: status, message: message)
+    }
 
     public var errorDescription: String? {
         switch self {
@@ -16,6 +27,10 @@ public enum BackendApiError: Error, Sendable, LocalizedError {
             return "Could not build a valid server URL."
         case .server(let message):
             return message
+        case .http(let status, let message):
+            return "[\(status)] \(message)"
+        case .notImplemented:
+            return "This server does not support that feature."
         }
     }
 }
@@ -39,4 +54,11 @@ public protocol BackendApi: AnyObject, Sendable {
 
     func serverInfo() async throws -> ServerInfo
     func ping() async throws
+
+    /// Share management, when the backend speaks a dialect that offers it.
+    var sharing: ShareManaging? { get }
+}
+
+public extension BackendApi {
+    var sharing: ShareManaging? { nil }
 }

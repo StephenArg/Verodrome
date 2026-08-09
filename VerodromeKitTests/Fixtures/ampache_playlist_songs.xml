@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <total_count>2</total_count>
+  <song id="901">
+    <name><![CDATA[Opening]]></name>
+    <title><![CDATA[Opening]]></title>
+    <artist id="10"><name><![CDATA[Portico]]></name>
+</artist>
+    <album id="55"><name><![CDATA[Living Fields]]></name>
+</album>
+    <playlisttrack>1</playlisttrack>
+    <track>1</track>
+    <time>132</time>
+    <format>flac</format>
+  </song>
+  <song id="902">
+    <name><![CDATA[Closing]]></name>
+    <title><![CDATA[Closing]]></title>
+    <artist id="11"><name><![CDATA[Delta]]></name>
+</artist>
+    <album id="56"><name><![CDATA[Nightfall]]></name>
+</album>
+    <playlisttrack>2</playlisttrack>
+    <track>7</track>
+    <time>245</time>
+    <format>mp3</format>
+  </song>
+</root>

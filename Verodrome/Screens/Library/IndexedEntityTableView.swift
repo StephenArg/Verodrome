@@ -103,8 +103,8 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     /// Bumps when `DownloadCenter` changes so album download badges reconfigure live.
     var downloadRevision: Int = 0
     var onSelect: (Item, [Item]) -> Void
-    var onAddToQueue: ((Item) -> Void)?
-    var onRequestActions: ((String) -> Void)?
+    /// Long-press menu for a row. Nil means no context menu.
+    var makeContextMenu: ((Item) -> UIMenu?)?
     /// Scrolls away above the first row, so chrome that belongs to the list can leave
     /// with the large title instead of holding height on a screen full of rows.
     var header: AnyView?
@@ -118,8 +118,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         isSectioned: Bool = true,
         downloadRevision: Int = 0,
         onSelect: @escaping (Item, [Item]) -> Void,
-        onAddToQueue: ((Item) -> Void)? = nil,
-        onRequestActions: ((String) -> Void)? = nil,
+        makeContextMenu: ((Item) -> UIMenu?)? = nil,
         header: AnyView? = nil,
         onScroll: ((CGFloat) -> Void)? = nil
     ) {
@@ -129,8 +128,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         self.isSectioned = isSectioned
         self.downloadRevision = downloadRevision
         self.onSelect = onSelect
-        self.onAddToQueue = onAddToQueue
-        self.onRequestActions = onRequestActions
+        self.makeContextMenu = makeContextMenu
         self.header = header
         self.onScroll = onScroll
     }
@@ -138,16 +136,14 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> IndexedEntityTableController<Item> {
         let controller = IndexedEntityTableController<Item>()
         controller.onSelect = onSelect
-        controller.onAddToQueue = onAddToQueue
-        controller.onRequestActions = onRequestActions
+        controller.makeContextMenu = makeContextMenu
         controller.onScroll = onScroll
         return controller
     }
 
     func updateUIViewController(_ controller: IndexedEntityTableController<Item>, context: Context) {
         controller.onSelect = onSelect
-        controller.onAddToQueue = onAddToQueue
-        controller.onRequestActions = onRequestActions
+        controller.makeContextMenu = makeContextMenu
         controller.onScroll = onScroll
         controller.downloadRevision = downloadRevision
         controller.setHeader(header)
@@ -163,8 +159,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
 @MainActor
 final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UITableViewDataSource, UITableViewDelegate, UITableViewDataSourcePrefetching {
     var onSelect: ((Item, [Item]) -> Void)?
-    var onAddToQueue: ((Item) -> Void)?
-    var onRequestActions: ((String) -> Void)?
+    var makeContextMenu: ((Item) -> UIMenu?)?
     var onScroll: ((CGFloat) -> Void)?
     var downloadRevision = 0
 
@@ -308,10 +303,14 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             tableView.reloadData()
             return
         }
-        // A head page that already held every row leaves the content identical, so
-        // only the scrubber needs to catch up.
+        // A head page that already held every row leaves the content identical, but
+        // letter headers can still appear or disappear with the partial→full flip
+        // (single-letter head that turns out to be the whole library).
         if partialChanged {
-            tableView.reloadSectionIndexTitles()
+            appliedDownloadRevision = downloadRevision
+            tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
+            tableView.reloadData()
+            return
         }
         if playingChanged {
             for case let cell as EntityTableCell in tableView.visibleCells {
@@ -378,7 +377,11 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private static var letterSectionRowThreshold: Int { 100 }
 
     private var showsLetterSections: Bool {
-        isSectioned && sections.count > 1 && flatItems.count >= Self.letterSectionRowThreshold
+        guard isSectioned, flatItems.count >= Self.letterSectionRowThreshold else { return false }
+        // A cold-start head page is often one leading letter (e.g. 150 songs under "A").
+        // Still show that header so the grouped look arrives with the first rows; a
+        // finished list needs more than one letter or the header is just noise.
+        return isPartial || sections.count > 1
     }
 
     func numberOfSections(in tableView: UITableView) -> Int { sections.count }
@@ -470,22 +473,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         contextMenuConfigurationForRowAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard onAddToQueue != nil || onRequestActions != nil,
-              let item = item(at: indexPath) else { return nil }
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-            var actions: [UIAction] = []
-            if let onAddToQueue = self?.onAddToQueue {
-                actions.append(UIAction(
-                    title: "Add to Queue",
-                    image: UIImage(systemName: "text.append")
-                ) { _ in onAddToQueue(item) })
-            }
-            if let onRequestActions = self?.onRequestActions {
-                actions.append(UIAction(title: "Actions…", image: UIImage(systemName: "ellipsis.circle")) { _ in
-                    onRequestActions(item.id)
-                })
-            }
-            return UIMenu(children: actions)
+        guard let makeContextMenu, let item = item(at: indexPath) else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            makeContextMenu(item)
         }
     }
 }

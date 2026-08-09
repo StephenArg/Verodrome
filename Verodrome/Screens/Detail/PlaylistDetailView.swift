@@ -199,16 +199,25 @@ struct PlaylistDetailView: View {
             }
 
             if let playlist = playlists.first, !isEditing {
-                playlistOptionsMenu(for: playlist)
-            }
-
-            if canEditPlaylist, !isEditing {
-                NavigationLink { PlaylistAddSongsView(playlistID: playlistID) } label: {
-                    Image(systemName: "plus")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .accessibilityLabel("Add Songs")
+                PlaylistOptionsMenuButton(
+                    canEdit: canEditPlaylist,
+                    isKeptDownloaded: playlist.keepDownloaded,
+                    hasSongs: !entries.isEmpty,
+                    shareSubject: ShareSubject(
+                        resourceType: .playlist,
+                        resourceIds: [playlist.remoteId],
+                        title: playlist.name,
+                        subtitle: entries.count == 1 ? "1 song" : "\(entries.count) songs",
+                        artwork: playlist.artworkToken.map { ArtworkRef(id: $0, kind: .playlist) }
+                    ),
+                    onRename: { showRename = true },
+                    onToggleDownload: togglePlaylistDownload,
+                    onAddToQueue: {
+                        player.addToQueueTemporarily(songs.map(QueueItem.from))
+                    },
+                    onAddToPlaylist: { showPlaylistSelector = true }
+                )
+                .equatable()
             }
         }
     }
@@ -249,75 +258,8 @@ struct PlaylistDetailView: View {
         .padding(.horizontal, 4)
     }
 
-    // MARK: - Options menu
-
-    private func playlistOptionsMenu(for playlist: Playlist) -> some View {
-        Menu {
-            if canEditPlaylist {
-                Button {
-                    showRename = true
-                } label: {
-                    Label("Edit Name", systemImage: "pencil")
-                }
-                Divider()
-            }
-
-            Button {
-                togglePlaylistDownload()
-            } label: {
-                Label(downloadActionTitle, systemImage: downloadActionSymbol)
-            }
-            .disabled(songs.isEmpty && !isKeptDownloaded)
-
-            if isKeptDownloaded {
-                Text(downloadStateDescription)
-            }
-
-            Divider()
-
-            Button {
-                player.addToQueueTemporarily(songs.map(QueueItem.from))
-            } label: {
-                Label("Add to Queue", systemImage: "text.append")
-            }
-            .disabled(songs.isEmpty)
-
-            Button {
-                showPlaylistSelector = true
-            } label: {
-                Label("Add to Playlist", systemImage: "text.badge.plus")
-            }
-            .disabled(songs.isEmpty)
-
-            ShareLink(item: playlist.name) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-        } label: {
-            // Match the album options control: centered ellipsis that inherits the
-            // artwork navigation tint with the back chevron.
-            Image(systemName: "ellipsis")
-                .font(.body.weight(.semibold))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("More options")
-    }
-
-    /// The control is a switch now, so it names the action either way rather than
-    /// reporting how far a one-off batch has got. Progress goes in the line below it.
     private var downloadActionTitle: String {
         isKeptDownloaded ? "Remove Downloads" : "Download Playlist"
-    }
-
-    private var downloadStateDescription: String {
-        let summary = downloadSummary
-        if summary.isWaiting { return "Waiting for Wi-Fi — \(summary.waiting) songs" }
-        if summary.isWorking { return "Downloading — \(summary.remaining) left" }
-        return "Songs added to this playlist download automatically."
-    }
-
-    private var downloadActionSymbol: String {
-        isKeptDownloaded ? "trash" : "arrow.down.circle"
     }
 
     private func togglePlaylistDownload() {
@@ -468,5 +410,69 @@ private struct PlaylistRowItem: Identifiable, Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+/// Isolated from `DownloadCenter` updates: the playlist screen observes download
+/// progress for row badges, and rebuilding this `Menu` on every tick made its labels
+/// pulse. `.equatable()` skips those refreshes when the menu's inputs haven't changed.
+private struct PlaylistOptionsMenuButton: View, Equatable {
+    let canEdit: Bool
+    let isKeptDownloaded: Bool
+    let hasSongs: Bool
+    let shareSubject: ShareSubject
+    let onRename: () -> Void
+    let onToggleDownload: () -> Void
+    let onAddToQueue: () -> Void
+    let onAddToPlaylist: () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.canEdit == rhs.canEdit
+            && lhs.isKeptDownloaded == rhs.isKeptDownloaded
+            && lhs.hasSongs == rhs.hasSongs
+            && lhs.shareSubject == rhs.shareSubject
+    }
+
+    var body: some View {
+        Menu {
+            if canEdit {
+                Button(action: onRename) {
+                    Label("Edit Name", systemImage: "pencil")
+                }
+                Divider()
+            }
+
+            Button(action: onToggleDownload) {
+                Label(
+                    isKeptDownloaded ? "Remove Downloads" : "Download Playlist",
+                    systemImage: isKeptDownloaded ? "trash" : "arrow.down.circle"
+                )
+            }
+            .disabled(!hasSongs && !isKeptDownloaded)
+
+            if isKeptDownloaded {
+                Text("Songs added to this playlist download automatically.")
+            }
+
+            Divider()
+
+            Button(action: onAddToQueue) {
+                Label("Add to Queue", systemImage: "text.append")
+            }
+            .disabled(!hasSongs)
+
+            Button(action: onAddToPlaylist) {
+                Label("Add to Playlist", systemImage: "text.badge.plus")
+            }
+            .disabled(!hasSongs)
+
+            ShareMenuButton(subject: shareSubject)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More options")
     }
 }

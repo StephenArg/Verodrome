@@ -227,6 +227,33 @@ public final class SubsonicServerApi: @unchecked Sendable {
         _ = try await request(method: "deletePlaylist", parameters: ["id": id])
     }
 
+    // MARK: - Sharing
+
+    public func getShares() async throws -> Data {
+        try await request(method: "getShares")
+    }
+
+    /// One repeated `id=` per entry, the same encoding `createPlaylist` needs.
+    public func createShare(ids: [String], description: String?, expiresAtMilliseconds: Int64?) async throws -> Data {
+        var params: [String: String] = [:]
+        if let description, !description.isEmpty { params["description"] = description }
+        if let expiresAtMilliseconds { params["expires"] = String(expiresAtMilliseconds) }
+        return try await request(method: "createShare", parameters: params, repeating: ["id": ids])
+    }
+
+    /// `description` is always sent: servers treat the parameter as the new value rather
+    /// than as a patch, so omitting it blanks whatever was there.
+    public func updateShare(id: String, description: String, expiresAtMilliseconds: Int64?) async throws {
+        var params: [String: String] = ["id": id, "description": description]
+        // Zero is the documented way to clear an expiry, and is distinct from omitting it.
+        if let expiresAtMilliseconds { params["expires"] = String(expiresAtMilliseconds) }
+        _ = try await request(method: "updateShare", parameters: params)
+    }
+
+    public func deleteShare(id: String) async throws {
+        _ = try await request(method: "deleteShare", parameters: ["id": id])
+    }
+
     // MARK: - Media URLs
 
     public func streamURL(for songId: String, maxBitrate: Int?, format: StreamFormat?) -> URL? {
@@ -260,7 +287,9 @@ public final class SubsonicServerApi: @unchecked Sendable {
             .response
 
         if let error = response.error {
-            throw BackendApiError.server(error.localizedDescription)
+            // Navidrome answers 501 in plain text for endpoints an admin has switched
+            // off, which never reaches the Subsonic error envelope below.
+            throw BackendApiError.from(status: response.response?.statusCode, message: error.localizedDescription)
         }
 
         guard let data = response.data, !data.isEmpty else {

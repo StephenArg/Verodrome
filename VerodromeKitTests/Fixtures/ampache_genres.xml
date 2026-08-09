@@ -1,16 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
   <total_count>2</total_count>
+  <md5>7ac0e1d5b2e9f4a3c6d8b0f1e2a3c4d5</md5>
   <genre id="6">
-    <name>Dance</name>
+    <name><![CDATA[Dance]]></name>
     <albums>1</albums>
     <artists>1</artists>
     <songs>11</songs>
+    <videos>0</videos>
+    <playlists>0</playlists>
+    <live_streams>0</live_streams>
+    <is_hidden>0</is_hidden>
   </genre>
   <genre id="4">
-    <name>Dark Ambient</name>
+    <name><![CDATA[Dark Ambient]]></name>
     <albums>2</albums>
     <artists>1</artists>
     <songs>8</songs>
+    <videos>0</videos>
+    <playlists>0</playlists>
+    <live_streams>0</live_streams>
+    <is_hidden>0</is_hidden>
   </genre>
 </root>

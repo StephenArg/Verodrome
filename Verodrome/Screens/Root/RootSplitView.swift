@@ -58,6 +58,8 @@ struct RootSplitView: View {
             DirectoriesView()
         case .favorites:
             FavoritesView()
+        case .shared:
+            SharedView()
         }
     }
 
