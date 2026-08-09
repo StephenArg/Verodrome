@@ -38,6 +38,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
     @Published public var offlineModeEnabled: Bool = false
     @Published public var artworkDownloadSetting: ArtworkDownloadSetting = .always
+    /// When pinned downloads may transfer. Queue prefetch is never held by this.
+    @Published public var automaticDownloadNetwork: AutomaticDownloadNetwork = .wifiOnly
     @Published public var swipeLeftAction: String = "queue"
     @Published public var swipeRightAction: String = "download"
     @Published public var developerWindowSizes: Bool = false
@@ -61,6 +63,7 @@ public final class SettingsStore: ObservableObject {
         var cacheLimitBytes: Int64
         var offlineModeEnabled: Bool
         var artworkDownloadSetting: ArtworkDownloadSetting
+        var automaticDownloadNetwork: AutomaticDownloadNetwork
         var swipeLeftAction: String
         var swipeRightAction: String
         var developerWindowSizes: Bool
@@ -84,6 +87,7 @@ public final class SettingsStore: ObservableObject {
             cacheLimitBytes: Int64,
             offlineModeEnabled: Bool,
             artworkDownloadSetting: ArtworkDownloadSetting,
+            automaticDownloadNetwork: AutomaticDownloadNetwork,
             swipeLeftAction: String,
             swipeRightAction: String,
             developerWindowSizes: Bool,
@@ -106,6 +110,7 @@ public final class SettingsStore: ObservableObject {
             self.cacheLimitBytes = cacheLimitBytes
             self.offlineModeEnabled = offlineModeEnabled
             self.artworkDownloadSetting = artworkDownloadSetting
+            self.automaticDownloadNetwork = automaticDownloadNetwork
             self.swipeLeftAction = swipeLeftAction
             self.swipeRightAction = swipeRightAction
             self.developerWindowSizes = developerWindowSizes
@@ -131,6 +136,10 @@ public final class SettingsStore: ObservableObject {
             cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
             offlineModeEnabled = try c.decode(Bool.self, forKey: .offlineModeEnabled)
             artworkDownloadSetting = try c.decode(ArtworkDownloadSetting.self, forKey: .artworkDownloadSetting)
+            automaticDownloadNetwork = try c.decodeIfPresent(
+                AutomaticDownloadNetwork.self,
+                forKey: .automaticDownloadNetwork
+            ) ?? .wifiOnly
             swipeLeftAction = try c.decode(String.self, forKey: .swipeLeftAction)
             swipeRightAction = try c.decode(String.self, forKey: .swipeRightAction)
             developerWindowSizes = try c.decode(Bool.self, forKey: .developerWindowSizes)
@@ -165,6 +174,7 @@ public final class SettingsStore: ObservableObject {
             cacheLimitBytes: cacheLimitBytes,
             offlineModeEnabled: offlineModeEnabled,
             artworkDownloadSetting: artworkDownloadSetting,
+            automaticDownloadNetwork: automaticDownloadNetwork,
             swipeLeftAction: swipeLeftAction,
             swipeRightAction: swipeRightAction,
             developerWindowSizes: developerWindowSizes,
@@ -264,6 +274,7 @@ public final class SettingsStore: ObservableObject {
             cacheLimitBytes = snapshot.cacheLimitBytes
             offlineModeEnabled = snapshot.offlineModeEnabled
             artworkDownloadSetting = snapshot.artworkDownloadSetting
+            automaticDownloadNetwork = snapshot.automaticDownloadNetwork
             swipeLeftAction = snapshot.swipeLeftAction
             swipeRightAction = snapshot.swipeRightAction
             developerWindowSizes = snapshot.developerWindowSizes

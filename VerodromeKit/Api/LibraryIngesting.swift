@@ -138,6 +138,12 @@ public struct IngestPlaylist: Sendable, Hashable {
     public let songCount: Int?
     public let owner: String?
     public let isPublic: Bool
+    /// Rule-driven playlist whose contents the server owns. Ampache marks these in the id,
+    /// OpenSubsonic implies it with `validUntil`.
+    public let isSmart: Bool
+    /// OpenSubsonic `readonly`: this user cannot change the playlist, whether because the
+    /// server generates it or because someone else owns it.
+    public let isReadOnly: Bool
     public let songIds: [String]
     /// Subsonic `coverArt` id or Ampache `art` URL/token.
     public let artId: String?
@@ -148,6 +154,8 @@ public struct IngestPlaylist: Sendable, Hashable {
         songCount: Int? = nil,
         owner: String? = nil,
         isPublic: Bool = false,
+        isSmart: Bool = false,
+        isReadOnly: Bool = false,
         songIds: [String] = [],
         artId: String? = nil
     ) {
@@ -156,6 +164,8 @@ public struct IngestPlaylist: Sendable, Hashable {
         self.songCount = songCount
         self.owner = owner
         self.isPublic = isPublic
+        self.isSmart = isSmart
+        self.isReadOnly = isReadOnly
         self.songIds = songIds
         self.artId = artId
     }

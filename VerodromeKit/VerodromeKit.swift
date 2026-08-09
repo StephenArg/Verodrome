@@ -22,6 +22,8 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var queueStore: FilePlayerQueueStore?
     public private(set) var queueCachePolicy: QueueCachePolicyManager?
     public private(set) var downloadManager: DownloadManager?
+    public private(set) var playlistDownloads: PlaylistDownloadCoordinator?
+    public private(set) var downloadNetworkPolicy: DownloadNetworkPolicy?
     public private(set) var artworkDownloadManager: ArtworkDownloadManager?
     public private(set) var playableCache: FilePlayableCache?
     public private(set) var scrobbleSyncer: ScrobbleSyncer?
@@ -95,6 +97,23 @@ public final class VerodromeKit: ObservableObject {
         self.queueCachePolicy = policy
         policy.start()
 
+        let playlistDownloads = PlaylistDownloadCoordinator(
+            downloader: downloader,
+            syncerProvider: { [weak self] in self?.activeLibrarySyncer }
+        )
+        self.playlistDownloads = playlistDownloads
+
+        let networkPolicy = DownloadNetworkPolicy(
+            downloader: downloader,
+            monitor: networkMonitor,
+            settingProvider: { [weak self] in self?.settings.automaticDownloadNetwork ?? .wifiOnly }
+        )
+        networkPolicy.setAllowedHandler { [weak playlistDownloads] in
+            await playlistDownloads?.reconcile()
+        }
+        self.downloadNetworkPolicy = networkPolicy
+        await networkPolicy.apply()
+
         let bg = BackgroundLibrarySyncer(
             syncerProvider: { [weak self] in self?.activeLibrarySyncer },
             autoDownloadProvider: { [weak self] in
@@ -104,7 +123,8 @@ public final class VerodromeKit: ObservableObject {
             autoCacheNewestProvider: { [weak self] in
                 guard let key = self?.accountStore.activeAccountKey() else { return false }
                 return self?.settings.loadAccountSettings(for: key).autoCacheNewest ?? false
-            }
+            },
+            playlistDownloadsProvider: { [weak self] in self?.playlistDownloads }
         )
         BackgroundFetchSyncer.shared = BackgroundFetchSyncer(
             librarySyncer: bg,
@@ -123,6 +143,9 @@ public final class VerodromeKit: ObservableObject {
         if accountStore.activeAccountKey() != nil {
             _ = try? await ensureActiveLibrarySyncer()
             await restoreParkedTrack()
+            // The download queue is memory only, so downloads the last session left
+            // unfinished — or parked waiting for Wi-Fi — have to be put back on it.
+            await playlistDownloads.resumePending()
             // Cold launch: refresh catalog in background and resume track backfill if incomplete.
             librarySync.runBackground()
         }

@@ -198,6 +198,7 @@ struct AlbumDetailView: View {
     private var downloadActionTitle: String {
         let summary = downloadSummary
         if summary.isWorking { return "Cancel Downloads" }
+        if summary.isWaiting { return "Cancel Downloads" }
         if summary.isFullyDownloaded { return "Remove Downloads" }
         if summary.isPartiallyDownloaded { return "Download Remaining (\(summary.remaining))" }
         return "Download All"
@@ -205,7 +206,7 @@ struct AlbumDetailView: View {
 
     private var downloadActionSymbol: String {
         let summary = downloadSummary
-        if summary.isWorking { return "stop.circle" }
+        if summary.isWorking || summary.isWaiting { return "stop.circle" }
         if summary.isFullyDownloaded { return "trash" }
         return "arrow.down.circle"
     }
@@ -214,7 +215,7 @@ struct AlbumDetailView: View {
         let songs = tracks
         let summary = downloadSummary
         Task {
-            if summary.isWorking {
+            if summary.isWorking || summary.isWaiting {
                 await LibraryActions.shared.cancelDownloads(songs: songs)
             } else if summary.isFullyDownloaded {
                 await LibraryActions.shared.removeDownloads(songs: songs)

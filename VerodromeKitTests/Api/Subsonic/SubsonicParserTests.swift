@@ -25,6 +25,30 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(genres[1].songCount, 4)
     }
 
+    /// Subsonic proper says nothing about smart playlists, so the OpenSubsonic `readonly`
+    /// and `validUntil` attributes are the only way to keep them out of the add-to-playlist
+    /// list before the server rejects the attempt. `readonly` also covers playlists someone
+    /// else owns, which is why it is tracked separately from smartness.
+    func testPlaylistParserReadsReadonlyAndValidUntil() throws {
+        let data = try fixture("subsonic_playlists.xml")
+        let playlists = try SubsonicParsers.parsePlaylists(data: data)
+        XCTAssertEqual(playlists.count, 3)
+
+        XCTAssertEqual(playlists[0].name, "Road Trip")
+        XCTAssertEqual(playlists[0].songCount, 24)
+        XCTAssertFalse(playlists[0].isReadOnly)
+        XCTAssertFalse(playlists[0].isSmart)
+
+        // A regenerating list: readonly, and dated by when the server will rebuild it.
+        XCTAssertTrue(playlists[1].isReadOnly)
+        XCTAssertTrue(playlists[1].isSmart)
+
+        // Someone else's ordinary playlist: readonly, but not smart.
+        XCTAssertTrue(playlists[2].isReadOnly)
+        XCTAssertFalse(playlists[2].isSmart)
+        XCTAssertEqual(playlists[2].owner, "someone_else")
+    }
+
     /// Plays and rating drive the Songs and Albums sort options, so they have to survive
     /// parsing. Absent values must stay nil rather than becoming 0, or a response
     /// without them wipes what an earlier sync stored.

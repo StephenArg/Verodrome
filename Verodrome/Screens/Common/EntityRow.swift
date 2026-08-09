@@ -61,8 +61,10 @@ struct EntityRow: View {
                         .lineLimit(1)
                 }
             }
-
-            Spacer(minLength: 8)
+            // Claim the middle of the row. A trailing `Spacer` left the text stack at its
+            // ideal width, so a long title could compress the column and truncate a short
+            // subtitle ("12 songs") while empty space still showed past the ellipsis.
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let trailing {
                 Text(trailing)
@@ -76,6 +78,7 @@ struct EntityRow: View {
     private func downloadAccessibilityLabel(for status: DownloadStatus) -> String {
         switch status {
         case .pending: return "Waiting to download"
+        case .waiting: return "Waiting for Wi-Fi"
         case .downloading: return "Downloading"
         case .partial: return "Partially downloaded"
         case .cached: return "Cached"

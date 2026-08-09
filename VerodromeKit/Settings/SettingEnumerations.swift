@@ -18,6 +18,20 @@ public enum ArtworkDownloadSetting: String, Codable, CaseIterable, Sendable {
     case always
 }
 
+/// When pinned downloads (albums, playlists, songs, auto-cache) may transfer.
+/// Queue-window prefetch is exempt so playback on cellular still works.
+public enum AutomaticDownloadNetwork: String, Codable, CaseIterable, Sendable {
+    case wifiOnly
+    case always
+
+    public var label: String {
+        switch self {
+        case .wifiOnly: "Only on Wi-Fi"
+        case .always: "Always"
+        }
+    }
+}
+
 /// Cap on playable cache size. `0` means unlimited.
 public enum PlayableCacheLimit: Int64, Codable, CaseIterable, Sendable, Identifiable {
     case mb250 = 262_144_000
@@ -67,6 +81,19 @@ public enum CacheReason: Int, Codable, CaseIterable, Sendable {
         case .userDownload, .autoFavorite, .playlistCache, .autoNewest:
             return true
         case .none, .queuePrefetch:
+            return false
+        }
+    }
+
+    /// Downloads the app started on its own, which the Wi-Fi-only setting can hold back.
+    ///
+    /// `queuePrefetch` is excluded: it serves playback the user just started, and holding
+    /// it back on cellular would stall streaming rather than save anything they didn't ask for.
+    public var isAutomaticReason: Bool {
+        switch self {
+        case .autoFavorite, .playlistCache, .autoNewest:
+            return true
+        case .none, .queuePrefetch, .userDownload:
             return false
         }
     }
@@ -307,6 +334,8 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     case durationShortest
     case ratingHighest
     case playsMost
+    /// Smart playlists A–Z#, then regular playlists A–Z#.
+    case smartPlaylistsFirst
 
     public var id: String { rawValue }
 
@@ -319,6 +348,7 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
         case .durationShortest: "Shortest to longest"
         case .ratingHighest: "Rating (high to low)"
         case .playsMost: "Plays (high to low)"
+        case .smartPlaylistsFirst: "Smart Playlists"
         }
     }
 
@@ -327,7 +357,8 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     public var isAlphabetical: Bool {
         switch self {
         case .titleAZ, .titleZA, .titleSymbolsFirst: true
-        case .durationLongest, .durationShortest, .ratingHighest, .playsMost: false
+        case .durationLongest, .durationShortest, .ratingHighest, .playsMost, .smartPlaylistsFirst:
+            false
         }
     }
 
@@ -343,6 +374,9 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
 
     public static let songOptions: [LibrarySortOption] =
         titleOptions + [.durationLongest, .durationShortest, .ratingHighest, .playsMost]
+
+    /// Playlists also offer grouping smart lists ahead of regular ones.
+    public static let playlistOptions: [LibrarySortOption] = titleOptions + [.smartPlaylistsFirst]
 }
 
 /// Per-screen sort choices. Grouped into one value so the settings snapshot needs a

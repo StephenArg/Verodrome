@@ -44,7 +44,10 @@ public enum LibraryPruner {
             context.delete(playlist)
             removed += 1
         }
-        if removed > 0 { try context.save() }
+        if removed > 0 {
+            try context.save()
+            NotificationCenter.default.post(name: .playlistItemsChanged, object: nil)
+        }
         return removed
     }
 }

@@ -10,6 +10,8 @@ public extension Notification.Name {
     static let foregroundRefresh = Notification.Name("com.verodrome.foregroundRefresh")
     /// Backend session is ready after cold-launch login (artwork / stream URLs can be minted).
     static let backendAuthenticated = Notification.Name("com.verodrome.backendAuthenticated")
+    /// A playlist's track list changed, or a playlist was removed.
+    static let playlistItemsChanged = Notification.Name("com.verodrome.playlistItemsChanged")
 
     // Aliases used by player stack
     static let verodromeQueueChanged = queueChanged

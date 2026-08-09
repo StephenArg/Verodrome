@@ -146,12 +146,16 @@ enum AmpacheParsers {
         let root = try GenericXmlParser().parse(data: data)
         return root.descendants(named: "playlist").map { node in
             let songIds = node.descendants(named: "song").compactMap { $0.attributes["id"] ?? $0.text.nilIfEmpty }
+            let id = node.attributes["id"] ?? ""
             return IngestPlaylist(
-                id: node.attributes["id"] ?? "",
+                id: id,
                 name: childText(node, "name") ?? node.attributes["name"] ?? "",
                 songCount: intValue(childText(node, "songcount") ?? node.attributes["songcount"]) ?? songIds.count,
                 owner: childText(node, "owner") ?? node.attributes["owner"],
                 isPublic: (childText(node, "type") ?? node.attributes["type"]) == "public",
+                // Ampache returns smart playlists from the same endpoint, distinguished only
+                // by a prefixed id such as `smart_3`.
+                isSmart: id.hasPrefix("smart_"),
                 songIds: songIds,
                 artId: node.attributes["art"] ?? childText(node, "art")
             )

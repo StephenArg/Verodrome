@@ -8,17 +8,20 @@ public final class BackgroundLibrarySyncer {
     private let syncerProvider: () -> (any LibrarySyncer)?
     private let autoDownloadProvider: () -> AutoDownloadSyncer?
     private let autoCacheNewestProvider: () -> Bool
+    private let playlistDownloadsProvider: @MainActor () -> PlaylistDownloadCoordinator?
     private let newestLimit: Int
 
     public init(
         syncerProvider: @escaping () -> (any LibrarySyncer)? = { nil },
         autoDownloadProvider: @escaping () -> AutoDownloadSyncer? = { nil },
         autoCacheNewestProvider: @escaping () -> Bool = { false },
+        playlistDownloadsProvider: @escaping @MainActor () -> PlaylistDownloadCoordinator? = { nil },
         newestLimit: Int = 40
     ) {
         self.syncerProvider = syncerProvider
         self.autoDownloadProvider = autoDownloadProvider
         self.autoCacheNewestProvider = autoCacheNewestProvider
+        self.playlistDownloadsProvider = playlistDownloadsProvider
         self.newestLimit = newestLimit
     }
 
@@ -39,6 +42,10 @@ public final class BackgroundLibrarySyncer {
                 await EventLogger.shared.warning("sync", "Playlist reconcile failed: \(error.localizedDescription)")
             }
         }
+
+        // The catalog above carries no track ids, so downloaded playlists need their own
+        // detail pull before anything added upstream can be queued.
+        await playlistDownloadsProvider()?.refreshAndReconcile()
 
         guard autoCacheNewestProvider(), !songIds.isEmpty else { return }
         await autoDownloadProvider()?.download(playableIds: songIds, kind: .song)

@@ -80,4 +80,36 @@ final class DownloadCenterTests: XCTestCase {
         XCTAssertNil(center.batchProgress(for: ["a", "b"], downloadedIds: ["a"]))
         XCTAssertNil(center.batchProgress(for: [], downloadedIds: []))
     }
+
+    func testWaitingIsReportedUntilTheDownloadIsReleased() {
+        center.deferDownload(playableId: "a")
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), .waiting)
+        XCTAssertFalse(center.isWorking(on: "a"), "a parked download is not occupying the queue")
+
+        center.enqueued(playableId: "a")
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), .pending)
+    }
+
+    /// A deferral left over from an earlier pass must never contradict a file that is
+    /// already on disk.
+    func testAnExistingFileOutranksAWaitingDownload() {
+        center.deferDownload(playableId: "a")
+
+        XCTAssertEqual(center.status(for: "a", isDownloaded: true), .downloaded)
+    }
+
+    func testWaitingOutranksAnEarlierFailure() {
+        center.fail(playableId: "a")
+        center.deferDownload(playableId: "a")
+
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), .waiting)
+    }
+
+    func testStartingAWaitingDownloadClearsIt() {
+        center.deferDownload(playableId: "a")
+        center.begin(playableId: "a")
+
+        XCTAssertEqual(center.status(for: "a", isDownloaded: false), .downloading(0))
+        XCTAssertTrue(center.deferredIds.isEmpty)
+    }
 }

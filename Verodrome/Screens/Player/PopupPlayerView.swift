@@ -8,6 +8,7 @@ struct PopupPlayerView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
+    @ObservedObject private var playlistMembership = PlaylistMembershipIndex.shared
     @Environment(\.dismiss) private var dismiss
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
@@ -120,12 +121,8 @@ struct PopupPlayerView: View {
                     .presentationDetents([.large])
                 case .addToPlaylist:
                     if let song = currentSong {
-                        PlaylistSelectorView { playlist in
-                            Task {
-                                try? await LibraryActions.shared.addSongs([song], to: playlist)
-                                ActionToast.addedToPlaylist(playlist.name)
-                            }
-                        }
+                        PlaylistMembershipView(song: song)
+                            .presentationDetents([.medium, .large])
                     }
                 case .equalizer:
                     NavigationStack {
@@ -355,7 +352,10 @@ struct PopupPlayerView: View {
                 .frame(width: 24, height: 24)
                 .accessibilityLabel("Playback Speed")
 
-                if player.isRandomPlaybackSpeed
+                // The sleep-timer chip owns the center of the bar; keep the speed control
+                // as an icon only so the countdown has room.
+                if player.sleepTimerDeadline == nil,
+                   player.isRandomPlaybackSpeed
                     || !PlaybackSpeed.isEqual(player.playbackSpeed, 1)
                 {
                     Text(PlaybackSpeed.label(for: player.playbackSpeed))
@@ -365,8 +365,6 @@ struct PopupPlayerView: View {
                 }
             }
 
-            Spacer()
-
             if let deadline = player.sleepTimerDeadline {
                 SleepTimerChip(
                     deadline: deadline,
@@ -374,24 +372,52 @@ struct PopupPlayerView: View {
                     onStart: { player.startSleepTimer(hours: $0, minutes: $1) },
                     onCancel: { player.cancelSleepTimer() }
                 )
+                .frame(maxWidth: .infinity)
+            } else {
+                Spacer(minLength: 0)
             }
 
             Button {
                 presentShareSheet()
             } label: {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.title3)
+                    // Slightly under `.title3` — this glyph reads larger than the
+                    // neighboring outline icons at the same point size.
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.primary)
+                    .frame(width: 24, height: 24)
             }
+
+            Button {
+                bottomPanel = .addToPlaylist
+            } label: {
+                Image(systemName: isInAnyPlaylist ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.title3)
+                    // Theme accent — not `.tint` / `Color.accentColor`, and not under the
+                    // bar-wide `.foregroundStyle(.primary)` that used to paint over it.
+                    .foregroundStyle(isInAnyPlaylist ? themeManager.accentColor : Color.primary)
+                    .symbolRenderingMode(.monochrome)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .disabled(currentSong == nil)
+            .accessibilityLabel(isInAnyPlaylist ? "Edit Playlists" : "Add to Playlist")
 
             Button {
                 bottomPanel = .queue
             } label: {
                 Image(systemName: "list.bullet")
                     .font(.title3)
+                    .foregroundStyle(.primary)
             }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.primary)
+    }
+
+    /// Whether the track sits in at least one playlist, which is what switches the bottom
+    /// bar button between the plus and the check.
+    private var isInAnyPlaylist: Bool {
+        guard let song = currentSong else { return false }
+        return playlistMembership.isInAnyPlaylist(songId: song.remoteId)
     }
 
     // MARK: - Favorite
@@ -418,9 +444,11 @@ struct PopupPlayerView: View {
 
     @ViewBuilder
     private var artistCreditsRow: some View {
-        HStack(spacing: 6) {
-            // Decorative only — download / remove lives in the overflow menu.
-            if currentSong != nil {
+        // Spacing matches list rows (EntityRow / EntityTableCell). The download glyph is
+        // only inserted when it has something to show — a zero-size icon still claimed
+        // HStack spacing and pushed the artist name off the title's leading edge.
+        HStack(spacing: 5) {
+            if downloadStatus != .none {
                 DownloadStatusIcon(status: downloadStatus, size: 14, tint: themeManager.accentColor)
                     .accessibilityLabel(downloadAccessibilityLabel)
             }
@@ -432,6 +460,7 @@ struct PopupPlayerView: View {
     private var downloadAccessibilityLabel: String {
         switch downloadStatus {
         case .pending: return "Waiting to download"
+        case .waiting: return "Waiting for Wi-Fi"
         case .downloading: return "Downloading"
         case .partial: return "Partially downloaded"
         case .cached: return "Cached"
@@ -1010,6 +1039,7 @@ private struct PlayerOverflowMenuButton: View {
     private static func downloadTitle(for status: DownloadStatus) -> String {
         switch status {
         case .pending, .downloading: return "Cancel Download"
+        case .waiting: return "Download Now"
         case .downloaded: return "Remove Download"
         case .failed: return "Retry Download"
         case .none, .partial, .cached: return "Download Song"
@@ -1021,7 +1051,7 @@ private struct PlayerOverflowMenuButton: View {
         case .pending, .downloading: return "stop.circle"
         case .downloaded: return "arrow.down.circle.fill"
         case .failed: return "exclamationmark.circle"
-        case .none, .partial, .cached: return "arrow.down.circle"
+        case .none, .waiting, .partial, .cached: return "arrow.down.circle"
         }
     }
 }
@@ -1339,7 +1369,7 @@ private struct SleepTimerPanel: View {
     }
 }
 
-/// Live countdown chip shown left of Share while a sleep timer is active.
+/// Live countdown chip shown in the bottom bar's center while a sleep timer is active.
 /// Ticks locally via `TimelineView` so the rest of the player is not redrawn each second.
 /// Shows `H:MM` while an hour or more remains (no seconds), then `M:SS`.
 private struct SleepTimerChip: View {
@@ -1364,7 +1394,9 @@ private struct SleepTimerChip: View {
                         .lineLimit(1)
                 }
             }
+            .frame(maxWidth: .infinity)
             .foregroundStyle(accentColor)
+            .contentShape(Rectangle())
             .accessibilityLabel("Sleep timer")
         }
         .popover(isPresented: $showPanel, arrowEdge: .bottom) {

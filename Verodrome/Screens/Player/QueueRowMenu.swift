@@ -25,6 +25,7 @@ struct QueueRowMenu: View {
     private var downloadActionTitle: String {
         switch downloadStatus {
         case .pending, .downloading: return "Cancel Download"
+        case .waiting: return "Download Now"
         case .downloaded: return "Remove Download"
         case .failed: return "Retry Download"
         case .none, .partial, .cached: return "Download"
@@ -36,7 +37,7 @@ struct QueueRowMenu: View {
         case .pending, .downloading: return "stop.circle"
         case .downloaded: return "arrow.down.circle.fill"
         case .failed: return "exclamationmark.circle"
-        case .none, .partial, .cached: return "arrow.down.circle"
+        case .none, .waiting, .partial, .cached: return "arrow.down.circle"
         }
     }
 

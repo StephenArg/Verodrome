@@ -174,6 +174,8 @@ enum SubsonicParsers {
                 songCount: intValue(node.attributes["songCount"]) ?? entries.count,
                 owner: node.attributes["owner"],
                 isPublic: node.attributes["public"] == "true",
+                isSmart: isSmartPlaylist(node),
+                isReadOnly: isReadOnlyPlaylist(node),
                 songIds: entries,
                 artId: node.attributes["coverArt"]
             )
@@ -192,10 +194,26 @@ enum SubsonicParsers {
                 songCount: songIds.count,
                 owner: playlistNode.attributes["owner"],
                 isPublic: playlistNode.attributes["public"] == "true",
+                isSmart: isSmartPlaylist(playlistNode),
+                isReadOnly: isReadOnlyPlaylist(playlistNode),
                 songIds: songIds,
                 artId: playlistNode.attributes["coverArt"]
             )
         ]
+    }
+
+    /// OpenSubsonic `readonly`: the playlist cannot be edited by the signed-in user, which
+    /// covers both server-generated lists and other people's playlists. Absent means the
+    /// server doesn't report it, and the spec says to assume editable.
+    private static func isReadOnlyPlaylist(_ node: XmlNode) -> Bool {
+        node.attributes["readonly"] == "true"
+    }
+
+    /// Nothing in the protocol says "smart", but `validUntil` — the point at which the
+    /// server will regenerate the contents — is only meaningful for a list the server
+    /// builds itself, so its presence is the closest thing to a marker.
+    private static func isSmartPlaylist(_ node: XmlNode) -> Bool {
+        !(node.attributes["validUntil"]?.isEmpty ?? true)
     }
 
     /// Songs embedded as `<entry>` nodes inside a playlist detail response (includes coverArt).

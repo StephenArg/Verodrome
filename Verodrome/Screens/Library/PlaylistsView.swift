@@ -37,7 +37,7 @@ struct PlaylistsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 LibrarySortMenu(
                     selection: $settings.librarySort.playlists,
-                    options: LibrarySortOption.titleOptions
+                    options: LibrarySortOption.playlistOptions
                 )
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -61,6 +61,12 @@ struct PlaylistsView: View {
         // playlists are worth showing before the server round trip returns.
         .task {
             await syncCatalog()
+        }
+        // addSongs / removeSong rewrite playlist items (and songCount) without a catalog
+        // sync, so the cached rows would otherwise keep the old counts until the next
+        // pull-to-refresh.
+        .onReceive(NotificationCenter.default.publisher(for: .playlistItemsChanged)) { _ in
+            catalogVersion += 1
         }
         .refreshable {
             await syncCatalog()
@@ -97,12 +103,24 @@ struct PlaylistsView: View {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 // Account scoping is applied in memory — SwiftData list predicates are
                 // restricted to proven SQL shapes, and playlist counts stay small.
-                let playlists = try LibraryFetch.rows(
+                // Smart-first reorders after the fetch, so a limited head page of A–Z
+                // names would drop later smart lists. Pull the whole catalog instead —
+                // playlist counts stay modest.
+                let limit = request.sort == .smartPlaylistsFirst ? nil : request.limit
+                var playlists = try LibraryFetch.rows(
                     context,
                     sortBy: sortDescriptors(for: request.sort),
-                    limit: request.limit,
+                    limit: limit,
                     matching: predicate(for: request)
                 ).filter { $0.account?.compoundKey == accountKey }
+                // SwiftData's SortDescriptor can't order a Bool column, so smart-first
+                // is applied here.
+                if request.sort == .smartPlaylistsFirst {
+                    playlists.sort { lhs, rhs in
+                        if lhs.isSmart != rhs.isSmart { return lhs.isSmart && !rhs.isSmart }
+                        return lhs.sortName.localizedStandardCompare(rhs.sortName) == .orderedAscending
+                    }
+                }
                 let snapshots = playlists.map { playlist in
                     LibraryRowSnapshot(
                         id: playlist.compoundRemoteId,
@@ -111,7 +129,7 @@ struct PlaylistsView: View {
                         subtitle: playlist.isSmart
                             ? "Smart · \(playlist.songCount) songs"
                             : "\(playlist.songCount) songs",
-                        artworkToken: playlist.artworkToken,
+                        artworkToken: playlist.displayArtworkToken,
                         symbol: "music.note.house.fill"
                     )
                 }
@@ -126,6 +144,7 @@ struct PlaylistsView: View {
     }
 
     private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Playlist>] {
+        // Smart-first reorders in memory after the fetch; the store still returns A–Z#.
         [SortDescriptor(\Playlist.sortName, order: sort.sortsTitleDescending ? .reverse : .forward)]
     }
 

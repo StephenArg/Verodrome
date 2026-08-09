@@ -6,6 +6,15 @@ public actor DownloadManager: DownloadManaging {
     private let maxConcurrent: Int
     private var isOffline: Bool
     private var pending: [(String, PlayableRef.Kind, CacheReason)] = []
+    /// Downloads held back until the network policy allows them. Kept apart from
+    /// `pending` so a metered connection can't starve the queue: these never reach
+    /// `pump()` until `setNetworkPolicy` releases them.
+    private var deferred: [(String, PlayableRef.Kind, CacheReason)] = []
+    private var wifiOnly = true
+    /// Starts false so Wi‑Fi-only downloads wait until `DownloadNetworkPolicy` has
+    /// confirmed an unmetered path. Starting true would race the first cellular
+    /// enqueue past the gate before the path monitor answered.
+    private var isUnmetered = false
     private var activeCount = 0
     /// Transfers running right now, and the reason each is being kept for. The reason can
     /// change mid-transfer when the user downloads a track a prefetch already started.
@@ -28,7 +37,35 @@ public actor DownloadManager: DownloadManaging {
         if offline { await cancelAll() }
     }
 
-    public func enqueue(playableId: String, kind: PlayableRef.Kind, reason: CacheReason) async {
+    /// Sets whether downloads may run right now, and releases anything that was waiting
+    /// on the answer. Queue-window prefetch is never held by this policy.
+    public func setNetworkPolicy(wifiOnlyAutomatic: Bool, isUnmetered: Bool) async {
+        self.wifiOnly = wifiOnlyAutomatic
+        self.isUnmetered = isUnmetered
+        guard allowsDownloads, !deferred.isEmpty else { return }
+        let released = deferred
+        deferred.removeAll()
+        for entry in released where !pending.contains(where: { $0.0 == entry.0 }) && inFlight[entry.0] == nil {
+            pending.append(entry)
+            await MainActor.run { DownloadCenter.shared.enqueued(playableId: entry.0) }
+        }
+        await pump()
+    }
+
+    /// Downloads still waiting on Wi-Fi, for tests and diagnostics.
+    public var deferredIds: [String] { deferred.map(\.0) }
+
+    private var allowsDownloads: Bool { !wifiOnly || isUnmetered }
+
+    /// Queues a download. When Wi-Fi-only is on and the connection is metered, pinned
+    /// downloads wait with a gray glyph until Wi-Fi returns — unless `force` is set, which
+    /// is what a "Download Now" tap on a waiting track uses.
+    public func enqueue(
+        playableId: String,
+        kind: PlayableRef.Kind,
+        reason: CacheReason,
+        force: Bool = false
+    ) async {
         if isOffline { return }
         if cache.fileURL(forPlayableId: playableId, kind: kind) != nil {
             cache.touchPlayable(id: playableId, kind: kind, reason: reason)
@@ -54,6 +91,17 @@ public actor DownloadManager: DownloadManaging {
             }
             return
         }
+        // Prefetch serves playback already under way — holding it would stall the player.
+        let shouldDefer = !force && reason.isUserPinnedReason && !allowsDownloads
+        if let index = deferred.firstIndex(where: { $0.0 == playableId }) {
+            if shouldDefer { return }
+            deferred.remove(at: index)
+            await MainActor.run { DownloadCenter.shared.clearDeferred(playableId: playableId) }
+        } else if shouldDefer {
+            deferred.append((playableId, kind, reason))
+            await MainActor.run { DownloadCenter.shared.deferDownload(playableId: playableId) }
+            return
+        }
         pending.append((playableId, kind, reason))
         // A user download of a whole album leaves most tracks waiting behind
         // `maxConcurrent`; without this they would show no state at all until they start.
@@ -65,6 +113,7 @@ public actor DownloadManager: DownloadManaging {
 
     public func cancel(playableId: String) async {
         pending.removeAll { $0.0 == playableId }
+        deferred.removeAll { $0.0 == playableId }
         inFlight.removeValue(forKey: playableId)
         await MainActor.run {
             DownloadCenter.shared.clearActive(playableId: playableId)
@@ -73,6 +122,7 @@ public actor DownloadManager: DownloadManaging {
 
     public func cancelAll() async {
         pending.removeAll()
+        deferred.removeAll()
         inFlight.removeAll()
         activeCount = 0
         await MainActor.run {

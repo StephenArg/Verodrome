@@ -202,23 +202,25 @@ public final class SubsonicServerApi: @unchecked Sendable {
     }
 
     public func createPlaylist(name: String, songIds: [String] = []) async throws -> Data {
-        var params: [String: String] = ["name": name]
-        for (index, songId) in songIds.enumerated() {
-            params["songId[\(index)]"] = songId
-        }
-        return try await request(method: "createPlaylist", parameters: params)
+        // Subsonic takes repeated `songId=` values, not `songId[0]=`. Navidrome's
+        // `Strings("songId")` only sees the bare name, so indexed keys were ignored and
+        // the playlist was created empty while the client still reported success.
+        try await request(
+            method: "createPlaylist",
+            parameters: ["name": name],
+            repeating: songIds.isEmpty ? [:] : ["songId": songIds]
+        )
     }
 
     public func updatePlaylist(id: String, name: String? = nil, songIdsToAdd: [String] = [], songIndexesToRemove: [Int] = []) async throws {
+        var repeating: [String: [String]] = [:]
+        if !songIdsToAdd.isEmpty { repeating["songIdToAdd"] = songIdsToAdd }
+        if !songIndexesToRemove.isEmpty {
+            repeating["songIndexToRemove"] = songIndexesToRemove.map(String.init)
+        }
         var params: [String: String] = ["playlistId": id]
         if let name { params["name"] = name }
-        for (index, songId) in songIdsToAdd.enumerated() {
-            params["songIdToAdd[\(index)]"] = songId
-        }
-        for (index, songIndex) in songIndexesToRemove.enumerated() {
-            params["songIndexToRemove[\(index)]"] = String(songIndex)
-        }
-        _ = try await request(method: "updatePlaylist", parameters: params)
+        _ = try await request(method: "updatePlaylist", parameters: params, repeating: repeating)
     }
 
     public func deletePlaylist(id: String) async throws {
@@ -246,8 +248,12 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
     // MARK: - Transport
 
-    public func request(method: String, parameters: [String: String] = [:]) async throws -> Data {
-        let url = try buildURL(method: method, parameters: parameters)
+    public func request(
+        method: String,
+        parameters: [String: String] = [:],
+        repeating: [String: [String]] = [:]
+    ) async throws -> Data {
+        let url = try buildURL(method: method, parameters: parameters, repeating: repeating)
         let response = await session.request(url)
             .validate(statusCode: 200..<300)
             .serializingData()
@@ -265,7 +271,11 @@ public final class SubsonicServerApi: @unchecked Sendable {
         return data
     }
 
-    private func buildURL(method: String, parameters: [String: String]) throws -> URL {
+    private func buildURL(
+        method: String,
+        parameters: [String: String],
+        repeating: [String: [String]] = [:]
+    ) throws -> URL {
         var params = parameters
         params["u"] = username
         params["v"] = Self.apiVersion
@@ -283,8 +293,24 @@ public final class SubsonicServerApi: @unchecked Sendable {
         }
 
         var components = URLComponents(url: restURL(method: method), resolvingAgainstBaseURL: false)
-        components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        components?.queryItems = Self.queryItems(parameters: params, repeating: repeating)
         guard let url = components?.url else { throw BackendApiError.invalidURL }
         return url
+    }
+
+    /// Builds the query list for a Subsonic call. `repeating` is how multi-value fields
+    /// like `songIdToAdd` are encoded — one query item per value, same name — which is
+    /// what the Subsonic/OpenSubsonic specs and Navidrome's `Strings(...)` helper expect.
+    static func queryItems(
+        parameters: [String: String],
+        repeating: [String: [String]] = [:]
+    ) -> [URLQueryItem] {
+        var items = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+        for (name, values) in repeating.sorted(by: { $0.key < $1.key }) {
+            for value in values {
+                items.append(URLQueryItem(name: name, value: value))
+            }
+        }
+        return items
     }
 }

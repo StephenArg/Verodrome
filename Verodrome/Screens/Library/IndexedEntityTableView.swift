@@ -287,9 +287,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         isPartial: Bool,
         isSectioned: Bool
     ) {
-        // `isSectioned` belongs in the fingerprint: it changes whether headers render at
-        // all, which needs a reload even if the rows themselves are untouched.
-        let fingerprint = "\(sections.count)|\(sections.first?.items.first?.id ?? "")|\(sections.last?.items.last?.id ?? "")|\(sections.reduce(0) { $0 + $1.items.count })|\(isSectioned)"
+        // Structure alone is not enough: playlist song counts and artwork change without
+        // the row ids or list length moving, and those updates have to reach the cells.
+        let fingerprint = Self.fingerprint(sections: sections, isSectioned: isSectioned)
         let playingChanged = self.playingId != playingId
         let partialChanged = self.isPartial != isPartial
         self.playingId = playingId
@@ -328,6 +328,23 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
                 cell.setDownloadStatus(Self.downloadStatus(for: item))
             }
         }
+    }
+
+    /// Identity, counts, and artwork — everything a library row shows that can change
+    /// without the table's shape changing.
+    private static func fingerprint(sections: [LibraryRowSection<Item>], isSectioned: Bool) -> String {
+        var parts: [String] = [isSectioned ? "1" : "0", String(sections.count)]
+        parts.reserveCapacity(sections.count * 8 + 2)
+        for section in sections {
+            parts.append(section.letter)
+            parts.append(String(section.items.count))
+            for item in section.items {
+                parts.append(item.id)
+                parts.append(item.subtitle)
+                parts.append(item.artworkToken ?? "")
+            }
+        }
+        return parts.joined(separator: "|")
     }
 
     private static func downloadStatus(for item: Item) -> DownloadStatus {
@@ -391,6 +408,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntityTableCell.reuseID, for: indexPath) as! EntityTableCell
         let item = sections[indexPath.section].items[indexPath.row]
+        // Only pad for the scrubber while it's actually on screen — a permanent -28pt
+        // inset made playlist song-count subtitles look truncated early on short lists.
+        cell.setReservesSectionIndexSpace(showsLetterSections && !isPartial)
         cell.configure(
             title: item.title,
             subtitle: item.subtitle,
@@ -503,9 +523,14 @@ final class EntityTableCell: UITableViewCell {
     private let playingView = UIImageView(image: UIImage(systemName: "waveform"))
     private let downloadView = UIImageView()
     private let downloadSpinner = UIActivityIndicatorView(style: .medium)
+    /// Holds the download glyph so it can be collapsed out of the subtitle row when idle —
+    /// a zero-width view left in the stack still burns `spacing` and pushes song counts /
+    /// artist names off the title's leading edge.
+    private let downloadContainer = UIView()
     private var artworkToken: String?
     private var artworkTask: Task<Void, Never>?
     private var downloadWidthConstraint: NSLayoutConstraint?
+    private var trailingConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -536,13 +561,13 @@ final class EntityTableCell: UITableViewCell {
         downloadView.isHidden = true
         downloadSpinner.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
         downloadSpinner.hidesWhenStopped = true
+        downloadContainer.isHidden = true
 
-        let downloadContainer = UIView()
         downloadContainer.addSubview(downloadView)
         downloadContainer.addSubview(downloadSpinner)
         downloadView.translatesAutoresizingMaskIntoConstraints = false
         downloadSpinner.translatesAutoresizingMaskIntoConstraints = false
-        let downloadWidth = downloadContainer.widthAnchor.constraint(equalToConstant: 0)
+        let downloadWidth = downloadContainer.widthAnchor.constraint(equalToConstant: 14)
         downloadWidthConstraint = downloadWidth
         NSLayoutConstraint.activate([
             downloadWidth,
@@ -568,32 +593,52 @@ final class EntityTableCell: UITableViewCell {
         let textStack = UIStackView(arrangedSubviews: [titleRow, subtitleRow])
         textStack.axis = .vertical
         textStack.spacing = 2
+        // Fill the row middle so a long title compresses the labels to the real trailing
+        // edge instead of an ambiguous spacer stealing width and truncating "12 songs"
+        // while empty space remains.
         textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        subtitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.lineBreakMode = .byTruncatingTail
 
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        trailingLabel.setContentHuggingPriority(.required, for: .horizontal)
+        trailingLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        let hStack = UIStackView(arrangedSubviews: [artworkView, textStack, spacer, trailingLabel])
+        let hStack = UIStackView(arrangedSubviews: [artworkView, textStack, trailingLabel])
         hStack.translatesAutoresizingMaskIntoConstraints = false
         hStack.axis = .horizontal
         hStack.spacing = 12
         hStack.alignment = .center
         contentView.addSubview(hStack)
 
+        let trailing = hStack.trailingAnchor.constraint(
+            equalTo: contentView.trailingAnchor,
+            constant: -Self.trailingInsetWithoutIndex
+        )
+        trailingConstraint = trailing
         NSLayoutConstraint.activate([
             artworkView.widthAnchor.constraint(equalToConstant: 44),
             artworkView.heightAnchor.constraint(equalToConstant: 44),
             playingView.widthAnchor.constraint(equalToConstant: 16),
             playingView.heightAnchor.constraint(equalToConstant: 16),
             hStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            hStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -28),
+            trailing,
             hStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
             hStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
         ])
+    }
+
+    /// Matches typical list margins when the A–Z scrubber is hidden.
+    private static var trailingInsetWithoutIndex: CGFloat { 16 }
+    /// Extra room so the scrubber doesn't sit on top of the subtitle.
+    private static var trailingInsetWithIndex: CGFloat { 28 }
+
+    func setReservesSectionIndexSpace(_ reserves: Bool) {
+        trailingConstraint?.constant = -(reserves ? Self.trailingInsetWithIndex : Self.trailingInsetWithoutIndex)
     }
 
     required init?(coder: NSCoder) { nil }
@@ -650,6 +695,10 @@ final class EntityTableCell: UITableViewCell {
         }
         setPlaying(isPlaying)
         setDownloadStatus(downloadStatus)
+        let tokenChanged = self.artworkToken != artworkToken
+        if tokenChanged {
+            cancelArtworkLoad()
+        }
         self.artworkToken = artworkToken
         // Any cached size beats a grey box: coming back from a detail screen or the player,
         // the only render in memory is a larger one. `beginArtworkLoadIfNeeded` still
@@ -663,34 +712,45 @@ final class EntityTableCell: UITableViewCell {
             artworkView.image = UIImage(systemName: symbol)
             artworkView.tintColor = .secondaryLabel
             artworkView.contentMode = .center
-        } else {
+        } else if tokenChanged {
             artworkView.image = nil
             artworkView.backgroundColor = .secondarySystemFill
         }
     }
 
     func setDownloadStatus(_ status: DownloadStatus) {
-        switch status {
-        case .none:
+        // Hide the whole accessory when idle so UIStackView collapses it — matching
+        // EntityRow / the player, where the subtitle sits flush under the title.
+        if status == .none {
             downloadSpinner.stopAnimating()
             downloadView.isHidden = true
             downloadView.image = nil
-            downloadWidthConstraint?.constant = 0
+            downloadContainer.isHidden = true
+            return
+        }
+        downloadContainer.isHidden = false
+        downloadWidthConstraint?.constant = 14
+        switch status {
+        case .none:
+            return
         case .pending, .downloading:
             downloadView.isHidden = true
             downloadView.image = nil
-            downloadWidthConstraint?.constant = 14
             downloadSpinner.startAnimating()
+        case .waiting:
+            downloadSpinner.stopAnimating()
+            downloadView.isHidden = false
+            downloadView.tintColor = .secondaryLabel
+            downloadView.image = UIImage(systemName: "arrow.down.circle.fill")
+            downloadView.accessibilityLabel = "Waiting for Wi-Fi"
         case .partial:
             downloadSpinner.stopAnimating()
-            downloadWidthConstraint?.constant = 14
             downloadView.isHidden = false
             downloadView.tintColor = .tintColor
             downloadView.image = UIImage(systemName: "arrow.down.circle")
             downloadView.accessibilityLabel = "Partially downloaded"
         case .cached:
             downloadSpinner.stopAnimating()
-            downloadWidthConstraint?.constant = 14
             downloadView.isHidden = false
             // Same accent hue as downloaded, dialed back so prefetch reads softer.
             downloadView.tintColor = .tintColor.withAlphaComponent(0.6)
@@ -698,14 +758,12 @@ final class EntityTableCell: UITableViewCell {
             downloadView.accessibilityLabel = "Cached"
         case .downloaded:
             downloadSpinner.stopAnimating()
-            downloadWidthConstraint?.constant = 14
             downloadView.isHidden = false
             downloadView.tintColor = .tintColor
             downloadView.image = UIImage(systemName: "arrow.down.circle.fill")
             downloadView.accessibilityLabel = "Downloaded"
         case .failed:
             downloadSpinner.stopAnimating()
-            downloadWidthConstraint?.constant = 14
             downloadView.isHidden = false
             downloadView.tintColor = .systemOrange
             downloadView.image = UIImage(systemName: "exclamationmark.circle")

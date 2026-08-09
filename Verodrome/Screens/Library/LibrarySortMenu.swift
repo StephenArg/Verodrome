@@ -1,10 +1,13 @@
 import SwiftUI
+import UIKit
 import VerodromeKit
 
 /// Trailing toolbar control for picking a library list's ordering.
 ///
-/// Built from plain `Button`s rather than a `Picker`: the picker style pads every row
-/// out to a wide menu even when the labels are short.
+/// Backed by a UIKit `UIMenu` rather than SwiftUI `Menu`. The library screens rebuild
+/// their toolbars whenever the list model refreshes (head page → full page, sync, …);
+/// SwiftUI recreates an open menu on every pass and the labels pulse. UIKit only
+/// replaces the menu when the selection or filter actually changes.
 struct LibrarySortMenu: View {
     @EnvironmentObject private var settings: SettingsStore
 
@@ -14,44 +17,115 @@ struct LibrarySortMenu: View {
     var downloadedOnly: Binding<Bool>? = nil
 
     var body: some View {
-        Menu {
-            ForEach(options) { option in
-                Button {
-                    selection = option
-                } label: {
-                    // Always a Label so the title column stays put whether or not the
-                    // checkmark is drawn — bare Text sits flush left and drifts.
-                    checkmarkLabel(option.displayName, checked: selection == option)
+        LibrarySortMenuButton(
+            selection: selection,
+            options: options,
+            downloadedOnly: downloadedOnly?.wrappedValue,
+            onSelect: { option in
+                selection = option
+                settings.save()
+            },
+            onToggleDownloaded: downloadedOnly.map { binding in
+                {
+                    binding.wrappedValue.toggle()
+                    settings.save()
                 }
             }
+        )
+        .frame(width: 44, height: 44)
+        .accessibilityLabel("Sort")
+    }
+}
 
-            if let downloadedOnly {
-                Section {
-                    Button {
-                        downloadedOnly.wrappedValue.toggle()
-                        settings.save()
-                    } label: {
-                        checkmarkLabel("Downloaded", checked: downloadedOnly.wrappedValue)
-                    }
+private struct LibrarySortMenuButton: UIViewRepresentable {
+    let selection: LibrarySortOption
+    let options: [LibrarySortOption]
+    let downloadedOnly: Bool?
+    let onSelect: (LibrarySortOption) -> Void
+    let onToggleDownloaded: (() -> Void)?
+
+    final class Coordinator {
+        var selection: LibrarySortOption
+        var options: [LibrarySortOption]
+        var downloadedOnly: Bool?
+        var onSelect: (LibrarySortOption) -> Void
+        var onToggleDownloaded: (() -> Void)?
+        /// Avoid rebuilding `button.menu` when the representable is refreshed for an
+        /// unrelated parent render — replacing a presented menu is what pulses the text.
+        var menuIdentity: String = ""
+
+        init(
+            selection: LibrarySortOption,
+            options: [LibrarySortOption],
+            downloadedOnly: Bool?,
+            onSelect: @escaping (LibrarySortOption) -> Void,
+            onToggleDownloaded: (() -> Void)?
+        ) {
+            self.selection = selection
+            self.options = options
+            self.downloadedOnly = downloadedOnly
+            self.onSelect = onSelect
+            self.onToggleDownloaded = onToggleDownloaded
+        }
+
+        func identity() -> String {
+            "\(selection.rawValue)|\(options.map(\.rawValue).joined(separator: ","))|\(downloadedOnly.map(String.init(describing:)) ?? "-")"
+        }
+
+        func makeMenu() -> UIMenu {
+            var children: [UIMenuElement] = options.map { option in
+                UIAction(
+                    title: option.displayName,
+                    state: option == selection ? .on : .off
+                ) { [weak self] _ in
+                    self?.onSelect(option)
                 }
             }
-        } label: {
-            Label("Sort", systemImage: "arrow.up.arrow.down")
-        }
-        // `SettingsStore` only writes to UserDefaults when asked, so a toolbar change
-        // is lost on relaunch without this.
-        .onChange(of: selection) { _, _ in
-            settings.save()
+            if let onToggleDownloaded, let downloadedOnly {
+                let downloaded = UIAction(
+                    title: "Downloaded",
+                    state: downloadedOnly ? .on : .off
+                ) { [weak self] _ in
+                    self?.onToggleDownloaded?()
+                }
+                children.append(UIMenu(options: .displayInline, children: [downloaded]))
+            }
+            return UIMenu(children: children)
         }
     }
 
-    /// Reserves the leading checkmark column even when unchecked, so titles line up.
-    private func checkmarkLabel(_ title: String, checked: Bool) -> some View {
-        Label {
-            Text(title)
-        } icon: {
-            Image(systemName: "checkmark")
-                .opacity(checked ? 1 : 0)
-        }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            selection: selection,
+            options: options,
+            downloadedOnly: downloadedOnly,
+            onSelect: onSelect,
+            onToggleDownloaded: onToggleDownloaded
+        )
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        button.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: config), for: .normal)
+        button.showsMenuAsPrimaryAction = true
+        context.coordinator.menuIdentity = context.coordinator.identity()
+        button.menu = context.coordinator.makeMenu()
+        button.accessibilityLabel = "Sort"
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.selection = selection
+        coordinator.options = options
+        coordinator.downloadedOnly = downloadedOnly
+        coordinator.onSelect = onSelect
+        coordinator.onToggleDownloaded = onToggleDownloaded
+
+        let identity = coordinator.identity()
+        guard identity != coordinator.menuIdentity else { return }
+        coordinator.menuIdentity = identity
+        button.menu = coordinator.makeMenu()
     }
 }

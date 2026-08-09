@@ -90,6 +90,8 @@ final class DownloadManagerTests: XCTestCase {
     func testAUserDownloadIsReportedFromTheMomentItIsQueued() async {
         let provider = HeldURLProvider()
         let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        // Fail-closed until a path is known; open the gate for this transfer test.
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: true)
 
         await manager.enqueue(playableId: "a", kind: .song, reason: .userDownload)
 
@@ -97,6 +99,20 @@ final class DownloadManagerTests: XCTestCase {
 
         provider.release()
         await waitUntil("the failure to surface") { DownloadCenter.shared.failedIds.contains("a") }
+    }
+
+    /// Before the path monitor answers, Wi‑Fi-only must not assume an unmetered link —
+    /// otherwise the first album enqueue on cellular races past the gate.
+    func testPinnedDownloadsWaitUntilTheNetworkPolicyOpensTheGate() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+
+        await manager.enqueue(playableId: "a", kind: .song, reason: .userDownload)
+
+        let deferred = await manager.deferredIds
+        XCTAssertEqual(provider.started, [])
+        XCTAssertEqual(deferred, ["a"])
+        XCTAssertEqual(DownloadCenter.shared.status(for: "a", isDownloaded: false), .waiting)
     }
 
     /// The manager dedupes by id, so an explicit download of a track a prefetch already
@@ -117,5 +133,102 @@ final class DownloadManagerTests: XCTestCase {
         // The upgraded reason is what the outcome is reported against.
         provider.release()
         await waitUntil("the failure to surface") { DownloadCenter.shared.failedIds.contains("a") }
+    }
+
+    // MARK: - Wi-Fi gate
+
+    func testAnAutomaticDownloadWaitsForWiFiOnAMeteredConnection() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+
+        await manager.enqueue(playableId: "a", kind: .song, reason: .playlistCache)
+
+        let deferred = await manager.deferredIds
+        XCTAssertEqual(provider.started, [], "nothing should reach the network on cellular")
+        XCTAssertEqual(deferred, ["a"])
+        XCTAssertEqual(DownloadCenter.shared.status(for: "a", isDownloaded: false), .waiting)
+    }
+
+    func testReachingWiFiReleasesEverythingThatWasWaiting() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+        await manager.enqueue(playableId: "a", kind: .song, reason: .playlistCache)
+
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: true)
+
+        await waitUntil("the released download to start") { provider.started == ["a"] }
+        let deferred = await manager.deferredIds
+        XCTAssertEqual(deferred, [])
+        XCTAssertTrue(DownloadCenter.shared.deferredIds.isEmpty)
+    }
+
+    func testSwitchingTheSettingToAlwaysReleasesWithoutWaitingForWiFi() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+        await manager.enqueue(playableId: "a", kind: .song, reason: .playlistCache)
+
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: false, isUnmetered: false)
+
+        await waitUntil("the released download to start") { provider.started == ["a"] }
+    }
+
+    /// Album / song taps use `.userDownload`. On Wi-Fi only they park the same way
+    /// playlist auto-downloads do, so "Download All" doesn't burn cellular.
+    func testAManualDownloadWaitsForWiFiOnAMeteredConnection() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+
+        await manager.enqueue(playableId: "a", kind: .song, reason: .userDownload)
+
+        let deferred = await manager.deferredIds
+        XCTAssertEqual(provider.started, [])
+        XCTAssertEqual(deferred, ["a"])
+        XCTAssertEqual(DownloadCenter.shared.status(for: "a", isDownloaded: false), .waiting)
+    }
+
+    func testForceStartsADownloadThatWasWaitingForWiFi() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+        await manager.enqueue(playableId: "a", kind: .song, reason: .playlistCache)
+        let beforeTap = await manager.deferredIds
+        XCTAssertEqual(beforeTap, ["a"])
+
+        await manager.enqueue(playableId: "a", kind: .song, reason: .userDownload, force: true)
+
+        await waitUntil("the forced download to start") { provider.started == ["a"] }
+        let afterTap = await manager.deferredIds
+        XCTAssertEqual(afterTap, [])
+        XCTAssertFalse(DownloadCenter.shared.deferredIds.contains("a"))
+    }
+
+    /// A prefetch serves playback that is already under way, so holding it back on
+    /// cellular would stall the player rather than save anything unasked for.
+    func testAQueuePrefetchIsNotHeldBackByTheWiFiGate() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+
+        await manager.enqueue(playableId: "a", kind: .song, reason: .queuePrefetch)
+
+        await waitUntil("the prefetch to start") { provider.started == ["a"] }
+    }
+
+    func testCancellingDropsADownloadThatWasWaitingForWiFi() async {
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(urlProvider: provider, cache: EmptyCache())
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: false)
+        await manager.enqueue(playableId: "a", kind: .song, reason: .playlistCache)
+
+        await manager.cancel(playableId: "a")
+        await manager.setNetworkPolicy(wifiOnlyAutomatic: true, isUnmetered: true)
+
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(provider.started, [], "a cancelled download should not come back on Wi-Fi")
+        XCTAssertFalse(DownloadCenter.shared.deferredIds.contains("a"))
     }
 }

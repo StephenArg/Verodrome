@@ -31,7 +31,7 @@ struct PlaylistDetailView: View {
                     DetailHeader(
                         title: playlist.name,
                         subtitle: "\(playlist.songCount) songs",
-                        artworkURL: playlist.artworkToken,
+                        artworkURL: playlist.displayArtworkToken,
                         tintToken: backgroundArtworkToken,
                         symbol: "music.note.house.fill",
                         onPlay: { play(shuffle: false) },
@@ -56,6 +56,7 @@ struct PlaylistDetailView: View {
                                     subtitle: song.displayArtist,
                                     artworkURL: song.artworkToken,
                                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
+                                    trailing: formatDuration(song.displayDuration),
                                     downloadStatus: downloadCenter.status(
                                         for: song.remoteId,
                                         isDownloaded: song.isDownloadedLocally
@@ -118,6 +119,17 @@ struct PlaylistDetailView: View {
         SongsDownloadSummary(songs: songs, center: downloadCenter)
     }
 
+    private var isKeptDownloaded: Bool { playlists.first?.keepDownloaded ?? false }
+
+    /// A playlist marked for download but with nothing transferring yet is waiting on the
+    /// network, not idle — the summary alone can't tell those apart before the first
+    /// enqueue lands, so the flag decides.
+    private var downloadStatus: DownloadStatus {
+        let summary = downloadSummary
+        if isKeptDownloaded, summary.status == .none { return .waiting }
+        return summary.status
+    }
+
     /// Playlists have no favorite/rating in the library model yet, so this bar is the
     /// download control alone — same slot as the album's right-hand cluster.
     private var playlistStatusBar: some View {
@@ -127,11 +139,11 @@ struct PlaylistDetailView: View {
             Button {
                 togglePlaylistDownload()
             } label: {
-                DownloadStatusIcon(status: downloadSummary.status, size: 22, showsIdleAffordance: true)
+                DownloadStatusIcon(status: downloadStatus, size: 22, showsIdleAffordance: true)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(songs.isEmpty)
+            .disabled(songs.isEmpty && !isKeptDownloaded)
             .accessibilityLabel(downloadActionTitle)
         }
         .padding(.horizontal, 4)
@@ -146,15 +158,10 @@ struct PlaylistDetailView: View {
             } label: {
                 Label(downloadActionTitle, systemImage: downloadActionSymbol)
             }
-            .disabled(songs.isEmpty)
+            .disabled(songs.isEmpty && !isKeptDownloaded)
 
-            if downloadSummary.isPartiallyDownloaded && !downloadSummary.isWorking {
-                Button(role: .destructive) {
-                    let tracks = songs
-                    Task { await LibraryActions.shared.removeDownloads(songs: tracks) }
-                } label: {
-                    Label("Remove Downloads", systemImage: "trash")
-                }
+            if isKeptDownloaded {
+                Text(downloadStateDescription)
             }
 
             Divider()
@@ -187,33 +194,27 @@ struct PlaylistDetailView: View {
         .accessibilityLabel("More options")
     }
 
+    /// The control is a switch now, so it names the action either way rather than
+    /// reporting how far a one-off batch has got. Progress goes in the line below it.
     private var downloadActionTitle: String {
+        isKeptDownloaded ? "Remove Downloads" : "Download Playlist"
+    }
+
+    private var downloadStateDescription: String {
         let summary = downloadSummary
-        if summary.isWorking { return "Cancel Downloads" }
-        if summary.isFullyDownloaded { return "Remove Downloads" }
-        if summary.isPartiallyDownloaded { return "Download Remaining (\(summary.remaining))" }
-        return "Download All"
+        if summary.isWaiting { return "Waiting for Wi-Fi — \(summary.waiting) songs" }
+        if summary.isWorking { return "Downloading — \(summary.remaining) left" }
+        return "Songs added to this playlist download automatically."
     }
 
     private var downloadActionSymbol: String {
-        let summary = downloadSummary
-        if summary.isWorking { return "stop.circle" }
-        if summary.isFullyDownloaded { return "trash" }
-        return "arrow.down.circle"
+        isKeptDownloaded ? "trash" : "arrow.down.circle"
     }
 
     private func togglePlaylistDownload() {
-        let tracks = songs
-        let summary = downloadSummary
-        Task {
-            if summary.isWorking {
-                await LibraryActions.shared.cancelDownloads(songs: tracks)
-            } else if summary.isFullyDownloaded {
-                await LibraryActions.shared.removeDownloads(songs: tracks)
-            } else {
-                await LibraryActions.shared.downloadRemaining(songs: tracks)
-            }
-        }
+        guard let playlist = playlists.first else { return }
+        let keep = !playlist.keepDownloaded
+        Task { await LibraryActions.shared.setKeepDownloaded(keep, for: playlist) }
     }
 
     // MARK: - Playback
@@ -237,5 +238,11 @@ struct PlaylistDetailView: View {
         let items = songs.map(QueueItem.from)
         let index = songs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         player.play(items: items, startAt: index)
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

@@ -516,6 +516,8 @@ public final class Playlist {
     public var duration: TimeInterval
     /// Subsonic `coverArt` / Ampache `art` token (or first-song fallback).
     public var artworkToken: String?
+    /// Keep every track in this playlist on disk, including ones added later.
+    public var keepDownloaded: Bool = false
     public var updatedAt: Date
 
     public var account: Account?
@@ -531,6 +533,7 @@ public final class Playlist {
         self.isEditable = isEditable
         self.songCount = 0
         self.duration = 0
+        self.keepDownloaded = false
         self.updatedAt = .now
         self.account = account
         self.compoundRemoteId = Playlist.makeCompoundRemoteId(account: account, remoteId: remoteId)

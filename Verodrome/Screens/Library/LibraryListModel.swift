@@ -76,6 +76,14 @@ final class LibrarySectionCache {
         ) { _ in
             Task { @MainActor in LibrarySectionCache.shared.pages.removeAll() }
         }
+        // Playlist song counts (and membership) change without a full library sync.
+        NotificationCenter.default.addObserver(
+            forName: .playlistItemsChanged,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in LibrarySectionCache.shared.removeKeys(prefixedBy: "playlists.") }
+        }
     }
 
     func page<Item: LibraryRow>(for key: String) -> LibraryListPage<Item>? {
@@ -84,6 +92,10 @@ final class LibrarySectionCache {
 
     func store<Item: LibraryRow>(_ page: LibraryListPage<Item>, for key: String) {
         pages[key] = page
+    }
+
+    func removeKeys(prefixedBy prefix: String) {
+        pages = pages.filter { !$0.key.hasPrefix(prefix) }
     }
 }
 

@@ -6,6 +6,8 @@ public enum DownloadStatus: Equatable, Sendable {
     case none
     /// Queued behind the concurrency limit — no bytes yet.
     case pending
+    /// Held back by the Wi-Fi-only setting until an unmetered connection arrives.
+    case waiting
     /// 0...1. Stays at 0 until the server reports a content length.
     case downloading(Double)
     /// Some, but not all, tracks of an album/playlist are on disk.
@@ -24,6 +26,8 @@ public final class DownloadCenter: ObservableObject {
 
     /// Accepted by the download queue but not yet started.
     @Published public private(set) var pendingIds: Set<String> = []
+    /// Automatic downloads the Wi-Fi-only setting is holding back.
+    @Published public private(set) var deferredIds: Set<String> = []
     /// playableId → progress 0...1
     @Published public private(set) var activeDownloads: [String: Double] = [:]
     @Published public private(set) var failedIds: Set<String> = []
@@ -36,13 +40,27 @@ public final class DownloadCenter: ObservableObject {
     public func enqueued(playableId: String) {
         failedIds.remove(playableId)
         completedIds.remove(playableId)
+        deferredIds.remove(playableId)
         pendingIds.insert(playableId)
+    }
+
+    /// Accepted, but parked until the connection allows automatic downloads.
+    public func deferDownload(playableId: String) {
+        failedIds.remove(playableId)
+        completedIds.remove(playableId)
+        pendingIds.remove(playableId)
+        deferredIds.insert(playableId)
+    }
+
+    public func clearDeferred(playableId: String) {
+        deferredIds.remove(playableId)
     }
 
     public func begin(playableId: String) {
         failedIds.remove(playableId)
         completedIds.remove(playableId)
         pendingIds.remove(playableId)
+        deferredIds.remove(playableId)
         activeDownloads[playableId] = 0
     }
 
@@ -52,6 +70,7 @@ public final class DownloadCenter: ObservableObject {
 
     public func complete(playableId: String) {
         pendingIds.remove(playableId)
+        deferredIds.remove(playableId)
         activeDownloads.removeValue(forKey: playableId)
         failedIds.remove(playableId)
         completedIds.insert(playableId)
@@ -59,12 +78,14 @@ public final class DownloadCenter: ObservableObject {
 
     public func fail(playableId: String) {
         pendingIds.remove(playableId)
+        deferredIds.remove(playableId)
         activeDownloads.removeValue(forKey: playableId)
         failedIds.insert(playableId)
     }
 
     public func clearActive(playableId: String) {
         pendingIds.remove(playableId)
+        deferredIds.remove(playableId)
         activeDownloads.removeValue(forKey: playableId)
         failedIds.remove(playableId)
         completedIds.remove(playableId)
@@ -72,6 +93,7 @@ public final class DownloadCenter: ObservableObject {
 
     public func clearAllActive() {
         pendingIds.removeAll()
+        deferredIds.removeAll()
         activeDownloads.removeAll()
     }
 
@@ -102,7 +124,10 @@ public final class DownloadCenter: ObservableObject {
     public func status(for playableId: String, isDownloaded: Bool) -> DownloadStatus {
         if let progress = activeDownloads[playableId] { return .downloading(progress) }
         if pendingIds.contains(playableId) { return .pending }
+        // Ranked below `downloaded` so a stale deferral can never mask a file that is
+        // already on disk.
         if isDownloaded || completedIds.contains(playableId) { return .downloaded }
+        if deferredIds.contains(playableId) { return .waiting }
         if failedIds.contains(playableId) { return .failed }
         return .none
     }

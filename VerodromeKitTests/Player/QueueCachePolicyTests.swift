@@ -351,7 +351,7 @@ final class QueueCachePolicyTests: XCTestCase {
         var enqueued: [String] { lock.withLock { _enqueued } }
         var cancelledExcept: Set<String>? { lock.withLock { _cancelledExcept } }
 
-        func enqueue(playableId: String, kind: PlayableRef.Kind, reason: CacheReason) async {
+        func enqueue(playableId: String, kind: PlayableRef.Kind, reason: CacheReason, force: Bool) async {
             lock.withLock { _enqueued.append(playableId) }
         }
         func cancel(playableId: String) async {}

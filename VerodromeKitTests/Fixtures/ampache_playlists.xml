@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <total_count>3</total_count>
+  <playlist id="12">
+    <name>Road Trip</name>
+    <owner>vero</owner>
+    <items>24</items>
+    <songcount>24</songcount>
+    <type>private</type>
+  </playlist>
+  <playlist id="smart_3">
+    <name>Highest Rated</name>
+    <owner>vero</owner>
+    <items>50</items>
+    <songcount>50</songcount>
+    <type>public</type>
+  </playlist>
+  <playlist id="41">
+    <name>Shared Mix</name>
+    <owner>someone_else</owner>
+    <items>9</items>
+    <songcount>9</songcount>
+    <type>public</type>
+  </playlist>
+</root>

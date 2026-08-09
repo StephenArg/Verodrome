@@ -22,6 +22,7 @@ struct AlbumsView: View {
         downloadCenter.workingIds.count
             &+ downloadCenter.completedIds.count
             &+ downloadCenter.failedIds.count
+            &+ downloadCenter.deferredIds.count
     }
 
     var body: some View {
@@ -115,7 +116,8 @@ struct AlbumsView: View {
         switch sort {
         case .ratingHighest:
             [SortDescriptor(\Album.rating, order: .reverse), SortDescriptor(\Album.sortTitle)]
-        default:
+        case .titleAZ, .titleZA, .titleSymbolsFirst, .durationLongest, .durationShortest,
+             .playsMost, .smartPlaylistsFirst:
             [SortDescriptor(\Album.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
         }
     }

@@ -15,7 +15,7 @@ struct DownloadsView: View {
 
     var body: some View {
         Group {
-            if downloadedRows.isEmpty && activeEntries.isEmpty && downloadCenter.failedIds.isEmpty {
+            if downloadedRows.isEmpty && activeEntries.isEmpty && waitingRows.isEmpty && downloadCenter.failedIds.isEmpty {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
@@ -39,6 +39,23 @@ struct DownloadsView: View {
                                         .opacity(entry.progress == nil ? 0.4 : 1)
                                 }
                             }
+                        }
+                    }
+
+                    if !waitingRows.isEmpty {
+                        Section {
+                            ForEach(waitingRows, id: \.id) { row in
+                                EntityRow(
+                                    title: row.title,
+                                    subtitle: row.subtitle,
+                                    artworkURL: row.artworkToken,
+                                    downloadStatus: .waiting
+                                )
+                            }
+                        } header: {
+                            Text("Waiting for Wi-Fi")
+                        } footer: {
+                            Text("These start once you're on Wi-Fi. Change this under Settings › Library › Downloads.")
                         }
                     }
 
@@ -97,7 +114,15 @@ struct DownloadsView: View {
     /// Changes whenever a download starts, finishes, or fails — each of those moves a
     /// song between the sections below.
     private var reloadKey: String {
-        "\(downloadCenter.completedIds.count)-\(downloadCenter.workingIds.count)-\(downloadCenter.failedIds.count)"
+        "\(downloadCenter.completedIds.count)-\(downloadCenter.workingIds.count)-\(downloadCenter.failedIds.count)-\(downloadCenter.deferredIds.count)"
+    }
+
+    /// Downloads parked until Wi-Fi. They have no file yet, so the metadata comes from
+    /// the same in-flight lookup the In Progress section uses.
+    private var waitingRows: [DownloadedSongRow] {
+        downloadCenter.deferredIds
+            .compactMap { row(forRemoteId: $0) }
+            .sorted { $0.title < $1.title }
     }
 
     /// Active and queued downloads with whatever metadata we have for them. `progress`
@@ -122,7 +147,9 @@ struct DownloadsView: View {
         loadGeneration += 1
         let generation = loadGeneration
         let rows = await Self.fetchDownloaded()
-        let pendingIds = downloadCenter.workingIds.union(downloadCenter.failedIds)
+        let pendingIds = downloadCenter.workingIds
+            .union(downloadCenter.failedIds)
+            .union(downloadCenter.deferredIds)
             .subtracting(rows.map(\.remoteId))
         let pending = pendingIds.isEmpty ? [:] : await Self.fetchRows(remoteIds: pendingIds)
         guard generation == loadGeneration else { return }

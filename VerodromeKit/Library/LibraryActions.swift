@@ -81,12 +81,20 @@ public final class LibraryActions {
 
     /// Marks the song as wanted offline and queues the transfer. `relFilePath` — and
     /// therefore `isDownloadedLocally` — is only written once the bytes land.
-    public func download(song: Song) async {
+    ///
+    /// When downloads are Wi-Fi only, the transfer waits until an unmetered connection
+    /// unless `force` is true ("Download Now" on a waiting track).
+    public func download(song: Song, force: Bool = false) async {
         song.cacheReason = .userDownload
         song.isUserPinned = true
         song.cacheTouchedDate = .now
         try? repository?.save()
-        await downloader?.enqueue(playableId: song.remoteId, kind: .song, reason: .userDownload)
+        await downloader?.enqueue(
+            playableId: song.remoteId,
+            kind: .song,
+            reason: .userDownload,
+            force: force
+        )
     }
 
     public func cancelDownload(song: Song) async {
@@ -115,6 +123,9 @@ public final class LibraryActions {
     public func downloadOrCancel(song: Song) async {
         if DownloadCenter.shared.isWorking(on: song.remoteId) {
             await cancelDownload(song: song)
+        } else if DownloadCenter.shared.deferredIds.contains(song.remoteId) {
+            // Waiting on Wi-Fi. Asking again means "now", not "never".
+            await download(song: song, force: true)
         } else if DownloadCenter.shared.failedIds.contains(song.remoteId) {
             await download(song: song)
         } else if song.isDownloadedLocally || song.isDownloadRequested {
@@ -141,9 +152,54 @@ public final class LibraryActions {
     }
 
     public func cancelDownloads(songs: [Song]) async {
-        for song in songs where DownloadCenter.shared.isWorking(on: song.remoteId) {
+        let center = DownloadCenter.shared
+        for song in songs
+        where center.isWorking(on: song.remoteId) || center.deferredIds.contains(song.remoteId) {
             await cancelDownload(song: song)
         }
+    }
+
+    // MARK: - Playlist downloads
+
+    /// Marks a playlist to be kept on disk, tracks and all, including any added later.
+    ///
+    /// Turning it off deletes the files this playlist was the reason for. Songs held for
+    /// another reason — downloaded by hand, or in a second playlist that is still kept —
+    /// are left alone, so untoggling one playlist can't take a download the user asked for
+    /// somewhere else with it.
+    public func setKeepDownloaded(_ keep: Bool, for playlist: Playlist) async {
+        playlist.keepDownloaded = keep
+        playlist.updatedAt = .now
+        try? repository?.save()
+
+        if keep {
+            await kit.playlistDownloads?.reconcile()
+            return
+        }
+
+        let songs = playlist.items.compactMap(\.song)
+        await cancelDownloads(songs: songs)
+        let stillWanted = songIdsKeptByDownloadedPlaylists(excluding: playlist)
+        for song in songs
+        where song.cacheReason == .playlistCache && !stillWanted.contains(song.remoteId) {
+            await removeDownload(song: song)
+        }
+    }
+
+    /// Remote ids covered by the other playlists still marked `keepDownloaded`.
+    private func songIdsKeptByDownloadedPlaylists(excluding playlist: Playlist) -> Set<String> {
+        guard let repository,
+              let account = try? kit.activeAccount(),
+              let playlists = try? repository.fetchPlaylists(account: account)
+        else { return [] }
+        var ids: Set<String> = []
+        for other in playlists
+        where other.keepDownloaded && other.compoundRemoteId != playlist.compoundRemoteId {
+            for song in other.items.compactMap(\.song) {
+                ids.insert(song.remoteId)
+            }
+        }
+        return ids
     }
 
     /// The reason the library has on record for a song it believes is on disk, if any.
@@ -223,8 +279,52 @@ public final class LibraryActions {
         }
         try repository?.replacePlaylistItems(playlist, with: existing)
         if let syncer {
+            // Reconcile with the server. updatePlaylist used to return ok while ignoring
+            // our song ids (wrong query encoding); without this pull the local rewrite
+            // was the only "proof" the add worked.
+            try await syncer.syncPlaylistDown(id: playlist.remoteId)
+            kit.storage?.mainContext.processPendingChanges()
+        }
+    }
+
+    /// Playlists the server refused to change during this run.
+    ///
+    /// Deliberately not persisted. It is an inference drawn from one failure, and a wrong
+    /// one written to the store would keep hiding a perfectly editable playlist long after
+    /// the cause was gone. Losing it at launch costs at most one repeated error message.
+    public private(set) var playlistsRejectedByServer: Set<String> = []
+
+    /// Records that the server refused to edit this playlist.
+    ///
+    /// An older Navidrome reports nothing that identifies a smart playlist, so a rejection
+    /// is the only signal there is. Someone else's playlist is refused the same way and the
+    /// two are indistinguishable from here, which is why this claims nothing beyond "this
+    /// server would not accept the change".
+    ///
+    /// Returns true when `error` came from the server rather than the network, since a
+    /// dropped connection says nothing about whether the playlist can be edited.
+    @discardableResult
+    public func notePlaylistEditRejected(_ playlist: Playlist, error: any Error) -> Bool {
+        guard let parseError = error as? XmlParseError, case .serverError = parseError else { return false }
+        playlistsRejectedByServer.insert(playlist.remoteId)
+        // The membership index only counts playlists that can be edited, so this changes
+        // the answer it should be giving.
+        NotificationCenter.default.post(name: .playlistItemsChanged, object: nil)
+        return true
+    }
+
+    /// Removes every entry for `song` from `playlist`.
+    ///
+    /// The server addresses entries by position, so the local order is refreshed first —
+    /// acting on a stale copy would delete whatever track happens to sit at that index now.
+    public func removeSong(_ song: Song, from playlist: Playlist) async throws {
+        if let syncer {
             try? await syncer.syncPlaylistDown(id: playlist.remoteId)
         }
+        let ordered = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        let indices = ordered.indices.filter { ordered[$0].remoteId == song.remoteId }
+        guard !indices.isEmpty else { return }
+        try await removeSongs(at: indices, from: playlist)
     }
 
     public func removeSongs(at entryIndices: [Int], from playlist: Playlist) async throws {

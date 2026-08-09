@@ -236,17 +236,27 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             if let artId = item.artId, !artId.isEmpty {
                 playlist.artworkToken = artId
             }
-            if let songCount = item.songCount {
-                playlist.songCount = songCount
-            }
+            // A smart playlist stays smart even if a later response omits the marker.
+            if item.isSmart { playlist.isSmart = true }
+            // Taken only from what the server states, and re-derived on every sync so a
+            // wrong answer can't outlive the response that caused it. Comparing `owner`
+            // against the account name was tried and is not safe: the server reports its
+            // own canonical spelling, and guessing wrong hides playlists that are fine to
+            // edit. `readonly` already covers other people's playlists on servers that
+            // report it, and a refused edit covers the ones that don't.
+            playlist.isEditable = !(playlist.isSmart || item.isReadOnly)
             if !item.songIds.isEmpty {
                 let songs = item.songIds.compactMap { try? repository.resolveSong(remoteId: $0, account: account) }
                 try repository.replacePlaylistItems(playlist, with: songs)
-                if playlist.artworkToken == nil {
+                if playlist.artworkToken == nil || playlist.artworkToken?.isEmpty == true {
                     playlist.artworkToken = songs
                         .compactMap { $0.artworkToken ?? $0.album?.artworkToken }
                         .first
                 }
+            } else if let songCount = item.songCount, playlist.items.isEmpty {
+                // Catalog responses have no entries. When we already hold a detailed track
+                // list locally (after add/remove), that count is fresher than getPlaylists.
+                playlist.songCount = songCount
             }
         }
         onProgress?("Playlists: \(playlists.count)")

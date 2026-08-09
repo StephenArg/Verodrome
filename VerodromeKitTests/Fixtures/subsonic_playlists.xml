@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="navidrome">
+  <playlists>
+    <playlist id="pl-1" name="Road Trip" songCount="24" duration="5400" owner="vera" public="false" created="2026-01-04T10:00:00Z" changed="2026-08-01T12:00:00Z" coverArt="pl-pl-1"/>
+    <playlist id="pl-2" name="Highest Rated" songCount="50" duration="11000" owner="vera" public="true" created="2026-01-04T10:00:00Z" changed="2026-08-09T12:00:00Z" readonly="true" validUntil="2026-08-09T13:00:00Z"/>
+    <playlist id="pl-3" name="Shared Mix" songCount="9" duration="2000" owner="someone_else" public="true" created="2026-02-02T10:00:00Z" changed="2026-02-02T10:00:00Z" readonly="true"/>
+  </playlists>
+</subsonic-response>

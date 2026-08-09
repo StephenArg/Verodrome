@@ -49,6 +49,27 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertNil(try AmpacheParsers.parseTotalCount(data: try fixture("ampache_artists.xml")))
     }
 
+    /// Ampache serves smart playlists from the same endpoint as ordinary ones and only
+    /// distinguishes them by a prefixed id. That prefix is the sole chance to know a
+    /// playlist can't be added to before the server rejects the attempt.
+    func testPlaylistParserFlagsSmartPlaylistsAndOwners() throws {
+        let data = try fixture("ampache_playlists.xml")
+        let playlists = try AmpacheParsers.parsePlaylists(data: data)
+        XCTAssertEqual(playlists.count, 3)
+
+        XCTAssertEqual(playlists[0].id, "12")
+        XCTAssertEqual(playlists[0].name, "Road Trip")
+        XCTAssertEqual(playlists[0].songCount, 24)
+        XCTAssertEqual(playlists[0].owner, "vero")
+        XCTAssertFalse(playlists[0].isSmart)
+
+        XCTAssertEqual(playlists[1].id, "smart_3")
+        XCTAssertTrue(playlists[1].isSmart)
+
+        XCTAssertEqual(playlists[2].owner, "someone_else")
+        XCTAssertFalse(playlists[2].isSmart)
+    }
+
     func testSongLyricsParser() throws {
         let data = try fixture("ampache_song_lyrics.xml")
         let lyrics = try AmpacheParsers.parseSongLyrics(data: data)

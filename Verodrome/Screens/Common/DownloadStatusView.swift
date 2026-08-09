@@ -21,6 +21,10 @@ struct DownloadStatusIcon: View {
     /// stay visible without matching a keep-forever download.
     private static let cachedAccentOpacity: Double = 0.6
 
+    /// A download waiting on Wi-Fi shows the shape it will end up with, drained of the
+    /// accent — it reads as "this will be downloaded" without claiming it already is.
+    private var waitingTint: Color { Color.secondary }
+
     private var lineWidth: CGFloat { max(1.5, size / 11) }
 
     var body: some View {
@@ -28,6 +32,11 @@ struct DownloadStatusIcon: View {
             switch status {
             case .pending:
                 IndeterminateRing(lineWidth: lineWidth, tint: tint)
+            case .waiting:
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: size))
+                    .foregroundStyle(waitingTint)
+                    .transition(.opacity.combined(with: .scale))
             case .downloading(let progress):
                 ProgressRing(progress: progress, lineWidth: lineWidth, tint: tint)
             case .partial:
@@ -150,6 +159,7 @@ struct SongDownloadStatusView: View {
     private var accessibilityLabel: String {
         switch status {
         case .pending, .downloading: return "Cancel Download"
+        case .waiting: return "Waiting for Wi-Fi"
         case .partial: return "Partially Downloaded"
         case .cached: return "Cached"
         case .downloaded: return "Remove Download"
@@ -166,6 +176,8 @@ struct SongsDownloadSummary {
     let total: Int
     let downloaded: Int
     let working: Int
+    /// Tracks the Wi-Fi-only setting is holding back.
+    let waiting: Int
     let failed: Int
     /// Combined 0...1 across the batch while anything is transferring.
     let progress: Double?
@@ -203,11 +215,13 @@ struct SongsDownloadSummary {
         total = max(trackTotal, ids.count)
         downloaded = effectiveDownloaded.count
         working = ids.filter { center.isWorking(on: $0) }.count
+        waiting = ids.filter { center.deferredIds.contains($0) }.count
         failed = ids.filter { center.failedIds.contains($0) }.count
         progress = center.batchProgress(for: ids, downloadedIds: effectiveDownloaded)
     }
 
     var isWorking: Bool { working > 0 }
+    var isWaiting: Bool { waiting > 0 }
     var isFullyDownloaded: Bool { total > 0 && downloaded >= total }
     var isPartiallyDownloaded: Bool { downloaded > 0 && downloaded < total }
     var remaining: Int { max(0, total - downloaded) }
@@ -215,6 +229,9 @@ struct SongsDownloadSummary {
     var status: DownloadStatus {
         if isWorking { return .downloading(progress ?? 0) }
         if isFullyDownloaded { return .downloaded }
+        // Ahead of `partial`: a batch stalled on cellular should say so rather than look
+        // like a half-finished download that simply stopped.
+        if isWaiting { return .waiting }
         if isPartiallyDownloaded { return .partial }
         if failed > 0 { return .failed }
         return .none

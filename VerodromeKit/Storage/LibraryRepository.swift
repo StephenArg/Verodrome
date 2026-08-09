@@ -384,8 +384,17 @@ public final class LibraryRepository {
         }
         playlist.songCount = songs.count
         playlist.duration = songs.reduce(0) { $0 + $1.playDuration }
+        // Empty playlists (and servers that omit coverArt) have no artwork of their own.
+        // Mirror the first track so the library list and membership sheet pick up a cover
+        // as soon as something is added — without overwriting a server-set token.
+        if playlist.artworkToken == nil || playlist.artworkToken?.isEmpty == true {
+            playlist.artworkToken = songs
+                .compactMap { $0.artworkToken ?? $0.album?.artworkToken }
+                .first
+        }
         playlist.updatedAt = .now
         try save()
+        NotificationCenter.default.post(name: .playlistItemsChanged, object: nil)
     }
 
     // MARK: - Podcasts & Radios

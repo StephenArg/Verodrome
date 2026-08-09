@@ -37,6 +37,22 @@ struct LibrarySettingsView: View {
                 }
             }
 
+            Section {
+                Picker("Download Over", selection: $settings.automaticDownloadNetwork) {
+                    ForEach(AutomaticDownloadNetwork.allCases, id: \.self) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .onChange(of: settings.automaticDownloadNetwork) { _, _ in
+                    settings.save()
+                    Task { await VerodromeKit.shared.downloadNetworkPolicy?.apply() }
+                }
+            } header: {
+                Text("Downloads")
+            } footer: {
+                Text("Albums, playlists, and songs wait for Wi-Fi when Only on Wi-Fi is selected. Tap Download Now on a waiting track to start it over cellular.")
+            }
+
             Section("Home") {
                 NavigationLink { HomeEditorView() } label: {
                     Text("Customize Home Sections")
