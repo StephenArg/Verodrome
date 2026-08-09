@@ -13,6 +13,9 @@ struct LargeArtworkView: View {
     /// art rather than a sliver.
     private let minimumSide: CGFloat = 140
 
+    /// Short enough that a run of skips doesn't stack a backlog of half-finished slides.
+    private static let slideDuration: TimeInterval = 0.22
+
     /// The cover currently parked in the hero slot.
     @State private var shownTrackID: String?
     @State private var shownURL: String?
@@ -24,6 +27,10 @@ struct LargeArtworkView: View {
     @State private var leavingURL: String?
     @State private var leavingSymbol: String = "music.note"
     @State private var leavingOffset: CGFloat = 0
+
+    /// Bumped on every skip so a completion from an interrupted slide can't clear the
+    /// cover that replaced it.
+    @State private var slideGeneration = 0
 
     var body: some View {
         // Explicit offsets rather than `.transition(.move)`: SwiftUI latches the removal
@@ -41,6 +48,7 @@ struct LargeArtworkView: View {
                 if leavingTrackID != nil {
                     cover(url: leavingURL, symbol: leavingSymbol)
                         .offset(x: leavingOffset)
+                        .allowsHitTesting(false)
                 }
 
                 cover(url: shownURL, symbol: shownSymbol)
@@ -55,44 +63,59 @@ struct LargeArtworkView: View {
                 shownSymbol = symbol
             }
             .onChange(of: trackID) { _, newID in
-                guard newID != shownTrackID else {
-                    shownURL = urlString
-                    shownSymbol = symbol
-                    return
-                }
-                // First paint after appear with a nil → value change: no slide.
-                guard shownTrackID != nil else {
-                    shownTrackID = newID
-                    shownURL = urlString
-                    shownSymbol = symbol
-                    return
-                }
-
-                let outgoingEnd: CGFloat = slideDirection == .forward ? -width : width
-                let incomingStart: CGFloat = slideDirection == .forward ? width : -width
-
-                leavingTrackID = shownTrackID
-                leavingURL = shownURL
-                leavingSymbol = shownSymbol
-                leavingOffset = 0
-
-                shownTrackID = newID
-                shownURL = urlString
-                shownSymbol = symbol
-                shownOffset = incomingStart
-
-                withAnimation(.easeInOut(duration: 0.32)) {
-                    shownOffset = 0
-                    leavingOffset = outgoingEnd
-                } completion: {
-                    leavingTrackID = nil
-                    leavingURL = nil
-                    leavingOffset = 0
-                }
+                beginSlide(to: newID, width: width)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .frame(minHeight: minimumSide)
+    }
+
+    private func beginSlide(to newID: String?, width: CGFloat) {
+        guard newID != shownTrackID else {
+            shownURL = urlString
+            shownSymbol = symbol
+            return
+        }
+        // First paint after appear with a nil → value change: no slide.
+        guard shownTrackID != nil else {
+            shownTrackID = newID
+            shownURL = urlString
+            shownSymbol = symbol
+            return
+        }
+
+        let outgoingEnd: CGFloat = slideDirection == .forward ? -width : width
+        let incomingStart: CGFloat = slideDirection == .forward ? width : -width
+
+        // Promote whatever is on screen *at its current offset* — resetting to 0 mid-slide
+        // is what made rapid skips jump. Drop the previous leaving cover; one exit lane.
+        leavingTrackID = shownTrackID
+        leavingURL = shownURL
+        leavingSymbol = shownSymbol
+        leavingOffset = shownOffset
+
+        shownTrackID = newID
+        shownURL = urlString
+        shownSymbol = symbol
+
+        // Park the incoming cover off-screen without animating from the old offset.
+        var prep = Transaction()
+        prep.disablesAnimations = true
+        withTransaction(prep) {
+            shownOffset = incomingStart
+        }
+
+        slideGeneration += 1
+        let generation = slideGeneration
+        withAnimation(.easeOut(duration: Self.slideDuration)) {
+            shownOffset = 0
+            leavingOffset = outgoingEnd
+        } completion: {
+            guard generation == slideGeneration else { return }
+            leavingTrackID = nil
+            leavingURL = nil
+            leavingOffset = 0
+        }
     }
 
     private func cover(url: String?, symbol: String) -> some View {
