@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="1.16.1">
+  <song id="s9" title="Liked Track" albumId="al1" album="Album" artistId="ar1" artist="Alpha" duration="120" userRating="5" starred="2024-01-02T03:04:05Z"/>
+</subsonic-response>

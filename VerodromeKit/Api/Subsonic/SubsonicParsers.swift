@@ -127,6 +127,16 @@ enum SubsonicParsers {
         .filter { !$0.id.isEmpty }
     }
 
+    /// Songs from `getStarred2` / `getStarred`. Same response as albums; both are needed
+    /// so an unlike done on the server can clear a local heart.
+    static func parseStarredSongs(data: Data) throws -> [IngestSong] {
+        try checkForError(data: data)
+        let root = try GenericXmlParser().parse(data: data)
+        let starred = root.firstChild(named: "starred2") ?? root.firstChild(named: "starred")
+        let songs = starred?.children(named: "song") ?? []
+        return songs.map { song($0) }.filter { !$0.id.isEmpty }
+    }
+
     static func parseAlbumDetail(data: Data) throws -> (albums: [IngestAlbum], songs: [IngestSong]) {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
@@ -406,14 +416,28 @@ enum SubsonicParsers {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
         guard let songNode = root.firstChild(named: "song") else { return nil }
-        return song(songNode)
+        // getSong always states starring: missing `starred` means unliked.
+        return song(songNode, favoriteAbsentMeans: false)
     }
 
     /// Maps a `<song>` / `<entry>` node, which carries the same attributes wherever it
     /// appears. `album` supplies the fields a song nested in an album detail response
     /// leaves off, since the parent already states them.
-    private static func song(_ node: XmlNode, in album: IngestAlbum? = nil) -> IngestSong {
-        IngestSong(
+    ///
+    /// `favoriteAbsentMeans` controls how a missing `starred` attribute is read:
+    /// `false` for getSong (authoritative), `nil` for album/list payloads that may omit it.
+    private static func song(
+        _ node: XmlNode,
+        in album: IngestAlbum? = nil,
+        favoriteAbsentMeans: Bool? = nil
+    ) -> IngestSong {
+        let isFavorite: Bool?
+        if node.attributes["starred"] != nil {
+            isFavorite = true
+        } else {
+            isFavorite = favoriteAbsentMeans
+        }
+        return IngestSong(
             id: node.attributes["id"] ?? "",
             title: node.attributes["title"] ?? "",
             albumId: album?.id ?? node.attributes["albumId"],
@@ -427,7 +451,8 @@ enum SubsonicParsers {
             bitrate: intValue(node.attributes["bitRate"]),
             format: node.attributes["suffix"] ?? node.attributes["contentType"],
             playCount: intValue(node.attributes["playCount"]),
-            rating: rating(node.attributes["userRating"])
+            rating: rating(node.attributes["userRating"]),
+            isFavorite: isFavorite
         )
     }
 

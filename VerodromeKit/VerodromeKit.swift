@@ -26,6 +26,8 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var downloadNetworkPolicy: DownloadNetworkPolicy?
     public private(set) var artworkDownloadManager: ArtworkDownloadManager?
     public private(set) var playableCache: FilePlayableCache?
+    public private(set) var libraryMutationOutbox: LibraryMutationOutbox?
+    public private(set) var libraryMutationSyncer: LibraryMutationSyncer?
     public private(set) var scrobbleSyncer: ScrobbleSyncer?
     public private(set) var audioSessionHandler = AudioSessionHandler()
     public private(set) var nowPlayingHandler = NowPlayingInfoCenterHandler()
@@ -114,6 +116,19 @@ public final class VerodromeKit: ObservableObject {
         self.downloadNetworkPolicy = networkPolicy
         await networkPolicy.apply()
 
+        let mutationOutbox = LibraryMutationOutbox(accountKey: accountStore.activeAccountKey()?.storageKey)
+        self.libraryMutationOutbox = mutationOutbox
+        let mutationSyncer = LibraryMutationSyncer(
+            outbox: mutationOutbox,
+            monitor: networkMonitor,
+            isOfflineMode: { [weak self] in self?.settings.offlineModeEnabled ?? false },
+            syncerProvider: { [weak self] in self?.activeLibrarySyncer },
+            repositoryProvider: { [weak self] in self?.repository() },
+            accountProvider: { [weak self] in try? self?.activeAccount() },
+            onScrobbleFlush: { [weak self] in await self?.scrobbleSyncer?.flush() }
+        )
+        self.libraryMutationSyncer = mutationSyncer
+
         let bg = BackgroundLibrarySyncer(
             syncerProvider: { [weak self] in self?.activeLibrarySyncer },
             autoDownloadProvider: { [weak self] in
@@ -146,6 +161,8 @@ public final class VerodromeKit: ObservableObject {
             // The download queue is memory only, so downloads the last session left
             // unfinished — or parked waiting for Wi-Fi — have to be put back on it.
             await playlistDownloads.resumePending()
+            // Offline favorites / playlist edits from a previous session.
+            await mutationSyncer.flush()
             // Cold launch: refresh catalog in background and resume track backfill if incomplete.
             librarySync.runBackground()
         }
@@ -174,8 +191,10 @@ public final class VerodromeKit: ObservableObject {
         await queueHandler?.flushPendingWrites()
         if forgetCurrent {
             await queueStore?.clearQueue()
+            await libraryMutationOutbox?.clear()
         }
         await queueStore?.setAccount(key?.storageKey)
+        await libraryMutationOutbox?.setAccount(key?.storageKey)
     }
 
     public func refreshLaunchPhase() {
@@ -214,6 +233,7 @@ public final class VerodromeKit: ObservableObject {
         launchPhase = .main
         NotificationCenter.default.post(name: .accountChanged, object: info)
         NotificationCenter.default.post(name: .backendAuthenticated, object: nil)
+        _ = try? await ensureActiveLibrarySyncer()
         librarySync.runBackground()
     }
 
@@ -222,6 +242,9 @@ public final class VerodromeKit: ObservableObject {
         guard let storage else { throw BackendError.unsupported }
         let syncer = try await ensureActiveLibrarySyncer()
         guard let syncer else { throw BackendError.notAuthenticated }
+
+        // Push offline writes before a catalog pull can overwrite them.
+        await libraryMutationSyncer?.flush()
 
         let progress: LibrarySyncProgressHandler = { [weak self] update in
             Task { @MainActor in
@@ -275,6 +298,8 @@ public final class VerodromeKit: ObservableObject {
         guard let storage else { throw BackendError.unsupported }
         let syncer = try await ensureActiveLibrarySyncer()
         guard let syncer else { throw BackendError.notAuthenticated }
+
+        await libraryMutationSyncer?.flush()
 
         let progress: LibrarySyncProgressHandler = { [weak self] update in
             Task { @MainActor in
@@ -359,6 +384,7 @@ public final class VerodromeKit: ObservableObject {
         _ = try await ensureActiveLibrarySyncer()
         await queueHandler?.loadFromDisk()
         await restoreParkedTrack()
+        await libraryMutationSyncer?.flush()
 
         let hasLocalLibrary: Bool
         if let account = try activeAccount(), let repo = repository() {
@@ -455,6 +481,8 @@ public final class VerodromeKit: ObservableObject {
         if didAuthenticate {
             NotificationCenter.default.post(name: .backendAuthenticated, object: nil)
         }
+        // Syncer just became available — push anything queued while offline.
+        await libraryMutationSyncer?.flush()
         return syncer
     }
 

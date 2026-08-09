@@ -195,6 +195,8 @@ public final class AudioPlayer: ObservableObject {
             PlayTrace.mark("preloadUpcoming done")
             await self.reportNowPlaying(for: item)
             PlayTrace.mark("reportNowPlaying done")
+            await self.refreshSongUserState(for: item)
+            PlayTrace.mark("refreshSongUserState done")
             if showLyrics {
                 await self.fetchLyrics(for: item)
                 PlayTrace.mark("fetchLyrics done", details: "len=\(self.lyrics.count)")
@@ -612,6 +614,39 @@ public final class AudioPlayer: ObservableObject {
         guard nowPlaying?.playableId == item.playableId else { return }
         if let text { lyrics = text }
         lyricsLoaded = true
+    }
+
+    /// Pulls favorite / rating for the track that just became current so a like changed
+    /// on the server (or another client) shows up without a full library sync.
+    private func refreshSongUserState(for item: QueueItem) async {
+        guard item.kind == .song, !item.isLiveStream else { return }
+        guard !isEffectivelyOffline else { return }
+        if let outbox = VerodromeKit.shared.libraryMutationOutbox,
+           await outbox.hasPendingSongMetadata(songId: item.playableId) {
+            return
+        }
+        guard let syncer = VerodromeKit.shared.activeLibrarySyncer else { return }
+        guard let state = try? await syncer.fetchSongUserState(playableId: item.playableId) else { return }
+        // The queue may have moved on while getSong was in flight.
+        guard nowPlaying?.playableId == item.playableId else { return }
+        guard let repository = VerodromeKit.shared.repository(),
+              let account = try? VerodromeKit.shared.activeAccount(),
+              let song = try? repository.resolveSong(remoteId: item.playableId, account: account)
+        else { return }
+
+        var changed = false
+        if let isFavorite = state.isFavorite, song.isFavorite != isFavorite {
+            song.isFavorite = isFavorite
+            changed = true
+        }
+        if let rating = state.rating, song.rating != rating {
+            song.rating = rating
+            changed = true
+        }
+        guard changed else { return }
+        song.updatedAt = .now
+        try? repository.save()
+        NotificationCenter.default.post(name: .songMetadataRefreshed, object: item.playableId)
     }
 }
 

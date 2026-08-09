@@ -11,6 +11,10 @@ struct ArtistDetailView: View {
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var artistAlbums: [Album] = []
     @State private var artistSongs: [Song] = []
+    @State private var selectedAlbum: AlbumNavigationID?
+    /// Soft track fill for the Songs section / Play — cancelled when opening an album
+    /// so SwiftData merges don't fight the navigation transition.
+    @State private var trackFillTask: Task<Void, Never>?
 
     init(artistID: String) {
         self.artistID = artistID
@@ -37,16 +41,19 @@ struct ArtistDetailView: View {
 
                 Section("Albums") {
                     ForEach(artistAlbums, id: \.compoundRemoteId) { album in
-                        NavigationLink {
-                            AlbumDetailView(albumID: album.compoundRemoteId)
+                        Button {
+                            openAlbum(album)
                         } label: {
                             EntityRow(
                                 title: album.title,
-                                subtitle: "\(album.year ?? 0)",
+                                subtitle: album.year.map(String.init) ?? "",
                                 artworkURL: album.artworkToken,
-                                downloadStatus: SongsDownloadSummary(album: album, center: downloadCenter).status
+                                // Avoid `SongsDownloadSummary(album:)` — it faults every
+                                // track relationship on each body pass while sync merges.
+                                downloadStatus: downloadStatus(for: album)
                             )
                         }
+                        .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                     }
@@ -79,11 +86,27 @@ struct ArtistDetailView: View {
         }
         .artworkTintedBackground(token: backgroundArtworkToken)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedAlbum) { album in
+            AlbumDetailView(albumID: album.id)
+        }
         .task(id: artists.first?.compoundRemoteId) {
             reloadArtistContent()
             guard let remoteId = artists.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(artistId: remoteId)
             reloadArtistContent()
+            startTrackFillIfNeeded()
+        }
+        .onChange(of: selectedAlbum) { _, album in
+            if album == nil {
+                startTrackFillIfNeeded()
+            } else {
+                trackFillTask?.cancel()
+                trackFillTask = nil
+            }
+        }
+        .onDisappear {
+            trackFillTask?.cancel()
+            trackFillTask = nil
         }
     }
 
@@ -98,7 +121,8 @@ struct ArtistDetailView: View {
     private func headerSubtitle(for artist: Artist) -> String {
         let albums = max(artist.albumCount, artistAlbums.count)
         let fromAlbumTracks = artistAlbums.reduce(0) { partial, album in
-            partial + (album.trackCount > 0 ? album.trackCount : album.songs.count)
+            // Prefer denormalized `trackCount` — never walk `album.songs` here.
+            partial + max(album.trackCount, 0)
         }
         let songs = max(artist.songCount, artistSongs.count, fromAlbumTracks)
         return "\(albums) albums · \(songs) songs"
@@ -115,20 +139,49 @@ struct ArtistDetailView: View {
             ($0.year ?? 0, $0.sortTitle) > ($1.year ?? 0, $1.sortTitle)
         }
 
-        // Songs often appear both on artist.songs and album.songs — merge without trapping.
-        var byId: [String: Song] = [:]
-        for song in artist.songs {
-            byId[song.compoundRemoteId] = song
-        }
-        for album in artist.albums {
-            for song in album.songs {
-                byId[song.compoundRemoteId] = song
-            }
-        }
-        artistSongs = byId.values.sorted {
+        // Only the artist relationship — merging every album's songs faults the whole
+        // discography on each reload while a background fill is running.
+        artistSongs = artist.songs.sorted {
             ($0.albumTitle ?? "", $0.disc ?? 0, $0.track ?? 0)
                 < ($1.albumTitle ?? "", $1.disc ?? 0, $1.track ?? 0)
         }
+    }
+
+    private func openAlbum(_ album: Album) {
+        trackFillTask?.cancel()
+        trackFillTask = nil
+        selectedAlbum = AlbumNavigationID(id: album.compoundRemoteId)
+    }
+
+    /// Fills tracks one album at a time so Play / Songs can populate without blocking
+    /// the first paint. Cancelled as soon as the user opens an album.
+    private func startTrackFillIfNeeded() {
+        trackFillTask?.cancel()
+        let albumIds = artistAlbums.map(\.remoteId)
+        guard !albumIds.isEmpty else { return }
+        trackFillTask = Task {
+            guard let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() else { return }
+            for albumId in albumIds {
+                guard !Task.isCancelled else { return }
+                try? await syncer.sync(albumId: albumId)
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                reloadArtistContent()
+            }
+        }
+    }
+
+    /// Download glyph from songs already loaded onto the artist — never from `album.songs`.
+    private func downloadStatus(for album: Album) -> DownloadStatus? {
+        let title = album.title
+        let songs = artistSongs.filter { $0.albumTitle == title }
+        guard !songs.isEmpty else { return nil }
+        return SongsDownloadSummary(
+            songRemoteIds: songs.map(\.remoteId),
+            downloadedIds: Set(songs.filter(\.isDownloadedLocally).map(\.remoteId)),
+            trackTotal: max(album.trackCount, songs.count),
+            center: downloadCenter
+        ).status
     }
 
     private func play(shuffle: Bool, artist: Artist) {
@@ -136,13 +189,28 @@ struct ArtistDetailView: View {
             shuffle ? "ArtistDetail Shuffle" : "ArtistDetail Play",
             details: "artist=\(artist.name)"
         )
-        PlayTrace.mark("mapping QueueItems", details: "count=\(artistSongs.count)")
-        let items = artistSongs.map(QueueItem.from)
-        guard !items.isEmpty else { return }
-        PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
-        PlayTrace.mark("calling player.play")
-        player.play(items: items, shuffle: shuffle)
-        router.openPlayer()
+        Task {
+            var songs = artistSongs
+            if songs.isEmpty {
+                // Play was tapped before the soft fill finished — load tracks now.
+                trackFillTask?.cancel()
+                if let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() {
+                    for album in artistAlbums {
+                        guard !Task.isCancelled else { return }
+                        try? await syncer.sync(albumId: album.remoteId)
+                    }
+                }
+                reloadArtistContent()
+                songs = artistSongs
+            }
+            PlayTrace.mark("mapping QueueItems", details: "count=\(songs.count)")
+            let items = songs.map(QueueItem.from)
+            guard !items.isEmpty else { return }
+            PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
+            PlayTrace.mark("calling player.play")
+            player.play(items: items, shuffle: shuffle)
+            router.openPlayer()
+        }
     }
 
     private func playSong(_ song: Song) {
@@ -158,4 +226,8 @@ struct ArtistDetailView: View {
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
+}
+
+private struct AlbumNavigationID: Identifiable, Hashable {
+    let id: String
 }

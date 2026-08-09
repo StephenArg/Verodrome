@@ -127,17 +127,22 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         try await ingestor.ingest(songs: songs)
     }
 
+    public func fetchSongUserState(playableId: String) async throws -> SongUserState {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+        let data = try await server.getSong(id: playableId)
+        // get_song is authoritative for flag: missing means not flagged.
+        let songs = try AmpacheParsers.parseSongs(data: data, favoriteAbsentMeans: false)
+        guard let song = songs.first else { return SongUserState() }
+        return SongUserState(isFavorite: song.isFavorite, rating: song.rating)
+    }
+
     public func sync(artistId: String) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let albumsData = try await server.getAlbums(artistId: artistId)
         let albums = try AmpacheParsers.parseAlbums(data: albumsData)
         try await ingestor.ingest(albums: albums)
-
-        for album in albums {
-            let songsData = try await server.getSongs(albumId: album.id)
-            let songs = try AmpacheParsers.parseSongs(data: songsData)
-            try await ingestor.ingest(songs: songs)
-        }
+        // Tracks load on album open / optional artist backfill — pulling every album
+        // here freezes navigation while the artist screen stays in the stack.
     }
 
     public func sync(playlistId: String) async throws {
@@ -187,10 +192,15 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
 
     public func syncFavoriteAlbums() async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
-        let data = try await server.getFlaggedAlbums(limit: 200, offset: 0)
-        let albums = try AmpacheParsers.parseAlbums(data: data)
+        let albumData = try await server.getFlaggedAlbums(limit: 200, offset: 0)
+        let albums = try AmpacheParsers.parseAlbums(data: albumData)
         try await ingestor.ingest(albums: albums)
         try await ingestor.applyFavoriteAlbums(albums.map(\.id))
+
+        let songData = try await server.getFlaggedSongs(limit: 500, offset: 0)
+        let songs = try AmpacheParsers.parseSongs(data: songData)
+        try await ingestor.ingest(songs: songs)
+        try await ingestor.applyFavoriteSongs(songs.map(\.id))
     }
 
     public func searchArtists(query: String) async throws -> [SearchArtist] {

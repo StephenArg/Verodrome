@@ -109,6 +109,13 @@ public final class AmpacheServerApi: @unchecked Sendable {
         return try await request(action: "stats", parameters: params)
     }
 
+    public func getFlaggedSongs(limit: Int = 50, offset: Int = 0) async throws -> Data {
+        var params = pageParameters(limit: limit, offset: offset)
+        params["type"] = "song"
+        params["filter"] = "flagged"
+        return try await request(action: "stats", parameters: params)
+    }
+
     /// Random songs from the whole library. Ampache re-draws the ordering on every
     /// request, so `offset` sizes the window rather than guaranteeing a fresh page —
     /// callers still have to drop repeats themselves.

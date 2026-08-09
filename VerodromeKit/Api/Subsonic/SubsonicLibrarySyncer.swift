@@ -168,6 +168,15 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         try await ingestor.ingest(songs: parsed.songs)
     }
 
+    public func fetchSongUserState(playableId: String) async throws -> SongUserState {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+        let data = try await server.getSong(id: playableId)
+        guard let song = try SubsonicParsers.parseSong(data: data) else {
+            return SongUserState()
+        }
+        return SongUserState(isFavorite: song.isFavorite, rating: song.rating)
+    }
+
     public func sync(artistId: String) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let data = try await server.getArtist(id: artistId)
@@ -176,10 +185,8 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
 
         let albums = try SubsonicParsers.parseAlbumList(data: data)
         try await ingestor.ingest(albums: albums)
-
-        for album in albums {
-            try await sync(albumId: album.id)
-        }
+        // Tracks load on album open / optional artist backfill — pulling every album
+        // here freezes navigation while the artist screen stays in the stack.
     }
 
     public func sync(playlistId: String) async throws {
@@ -229,8 +236,12 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let data = try await server.getStarred2()
         let albums = try SubsonicParsers.parseStarredAlbums(data: data)
+        let songs = try SubsonicParsers.parseStarredSongs(data: data)
         try await ingestor.ingest(albums: albums)
         try await ingestor.applyFavoriteAlbums(albums.map(\.id))
+        // Songs must reconcile too — otherwise a server-side unlike leaves the heart stuck.
+        try await ingestor.ingest(songs: songs)
+        try await ingestor.applyFavoriteSongs(songs.map(\.id))
     }
 
     public func searchArtists(query: String) async throws -> [SearchArtist] {

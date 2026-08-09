@@ -82,10 +82,21 @@ public enum LibrarySyncCatalogStage: Int, Sendable, CaseIterable {
 /// What a favorite or rating write applies to. Backends address these differently:
 /// Subsonic uses separate `id` / `albumId` / `artistId` parameters, Ampache an
 /// `object_type`.
-public enum LibraryEntityType: String, Sendable {
+public enum LibraryEntityType: String, Sendable, Codable {
     case song
     case album
     case artist
+}
+
+/// Per-song favorite / rating as reported by a single-song fetch.
+public struct SongUserState: Sendable, Equatable {
+    public let isFavorite: Bool?
+    public let rating: Int?
+
+    public init(isFavorite: Bool? = nil, rating: Int? = nil) {
+        self.isFavorite = isFavorite
+        self.rating = rating
+    }
 }
 
 /// Library synchronization and mutation operations for the active backend.
@@ -105,6 +116,10 @@ public protocol LibrarySyncer: Sendable {
     func sync(playlistId: String) async throws
     func sync(podcastId: String) async throws
 
+    /// Lightweight pull of one song's user state (favorite / rating) via getSong.
+    /// Used when the play queue advances so hearts stay in sync without a catalog sync.
+    func fetchSongUserState(playableId: String) async throws -> SongUserState
+
     /// Fetches newest albums, ingests them (with tracks when available), and returns song remote ids.
     @discardableResult
     func syncNewestAlbums(limit: Int) async throws -> [String]
@@ -113,7 +128,7 @@ public protocol LibrarySyncer: Sendable {
     @discardableResult
     func syncRecentAlbums(limit: Int) async throws -> [String]
 
-    /// Refreshes favorite albums from the server (Subsonic getStarred2 / Ampache flagged).
+    /// Refreshes favorite albums and songs from the server (Subsonic getStarred2 / Ampache flagged).
     func syncFavoriteAlbums() async throws
 
     func searchArtists(query: String) async throws -> [SearchArtist]

@@ -10,18 +10,21 @@ public final class LibraryActions {
     private var syncer: (any LibrarySyncer)? { kit.activeLibrarySyncer }
     private var repository: LibraryRepository? { kit.repository() }
     private var downloader: DownloadManager? { kit.downloadManager }
+    private var mutationOutbox: LibraryMutationOutbox? { kit.libraryMutationOutbox }
 
     private init() {}
 
     // MARK: - Favorite / Rating
 
     public func setFavorite(song: Song, isFavorite: Bool) async throws {
-        if let syncer {
-            try await syncer.setFavorite(playableId: song.remoteId, isFavorite: isFavorite)
-        }
         song.isFavorite = isFavorite
         song.updatedAt = .now
         try repository?.save()
+        try await syncOrEnqueue(
+            .setFavorite(entityId: song.remoteId, type: .song, isFavorite: isFavorite)
+        ) {
+            try await syncer?.setFavorite(playableId: song.remoteId, isFavorite: isFavorite)
+        }
     }
 
     public func toggleFavorite(song: Song) async throws {
@@ -30,21 +33,25 @@ public final class LibraryActions {
 
     public func setRating(song: Song, rating: Int) async throws {
         let clamped = max(0, min(5, rating))
-        if let syncer {
-            try await syncer.setRating(playableId: song.remoteId, rating: clamped)
-        }
         song.rating = clamped
         song.updatedAt = .now
         try repository?.save()
+        try await syncOrEnqueue(
+            .setRating(entityId: song.remoteId, type: .song, rating: clamped)
+        ) {
+            try await syncer?.setRating(playableId: song.remoteId, rating: clamped)
+        }
     }
 
     public func setFavorite(album: Album, isFavorite: Bool) async throws {
-        if let syncer {
-            try await syncer.setFavorite(entityId: album.remoteId, type: .album, isFavorite: isFavorite)
-        }
         album.isFavorite = isFavorite
         album.updatedAt = .now
         try repository?.save()
+        try await syncOrEnqueue(
+            .setFavorite(entityId: album.remoteId, type: .album, isFavorite: isFavorite)
+        ) {
+            try await syncer?.setFavorite(entityId: album.remoteId, type: .album, isFavorite: isFavorite)
+        }
     }
 
     public func toggleFavorite(album: Album) async throws {
@@ -53,12 +60,14 @@ public final class LibraryActions {
 
     public func setRating(album: Album, rating: Int) async throws {
         let clamped = max(0, min(5, rating))
-        if let syncer {
-            try await syncer.setRating(entityId: album.remoteId, type: .album, rating: clamped)
-        }
         album.rating = clamped
         album.updatedAt = .now
         try repository?.save()
+        try await syncOrEnqueue(
+            .setRating(entityId: album.remoteId, type: .album, rating: clamped)
+        ) {
+            try await syncer?.setRating(entityId: album.remoteId, type: .album, rating: clamped)
+        }
     }
 
     /// Counts a play locally as soon as it scrobbles.
@@ -248,9 +257,24 @@ public final class LibraryActions {
             throw LibraryRepositoryError.accountNotFound
         }
 
+        if shouldDeferRemoteMutation {
+            let localId = UUID().uuidString
+            await mutationOutbox?.enqueue(.createPlaylist(localId: localId, name: trimmed))
+            return try repository.getOrCreatePlaylist(remoteId: localId, name: trimmed, account: account)
+        }
+
         var remoteId = UUID().uuidString
         if let syncer {
-            remoteId = try await syncer.createPlaylist(name: trimmed)
+            do {
+                remoteId = try await syncer.createPlaylist(name: trimmed)
+            } catch {
+                if LibraryMutationSyncer.isRetriableNetworkError(error) {
+                    let localId = UUID().uuidString
+                    await mutationOutbox?.enqueue(.createPlaylist(localId: localId, name: trimmed))
+                    return try repository.getOrCreatePlaylist(remoteId: localId, name: trimmed, account: account)
+                }
+                throw error
+            }
         }
         return try repository.getOrCreatePlaylist(remoteId: remoteId, name: trimmed, account: account)
     }
@@ -258,19 +282,52 @@ public final class LibraryActions {
     public func renamePlaylist(_ playlist: Playlist, name: String) async throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if let syncer {
-            try await syncer.renamePlaylist(id: playlist.remoteId, name: trimmed)
-        }
         playlist.name = trimmed
         playlist.sortName = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         playlist.updatedAt = .now
         try repository?.save()
+        try await syncOrEnqueue(
+            .renamePlaylist(playlistId: playlist.remoteId, name: trimmed)
+        ) {
+            try await syncer?.renamePlaylist(id: playlist.remoteId, name: trimmed)
+        }
     }
 
     public func addSongs(_ songs: [Song], to playlist: Playlist) async throws {
         guard !songs.isEmpty else { return }
+        let songIds = songs.map(\.remoteId)
+
+        if shouldDeferRemoteMutation {
+            var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+            let existingIds = Set(existing.map(\.compoundRemoteId))
+            for song in songs where !existingIds.contains(song.compoundRemoteId) {
+                existing.append(song)
+            }
+            try repository?.replacePlaylistItems(playlist, with: existing)
+            await mutationOutbox?.enqueue(
+                .addToPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+            )
+            return
+        }
+
         if let syncer {
-            try await syncer.addToPlaylist(playlistId: playlist.remoteId, songIds: songs.map(\.remoteId))
+            do {
+                try await syncer.addToPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+            } catch {
+                if LibraryMutationSyncer.isRetriableNetworkError(error) {
+                    var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+                    let existingIds = Set(existing.map(\.compoundRemoteId))
+                    for song in songs where !existingIds.contains(song.compoundRemoteId) {
+                        existing.append(song)
+                    }
+                    try repository?.replacePlaylistItems(playlist, with: existing)
+                    await mutationOutbox?.enqueue(
+                        .addToPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+                    )
+                    return
+                }
+                throw error
+            }
         }
         var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
         let existingIds = Set(existing.map(\.compoundRemoteId))
@@ -318,7 +375,7 @@ public final class LibraryActions {
     /// The server addresses entries by position, so the local order is refreshed first —
     /// acting on a stale copy would delete whatever track happens to sit at that index now.
     public func removeSong(_ song: Song, from playlist: Playlist) async throws {
-        if let syncer {
+        if !shouldDeferRemoteMutation, let syncer {
             try? await syncer.syncPlaylistDown(id: playlist.remoteId)
         }
         let ordered = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
@@ -328,10 +385,43 @@ public final class LibraryActions {
     }
 
     public func removeSongs(at entryIndices: [Int], from playlist: Playlist) async throws {
-        if let syncer {
-            try await syncer.removeFromPlaylist(playlistId: playlist.remoteId, entryIndices: entryIndices)
-        }
         var songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        let removedIds = entryIndices
+            .filter { songs.indices.contains($0) }
+            .map { songs[$0].remoteId }
+        guard !removedIds.isEmpty else { return }
+
+        if shouldDeferRemoteMutation {
+            for index in entryIndices.sorted(by: >) where songs.indices.contains(index) {
+                songs.remove(at: index)
+            }
+            try repository?.replacePlaylistItems(playlist, with: songs)
+            await mutationOutbox?.enqueue(
+                .removeFromPlaylist(playlistId: playlist.remoteId, songIds: removedIds)
+            )
+            return
+        }
+
+        if let syncer {
+            do {
+                try await syncer.removeFromPlaylist(
+                    playlistId: playlist.remoteId,
+                    entryIndices: entryIndices
+                )
+            } catch {
+                if LibraryMutationSyncer.isRetriableNetworkError(error) {
+                    for index in entryIndices.sorted(by: >) where songs.indices.contains(index) {
+                        songs.remove(at: index)
+                    }
+                    try repository?.replacePlaylistItems(playlist, with: songs)
+                    await mutationOutbox?.enqueue(
+                        .removeFromPlaylist(playlistId: playlist.remoteId, songIds: removedIds)
+                    )
+                    return
+                }
+                throw error
+            }
+        }
         for index in entryIndices.sorted(by: >) where songs.indices.contains(index) {
             songs.remove(at: index)
         }
@@ -340,8 +430,29 @@ public final class LibraryActions {
 
     /// Replaces the playlist's song order on the server, then mirrors it locally.
     public func reorderPlaylist(_ playlist: Playlist, songs: [Song]) async throws {
+        let songIds = songs.map(\.remoteId)
+
+        if shouldDeferRemoteMutation {
+            try repository?.replacePlaylistItems(playlist, with: songs)
+            await mutationOutbox?.enqueue(
+                .reorderPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+            )
+            return
+        }
+
         if let syncer {
-            try await syncer.reorderPlaylist(playlistId: playlist.remoteId, songIds: songs.map(\.remoteId))
+            do {
+                try await syncer.reorderPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+            } catch {
+                if LibraryMutationSyncer.isRetriableNetworkError(error) {
+                    try repository?.replacePlaylistItems(playlist, with: songs)
+                    await mutationOutbox?.enqueue(
+                        .reorderPlaylist(playlistId: playlist.remoteId, songIds: songIds)
+                    )
+                    return
+                }
+                throw error
+            }
         }
         try repository?.replacePlaylistItems(playlist, with: songs)
         if let syncer {
@@ -349,6 +460,42 @@ public final class LibraryActions {
             // server if it dropped a duplicate or rewrote ids.
             try? await syncer.syncPlaylistDown(id: playlist.remoteId)
             kit.storage?.mainContext.processPendingChanges()
+        }
+    }
+
+    // MARK: - Offline mutation queue
+
+    /// Offline mode, no path, or no syncer yet — local write + outbox, flush later.
+    private var shouldDeferRemoteMutation: Bool {
+        guard kit.accountStore.activeAccountKey() != nil else { return false }
+        return kit.settings.offlineModeEnabled
+            || !NetworkMonitor.shared.isConnected
+            || syncer == nil
+    }
+
+    /// Runs `remote` when reachable; on offline / transient failure, queues `mutation`.
+    ///
+    /// Callers that already applied the local change use this for favorites/ratings.
+    /// Playlist methods that must stay server-first online use `shouldDeferRemoteMutation`
+    /// and handle the network-error enqueue path themselves.
+    private func syncOrEnqueue(
+        _ mutation: PendingLibraryMutation,
+        remote: () async throws -> Void
+    ) async throws {
+        guard kit.accountStore.activeAccountKey() != nil else { return }
+
+        if shouldDeferRemoteMutation {
+            await mutationOutbox?.enqueue(mutation)
+            return
+        }
+        do {
+            try await remote()
+        } catch {
+            if LibraryMutationSyncer.isRetriableNetworkError(error) {
+                await mutationOutbox?.enqueue(mutation)
+                return
+            }
+            throw error
         }
     }
 }

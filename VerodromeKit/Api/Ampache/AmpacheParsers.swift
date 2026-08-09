@@ -116,7 +116,7 @@ enum AmpacheParsers {
         }
     }
 
-    static func parseSongs(data: Data) throws -> [IngestSong] {
+    static func parseSongs(data: Data, favoriteAbsentMeans: Bool? = nil) throws -> [IngestSong] {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
         return root.descendants(named: "song").map { node in
@@ -136,9 +136,24 @@ enum AmpacheParsers {
                 bitrate: intValue(childText(node, "bitrate") ?? node.attributes["bitrate"]),
                 format: childText(node, "type") ?? node.attributes["type"],
                 playCount: intValue(childText(node, "playcount") ?? node.attributes["playcount"]),
-                rating: rating(node)
+                rating: rating(node),
+                isFavorite: favoriteFlag(node, absentMeans: favoriteAbsentMeans)
             )
         }
+    }
+
+    /// Ampache `flag` / `flagged` is 0/1 (sometimes true/false). Nil when the payload
+    /// doesn't include it, unless `absentMeans` supplies an authoritative default.
+    private static func favoriteFlag(_ node: XmlNode, absentMeans: Bool?) -> Bool? {
+        let raw = childText(node, "flag")
+            ?? node.attributes["flag"]
+            ?? childText(node, "flagged")
+            ?? node.attributes["flagged"]
+        guard let raw else { return absentMeans }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "1" || normalized == "true" || normalized == "yes" { return true }
+        if normalized == "0" || normalized == "false" || normalized == "no" { return false }
+        return absentMeans
     }
 
     static func parsePlaylists(data: Data) throws -> [IngestPlaylist] {

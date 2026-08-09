@@ -116,6 +116,25 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(entries[1].artistName, "Alpha")
     }
 
+    func testStarred2ParserReadsAlbumsAndSongs() throws {
+        let data = try fixture("subsonic_starred2.xml")
+        let albums = try SubsonicParsers.parseStarredAlbums(data: data)
+        let songs = try SubsonicParsers.parseStarredSongs(data: data)
+        XCTAssertEqual(albums.map(\.id), ["al1"])
+        XCTAssertEqual(songs.map(\.id), ["s1", "s2"])
+        XCTAssertEqual(songs[0].title, "Still Starred")
+    }
+
+    func testGetSongParserReadsStarredAndRating() throws {
+        let liked = try XCTUnwrap(SubsonicParsers.parseSong(data: fixture("subsonic_song_starred.xml")))
+        XCTAssertEqual(liked.isFavorite, true)
+        XCTAssertEqual(liked.rating, 5)
+
+        let unliked = try XCTUnwrap(SubsonicParsers.parseSong(data: fixture("subsonic_song_unstarred.xml")))
+        XCTAssertEqual(unliked.isFavorite, false)
+        XCTAssertEqual(unliked.rating, 0)
+    }
+
     /// The server type decides whether the track sync can use Navidrome's bulk endpoint
     /// instead of crawling every album, and it arrives as a root attribute — a ping
     /// response has no child elements to read it from.

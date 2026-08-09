@@ -111,6 +111,12 @@ struct PopupPlayerView: View {
                 artistCredits = resolveArtistCredits()
                 if settings.showLyricsInPlayer { player.requestLyrics() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .songMetadataRefreshed)) { note in
+                guard let playableId = note.object as? String,
+                      playableId == player.currentItem?.playableId
+                else { return }
+                currentSong = resolveCurrentSong()
+            }
             .sheet(item: $bottomPanel) { panel in
                 switch panel {
                 case .queue:

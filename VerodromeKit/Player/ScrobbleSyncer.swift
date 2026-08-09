@@ -33,10 +33,22 @@ public final class ScrobbleSyncer {
     }
 
     public func flush() async {
+        guard !pending.isEmpty else { return }
         let batch = pending
         pending.removeAll()
-        for (id, date, duration) in batch {
-            try? await uploader.uploadScrobble(id: id, at: date, duration: duration)
+        var remaining: [(String, Date, TimeInterval?)] = []
+        for (index, item) in batch.enumerated() {
+            do {
+                try await uploader.uploadScrobble(id: item.0, at: item.1, duration: item.2)
+            } catch {
+                // Keep the failed scrobble and everything after it — a network blip
+                // should not erase plays that never left the device.
+                remaining.append(contentsOf: batch[index...])
+                break
+            }
+        }
+        if !remaining.isEmpty {
+            pending.insert(contentsOf: remaining, at: 0)
         }
     }
 }

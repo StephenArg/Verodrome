@@ -201,6 +201,7 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             // must not reset plays counted locally or a rating set from this device.
             if let playCount = item.playCount { song.playCount = playCount }
             if let rating = item.rating { song.rating = rating }
+            if let isFavorite = item.isFavorite { song.isFavorite = isFavorite }
             if let bitrate = item.bitrate { song.bitrate = bitrate }
             song.contentType = item.format
             song.artistName = item.artistName
@@ -353,6 +354,23 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         for remoteId in remoteIds {
             if let album = try repository.resolveAlbum(remoteId: remoteId, account: account) {
                 album.isFavorite = true
+            }
+        }
+    }
+
+    public func applyFavoriteSongs(_ remoteIds: [String]) async throws {
+        let (repository, account) = try makeSession()
+        try repository.beginBatch()
+        defer { try? repository.endBatch() }
+        let favored = Set(remoteIds)
+        // Account-scoped: another library's likes must not clear this one's.
+        let currentlyFavorite = try repository.fetchSongs(account: account, favoritesOnly: true)
+        for song in currentlyFavorite where !favored.contains(song.remoteId) {
+            song.isFavorite = false
+        }
+        for remoteId in remoteIds {
+            if let song = try repository.resolveSong(remoteId: remoteId, account: account) {
+                song.isFavorite = true
             }
         }
     }

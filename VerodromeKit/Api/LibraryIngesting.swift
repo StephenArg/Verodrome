@@ -98,6 +98,9 @@ public struct IngestSong: Sendable, Hashable {
     public let playCount: Int?
     /// The signed-in user's 0–5 rating, nil when absent, for the same reason.
     public let rating: Int?
+    /// Whether the signed-in user starred/flagged this song. Nil when the response
+    /// doesn't speak to favorites (so a partial list can't wipe a local like).
+    public let isFavorite: Bool?
 
     public init(
         id: String,
@@ -113,7 +116,8 @@ public struct IngestSong: Sendable, Hashable {
         bitrate: Int? = nil,
         format: String? = nil,
         playCount: Int? = nil,
-        rating: Int? = nil
+        rating: Int? = nil,
+        isFavorite: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -129,6 +133,7 @@ public struct IngestSong: Sendable, Hashable {
         self.format = format
         self.playCount = playCount
         self.rating = rating
+        self.isFavorite = isFavorite
     }
 }
 
@@ -252,6 +257,8 @@ public protocol LibraryIngesting: AnyObject, Sendable {
     func applyNewestAlbumRanks(_ orderedRemoteIds: [String]) async throws
     /// Clears previous recent ranks, then assigns 1-based ranks from ordered remote album ids.
     func applyRecentAlbumRanks(_ orderedRemoteIds: [String]) async throws
-    /// Marks albums (and optionally songs) as favorites; clears favorite flag on albums not listed.
+    /// Marks albums as favorites; clears the flag on albums no longer starred on the server.
     func applyFavoriteAlbums(_ remoteIds: [String]) async throws
+    /// Marks songs as favorites; clears the flag on songs no longer starred on the server.
+    func applyFavoriteSongs(_ remoteIds: [String]) async throws
 }
