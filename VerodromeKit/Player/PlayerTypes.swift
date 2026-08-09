@@ -24,6 +24,11 @@ public enum PlayerMode: Int, Codable, CaseIterable, Sendable {
 /// Sticky playback-speed options for the current play context.
 public enum PlaybackSpeed {
     public static let options: [Float] = [2, 1.75, 1.5, 1.25, 1, 0.75, 0.5]
+    /// Per-track pool used while Random mode is on (`1x` intentionally omitted).
+    public static let randomOptions: [Float] = [
+        0.8, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9
+    ]
+    public static let randomMenuLabel = "Random"
 
     public static func clamp(_ rate: Float) -> Float {
         min(max(rate, 0.5), 2)
@@ -31,6 +36,10 @@ public enum PlaybackSpeed {
 
     public static func isEqual(_ lhs: Float, _ rhs: Float) -> Bool {
         abs(lhs - rhs) < 0.001
+    }
+
+    public static func randomRate() -> Float {
+        randomOptions.randomElement() ?? 1.1
     }
 
     public static func label(for rate: Float) -> String {

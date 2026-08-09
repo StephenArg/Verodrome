@@ -12,8 +12,10 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     /// Engine playback rate (1 = normal). May temporarily differ from `sessionPlaybackRate`
     /// while hold-to-scrub is active.
     @Published public private(set) var playbackRate: Float = 1
-    /// Sticky rate for the current play context. Re-applied on every new track start.
-    public private(set) var sessionPlaybackRate: Float = 1
+    /// Sticky rate for the current play context. Re-applied (or re-rolled) on every new track.
+    @Published public private(set) var sessionPlaybackRate: Float = 1
+    /// When true, each new track start picks a rate from `PlaybackSpeed.randomOptions`.
+    @Published public private(set) var isRandomPlaybackSpeed = false
     public var isOfflineMode = false
     public var onTrackFinished: (() -> Void)?
     /// Fires when the engine starts an entry it advanced to on its own (gapless or
@@ -229,8 +231,8 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         PlayTrace.mark("streamingPlayer.play(url:) call", details: "source=\(source)")
         streamingPlayer.play(url: url)
         ignoreFinishCallbacks = false
-        // Re-assert the context speed (engine may snap back to 1× on a new URL).
-        setRate(sessionPlaybackRate)
+        // Re-assert (or re-roll, in Random mode) — engine may snap back to 1× on a new URL.
+        applySessionRateForNewTrack()
         duration = item.isLiveStream ? 0 : item.duration
         currentTime = pendingSeek ?? 0
         stallDetector.reset()
@@ -310,8 +312,15 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         stallDetector.extendWindow()
     }
 
-    /// Sets the sticky context rate and applies it to the engine.
+    /// Enables Random mode and immediately rolls a rate for the current track.
+    public func setRandomPlaybackSpeed() {
+        isRandomPlaybackSpeed = true
+        rerollRandomSessionRate()
+    }
+
+    /// Sets a fixed sticky context rate and leaves Random mode.
     public func setSessionPlaybackRate(_ rate: Float) {
+        isRandomPlaybackSpeed = false
         sessionPlaybackRate = PlaybackSpeed.clamp(rate)
         setRate(sessionPlaybackRate)
     }
@@ -319,6 +328,21 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     /// Restores the engine to the sticky context rate after a temporary hold-speed.
     public func restoreSessionPlaybackRate() {
         setRate(sessionPlaybackRate)
+    }
+
+    /// Picks a new rate from the Random pool and applies it.
+    public func rerollRandomSessionRate() {
+        sessionPlaybackRate = PlaybackSpeed.clamp(PlaybackSpeed.randomRate())
+        setRate(sessionPlaybackRate)
+    }
+
+    /// Called when a track starts: re-roll in Random mode, otherwise re-assert sticky rate.
+    public func applySessionRateForNewTrack() {
+        if isRandomPlaybackSpeed {
+            rerollRandomSessionRate()
+        } else {
+            setRate(sessionPlaybackRate)
+        }
     }
 
     /// Sets engine playback rate. Values outside a sensible range are clamped.
@@ -493,20 +517,25 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 self.stopProgressTimer()
                 return
             }
-            // Engine can reset rate when an entry becomes audible.
-            self.streamingPlayer.rate = self.playbackRate
-            self.isPlaying = true
-            self.startProgressTimer()
             // Gapless / crossfade hand-offs never report `.eof`, so this is the only
             // signal that the engine moved on to the pre-queued entry on its own.
             // `play(item:)` clears `pendingNextURL` and sets `currentPlayURL` before
             // starting audio, so an explicit play / manual skip can never match here.
-            guard entryId.id != self.currentPlayURL,
-                  entryId.id == self.pendingNextURL?.absoluteString else { return }
-            self.currentPlayURL = entryId.id
-            self.pendingNextURL = nil
-            self.isCrossfading = false
-            self.onTrackAdvancedGaplessly?()
+            let isGaplessAdvance = entryId.id != self.currentPlayURL
+                && entryId.id == self.pendingNextURL?.absoluteString
+            if isGaplessAdvance {
+                self.currentPlayURL = entryId.id
+                self.pendingNextURL = nil
+                self.isCrossfading = false
+                // New song via gapless — re-roll before the engine rate is re-asserted.
+                self.applySessionRateForNewTrack()
+                self.onTrackAdvancedGaplessly?()
+            } else {
+                // Engine can reset rate when an entry becomes audible.
+                self.streamingPlayer.rate = self.playbackRate
+            }
+            self.isPlaying = true
+            self.startProgressTimer()
         }
     }
 

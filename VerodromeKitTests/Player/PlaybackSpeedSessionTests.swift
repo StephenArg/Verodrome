@@ -96,4 +96,53 @@ final class PlaybackSpeedSessionTests: XCTestCase {
         XCTAssertEqual(PlaybackSpeed.label(for: 0.75), ".75x")
         XCTAssertEqual(PlaybackSpeed.label(for: 0.5), ".5x")
     }
+
+    func testSetRandomPlaybackSpeedEnablesModeAndAppliesPoolRate() {
+        let facade = makeFacade()
+        facade.setRandomPlaybackSpeed()
+        XCTAssertTrue(facade.isRandomPlaybackSpeed)
+        XCTAssertTrue(facade.test_engineIsRandomSpeed)
+        XCTAssertTrue(isInRandomPool(facade.sessionPlaybackRate))
+        XCTAssertTrue(PlaybackSpeed.isEqual(facade.test_enginePlaybackRate, facade.sessionPlaybackRate))
+    }
+
+    func testFixedRateClearsRandomMode() {
+        let facade = makeFacade()
+        facade.setRandomPlaybackSpeed()
+        facade.setSessionPlaybackRate(1.5)
+        XCTAssertFalse(facade.isRandomPlaybackSpeed)
+        XCTAssertFalse(facade.test_engineIsRandomSpeed)
+        XCTAssertTrue(PlaybackSpeed.isEqual(facade.sessionPlaybackRate, 1.5))
+    }
+
+    func testContextGenerationClearsRandomMode() {
+        let facade = makeFacade()
+        facade.setRandomPlaybackSpeed()
+        facade.test_queueHandler.replaceContext(
+            with: [QueueItem(playableId: "1", title: "One")],
+            startAt: 0
+        )
+        XCTAssertFalse(facade.isRandomPlaybackSpeed)
+        XCTAssertFalse(facade.test_engineIsRandomSpeed)
+        XCTAssertTrue(PlaybackSpeed.isEqual(facade.sessionPlaybackRate, 1))
+    }
+
+    func testNewTrackRerollStaysInRandomPool() {
+        let facade = makeFacade()
+        facade.setRandomPlaybackSpeed()
+        let first = facade.sessionPlaybackRate
+        XCTAssertTrue(isInRandomPool(first))
+
+        // Simulate successive song starts without needing real audio.
+        for _ in 0..<20 {
+            facade.test_applySessionRateForNewTrack()
+            XCTAssertTrue(facade.isRandomPlaybackSpeed)
+            XCTAssertTrue(isInRandomPool(facade.sessionPlaybackRate))
+            XCTAssertTrue(PlaybackSpeed.isEqual(facade.test_engineSessionRate, facade.sessionPlaybackRate))
+        }
+    }
+
+    private func isInRandomPool(_ rate: Float) -> Bool {
+        PlaybackSpeed.randomOptions.contains { PlaybackSpeed.isEqual($0, rate) }
+    }
 }

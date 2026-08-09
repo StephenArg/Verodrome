@@ -77,6 +77,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     @Published public private(set) var statusMessage: String = ""
     /// Sticky playback speed for the current play context. Resets when the context is replaced.
     @Published public private(set) var sessionPlaybackRate: Float = 1
+    /// True while Random mode is on (per-track rolls from `PlaybackSpeed.randomOptions`).
+    @Published public private(set) var isRandomPlaybackSpeed = false
 
     /// The stored queue carries the scrub position, so it is rewritten as playback moves.
     /// Doing that per tick would be a file write a second; this interval keeps a relaunch
@@ -99,7 +101,22 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
                 )
             }
             .store(in: &cancellables)
-        // A new play context (or cleared queue) drops any sticky speed.
+        audioPlayer.backend.$sessionPlaybackRate
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rate in
+                guard let self else { return }
+                self.sessionPlaybackRate = rate
+                self.nowPlayingHandler?.updatePlaybackState(
+                    isPlaying: self.isPlaying,
+                    elapsed: self.currentTime,
+                    rate: self.audioPlayer.backend.playbackRate
+                )
+            }
+            .store(in: &cancellables)
+        audioPlayer.backend.$isRandomPlaybackSpeed
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$isRandomPlaybackSpeed)
+        // A new play context (or cleared queue) drops any sticky speed / Random mode.
         // No `receive(on:)` — queue mutations already happen on the main actor, and
         // the reset must land before the next `play(item:)` re-asserts session rate.
         audioPlayer.queueHandler.$contextGeneration
@@ -167,6 +184,12 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     var test_queueHandler: PlayQueueHandler { audioPlayer.queueHandler }
     var test_enginePlaybackRate: Float { audioPlayer.backend.playbackRate }
     var test_engineSessionRate: Float { audioPlayer.backend.sessionPlaybackRate }
+    var test_engineIsRandomSpeed: Bool { audioPlayer.backend.isRandomPlaybackSpeed }
+
+    func test_applySessionRateForNewTrack() {
+        audioPlayer.backend.applySessionRateForNewTrack()
+        sessionPlaybackRate = audioPlayer.backend.sessionPlaybackRate
+    }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
         set {
@@ -253,11 +276,24 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         )
     }
 
-    /// Sets the sticky playback speed for the current play context.
+    /// Sets a fixed sticky playback speed for the current play context (exits Random).
     public func setSessionPlaybackRate(_ rate: Float) {
-        let clamped = PlaybackSpeed.clamp(rate)
-        sessionPlaybackRate = clamped
-        audioPlayer.backend.setSessionPlaybackRate(clamped)
+        audioPlayer.backend.setSessionPlaybackRate(rate)
+        // Keep published state in sync immediately — Combine `receive(on:)` would lag a turn.
+        sessionPlaybackRate = audioPlayer.backend.sessionPlaybackRate
+        isRandomPlaybackSpeed = false
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
+    }
+
+    /// Enables Random mode and rolls a rate for the current track.
+    public func setRandomPlaybackSpeed() {
+        audioPlayer.backend.setRandomPlaybackSpeed()
+        sessionPlaybackRate = audioPlayer.backend.sessionPlaybackRate
+        isRandomPlaybackSpeed = true
         nowPlayingHandler?.updatePlaybackState(
             isPlaying: isPlaying,
             elapsed: currentTime,

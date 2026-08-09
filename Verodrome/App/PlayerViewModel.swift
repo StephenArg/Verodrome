@@ -61,6 +61,8 @@ final class PlayerViewModel: ObservableObject {
     @Published var isOfflineMode = false
     /// Sticky playback speed for the current queue context (`1` = normal).
     @Published private(set) var playbackSpeed: Float = 1
+    /// True while Random mode rolls a per-track rate from `PlaybackSpeed.randomOptions`.
+    @Published private(set) var isRandomPlaybackSpeed = false
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
@@ -74,6 +76,7 @@ final class PlayerViewModel: ObservableObject {
         self.facade = impl
         impl.$isPlaying.receive(on: DispatchQueue.main).assign(to: &$isPlaying)
         impl.$sessionPlaybackRate.receive(on: DispatchQueue.main).assign(to: &$playbackSpeed)
+        impl.$isRandomPlaybackSpeed.receive(on: DispatchQueue.main).assign(to: &$isRandomPlaybackSpeed)
         impl.$isPlaying.receive(on: DispatchQueue.main).sink { [weak self] value in
             self?.nowPlaying.isPlaying = value
         }.store(in: &cancellables)
@@ -241,11 +244,20 @@ final class PlayerViewModel: ObservableObject {
         facade?.restoreSessionPlaybackRate()
     }
 
-    /// Sets sticky playback speed for the current play context.
+    /// Sets a fixed sticky playback speed for the current play context (exits Random).
     func setPlaybackSpeed(_ rate: Float) {
         guard currentItem?.isLiveStream != true else { return }
         facade?.setSessionPlaybackRate(rate)
         playbackSpeed = facade?.sessionPlaybackRate ?? PlaybackSpeed.clamp(rate)
+        isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? false
+    }
+
+    /// Enables Random mode and rolls a rate for the current track.
+    func setPlaybackSpeedRandom() {
+        guard currentItem?.isLiveStream != true else { return }
+        facade?.setRandomPlaybackSpeed()
+        playbackSpeed = facade?.sessionPlaybackRate ?? playbackSpeed
+        isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? true
     }
 
     /// Asks the player to look up lyrics for the current track now, for when the
@@ -316,6 +328,7 @@ final class PlayerViewModel: ObservableObject {
         lyrics = ""
         statusMessage = ""
         playbackSpeed = facade?.sessionPlaybackRate ?? 1
+        isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? false
         progress.currentTime = 0
         progress.duration = 0
     }

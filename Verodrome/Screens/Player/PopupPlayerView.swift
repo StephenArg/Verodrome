@@ -198,6 +198,17 @@ struct PopupPlayerView: View {
         return lyricsAvailable ? .primary : Color.secondary.opacity(0.4)
     }
 
+    /// Matches the timer icon: accent when Random or non-1×, otherwise primary.
+    private var playbackSpeedLabelColor: Color {
+        if player.currentItem?.isLiveStream == true {
+            return Color.secondary.opacity(0.4)
+        }
+        if player.isRandomPlaybackSpeed { return themeManager.accentColor }
+        return PlaybackSpeed.isEqual(player.playbackSpeed, 1)
+            ? .primary
+            : themeManager.accentColor
+    }
+
     /// Can open lyrics when text exists, or close the preference even when it doesn't.
     private var lyricsToggleEnabled: Bool {
         lyricsAvailable || settings.showLyricsInPlayer
@@ -234,6 +245,7 @@ struct PopupPlayerView: View {
             showLyrics: settings.showLyricsInPlayer,
             hasLyrics: lyricsAvailable,
             playbackSpeed: player.playbackSpeed,
+            isRandomPlaybackSpeed: player.isRandomPlaybackSpeed,
             speedMenuEnabled: player.currentItem?.isLiveStream != true,
             onDismiss: { dismiss() },
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
@@ -242,6 +254,7 @@ struct PopupPlayerView: View {
             onOpenQueue: { bottomPanel = .queue },
             onEqualizer: { bottomPanel = .equalizer },
             onSetPlaybackSpeed: { player.setPlaybackSpeed($0) },
+            onSetPlaybackSpeedRandom: { player.setPlaybackSpeedRandom() },
             onToggleRatingStars: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     settings.showRatingStars.toggle()
@@ -327,14 +340,27 @@ struct PopupPlayerView: View {
             .disabled(!lyricsToggleEnabled)
             .accessibilityLabel(settings.showLyricsInPlayer ? "Show Artwork" : "Show Lyrics")
 
-            PlaybackSpeedMenuButton(
-                playbackSpeed: player.playbackSpeed,
-                isEnabled: player.currentItem?.isLiveStream != true,
-                accentColor: themeManager.accentColor,
-                onSelect: { player.setPlaybackSpeed($0) }
-            )
-            .frame(width: 24, height: 24)
-            .accessibilityLabel("Playback Speed")
+            HStack(spacing: 6) {
+                PlaybackSpeedMenuButton(
+                    playbackSpeed: player.playbackSpeed,
+                    isRandomPlaybackSpeed: player.isRandomPlaybackSpeed,
+                    isEnabled: player.currentItem?.isLiveStream != true,
+                    accentColor: themeManager.accentColor,
+                    onSelect: { player.setPlaybackSpeed($0) },
+                    onSelectRandom: { player.setPlaybackSpeedRandom() }
+                )
+                .frame(width: 24, height: 24)
+                .accessibilityLabel("Playback Speed")
+
+                if player.isRandomPlaybackSpeed
+                    || !PlaybackSpeed.isEqual(player.playbackSpeed, 1)
+                {
+                    Text(PlaybackSpeed.label(for: player.playbackSpeed))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(playbackSpeedLabelColor)
+                        .accessibilityLabel("Current speed \(PlaybackSpeed.label(for: player.playbackSpeed))")
+                }
+            }
 
             Spacer()
 
@@ -549,6 +575,7 @@ private struct PlayerHeader: View, Equatable {
     let showLyrics: Bool
     let hasLyrics: Bool
     let playbackSpeed: Float
+    let isRandomPlaybackSpeed: Bool
     let speedMenuEnabled: Bool
     let onDismiss: () -> Void
     let onOpenAlbum: () -> Void
@@ -557,6 +584,7 @@ private struct PlayerHeader: View, Equatable {
     let onOpenQueue: () -> Void
     let onEqualizer: () -> Void
     let onSetPlaybackSpeed: (Float) -> Void
+    let onSetPlaybackSpeedRandom: () -> Void
     let onToggleRatingStars: () -> Void
     let onToggleSongInfo: () -> Void
     let onToggleLyrics: () -> Void
@@ -599,6 +627,7 @@ private struct PlayerHeader: View, Equatable {
                         showLyrics: showLyrics,
                         hasLyrics: hasLyrics,
                         playbackSpeed: playbackSpeed,
+                        isRandomPlaybackSpeed: isRandomPlaybackSpeed,
                         speedMenuEnabled: speedMenuEnabled
                     ),
                     onShare: onShare,
@@ -614,6 +643,7 @@ private struct PlayerHeader: View, Equatable {
                     onOpenQueue: onOpenQueue,
                     onEqualizer: onEqualizer,
                     onSetPlaybackSpeed: onSetPlaybackSpeed,
+                    onSetPlaybackSpeedRandom: onSetPlaybackSpeedRandom,
                     onToggleRatingStars: onToggleRatingStars,
                     onToggleSongInfo: onToggleSongInfo,
                     onToggleLyrics: onToggleLyrics
@@ -636,6 +666,7 @@ private struct PlayerHeader: View, Equatable {
             && lhs.showLyrics == rhs.showLyrics
             && lhs.hasLyrics == rhs.hasLyrics
             && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
+            && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
             && lhs.speedMenuEnabled == rhs.speedMenuEnabled
     }
 }
@@ -653,6 +684,7 @@ private struct PlayerOverflowMenuButton: View {
         var showLyrics: Bool
         var hasLyrics: Bool
         var playbackSpeed: Float
+        var isRandomPlaybackSpeed: Bool
         var speedMenuEnabled: Bool
 
         static func == (lhs: MenuState, rhs: MenuState) -> Bool {
@@ -664,6 +696,7 @@ private struct PlayerOverflowMenuButton: View {
                 && lhs.showLyrics == rhs.showLyrics
                 && lhs.hasLyrics == rhs.hasLyrics
                 && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
+                && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
                 && lhs.speedMenuEnabled == rhs.speedMenuEnabled
         }
     }
@@ -676,6 +709,7 @@ private struct PlayerOverflowMenuButton: View {
     var onOpenQueue: () -> Void
     var onEqualizer: () -> Void
     var onSetPlaybackSpeed: (Float) -> Void
+    var onSetPlaybackSpeedRandom: () -> Void
     var onToggleRatingStars: () -> Void
     var onToggleSongInfo: () -> Void
     var onToggleLyrics: () -> Void
@@ -703,8 +737,8 @@ private struct PlayerOverflowMenuButton: View {
                     mainMenuContent
                 }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
             .fixedSize(horizontal: true, vertical: true)
             .presentationCompactAdaptation(.popover)
             .onDisappear { showingSpeedOptions = false }
@@ -768,7 +802,11 @@ private struct PlayerOverflowMenuButton: View {
                     Text("Playback Speed")
                         .font(.body)
                     Spacer(minLength: 12)
-                    Text(PlaybackSpeed.label(for: menuState.playbackSpeed))
+                    Text(
+                        menuState.isRandomPlaybackSpeed
+                            ? PlaybackSpeed.randomMenuLabel
+                            : PlaybackSpeed.label(for: menuState.playbackSpeed)
+                    )
                         .font(.body)
                         .foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
@@ -800,8 +838,8 @@ private struct PlayerOverflowMenuButton: View {
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -809,7 +847,39 @@ private struct PlayerOverflowMenuButton: View {
 
             Divider().padding(.vertical, 4)
 
+            Button {
+                showMenu = false
+                onSetPlaybackSpeedRandom()
+            } label: {
+                HStack(spacing: 12) {
+                    Text(PlaybackSpeed.randomMenuLabel)
+                        .font(.body)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: true)
+                    Spacer(minLength: 16)
+                    if menuState.isRandomPlaybackSpeed {
+                        Text(PlaybackSpeed.label(for: menuState.playbackSpeed))
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 16)
+                        .opacity(menuState.isRandomPlaybackSpeed ? 1 : 0)
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
             ForEach(Array(PlaybackSpeed.options.enumerated()), id: \.offset) { _, rate in
+                let selected = !menuState.isRandomPlaybackSpeed
+                    && PlaybackSpeed.isEqual(rate, menuState.playbackSpeed)
                 Button {
                     showMenu = false
                     onSetPlaybackSpeed(rate)
@@ -817,21 +887,25 @@ private struct PlayerOverflowMenuButton: View {
                     HStack(spacing: 12) {
                         Text(PlaybackSpeed.label(for: rate))
                             .font(.body)
-                            .frame(minWidth: 48, alignment: .leading)
-                        Spacer(minLength: 8)
+                            .lineLimit(1)
+                            .frame(minWidth: 56, alignment: .leading)
+                        Spacer(minLength: 16)
                         Image(systemName: "checkmark")
                             .font(.body.weight(.semibold))
-                            .opacity(PlaybackSpeed.isEqual(rate, menuState.playbackSpeed) ? 1 : 0)
+                            .frame(width: 16)
+                            .opacity(selected ? 1 : 0)
                     }
                     .foregroundStyle(.primary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
+        // Wide enough for "Random" + rolled rate + checkmark on one line.
+        .frame(minWidth: 220)
     }
 
     private func menuRow(
@@ -881,24 +955,57 @@ private struct PlayerOverflowMenuButton: View {
     }
 }
 
-/// Bottom-bar speed control. Custom popover (not `UIMenu`) so all rates fit without
-/// scrolling when the control sits near the bottom edge of the screen.
+/// Bottom-bar speed control. Popover hosts a discrete custom slider:
+/// `Random — 0.8x — · — 1x — · — 1.5x — · — 2x`
 private struct PlaybackSpeedMenuButton: View {
     var playbackSpeed: Float
+    var isRandomPlaybackSpeed: Bool
     var isEnabled: Bool
     /// Same accent the lyrics button uses when active.
     var accentColor: Color
     var onSelect: (Float) -> Void
+    var onSelectRandom: () -> Void
 
     @State private var showMenu = false
+    /// 0 = Random; 1...n = `sliderRates`.
+    @State private var selectedIndex = 0
+    @State private var isDragging = false
+
+    /// Fixed stops on the slider (ascending), after Random.
+    private static let sliderRates: [Float] = [0.8, 0.9, 1, 1.25, 1.5, 1.75, 2]
+    private var stepCount: Int { Self.sliderRates.count + 1 }
+
+    private static let restingThumbSize: CGFloat = 9
+    private static let draggingThumbSize: CGFloat = 15
+    private static let trackHeight: CGFloat = 3
 
     private var iconColor: Color {
         guard isEnabled else { return Color.secondary.opacity(0.4) }
+        if isRandomPlaybackSpeed { return accentColor }
         return PlaybackSpeed.isEqual(playbackSpeed, 1) ? .primary : accentColor
+    }
+
+    private var resolvedIndex: Int {
+        if isRandomPlaybackSpeed { return 0 }
+        if let match = Self.sliderRates.firstIndex(where: { PlaybackSpeed.isEqual($0, playbackSpeed) }) {
+            return match + 1
+        }
+        // Nearest stop when the rate came from the overflow menu (e.g. 0.5×).
+        var best = 0
+        var bestDelta = Float.greatestFiniteMagnitude
+        for (i, rate) in Self.sliderRates.enumerated() {
+            let delta = abs(rate - playbackSpeed)
+            if delta < bestDelta {
+                bestDelta = delta
+                best = i
+            }
+        }
+        return best + 1
     }
 
     var body: some View {
         Button {
+            selectedIndex = resolvedIndex
             showMenu = true
         } label: {
             // `timer` renders taller than neighbors at `.title3`.
@@ -907,37 +1014,120 @@ private struct PlaybackSpeedMenuButton: View {
                 .foregroundStyle(iconColor)
         }
         .disabled(!isEnabled)
-        // Grow upward from the bottom bar so the full list is on-screen.
         .popover(isPresented: $showMenu, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(PlaybackSpeed.options.enumerated()), id: \.offset) { _, rate in
-                    Button {
-                        showMenu = false
-                        onSelect(rate)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(PlaybackSpeed.label(for: rate))
-                                .font(.body)
-                                .frame(minWidth: 48, alignment: .leading)
-                            Spacer(minLength: 8)
-                            Image(systemName: "checkmark")
-                                .font(.body.weight(.semibold))
-                                .opacity(PlaybackSpeed.isEqual(rate, playbackSpeed) ? 1 : 0)
+            VStack(spacing: 6) {
+                discreteSliderTrack
+
+                HStack(spacing: 0) {
+                    ForEach(0..<stepCount, id: \.self) { index in
+                        let selected = selectedIndex == index
+                        Button {
+                            moveSelection(to: index)
+                        } label: {
+                            Text(Self.tickLabel(at: index))
+                                .font(.caption2.weight(selected ? .semibold : .regular))
+                                .foregroundStyle(selected ? accentColor : .secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
                         }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 10)
-            // Hug content so all seven rates show without a scroll view.
-            .fixedSize(horizontal: true, vertical: true)
+            .padding(.horizontal, 14)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+            .frame(width: 360)
             .presentationCompactAdaptation(.popover)
+            .onAppear { selectedIndex = resolvedIndex }
+        }
+    }
+
+    private var discreteSliderTrack: some View {
+        GeometryReader { geo in
+            let count = CGFloat(stepCount)
+            let cellWidth = geo.size.width / count
+            let thumbSize = isDragging ? Self.draggingThumbSize : Self.restingThumbSize
+            let thumbX = cellWidth * (CGFloat(selectedIndex) + 0.5)
+            let midY = geo.size.height / 2
+
+            ZStack {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.28))
+                    .frame(height: Self.trackHeight)
+
+                // Quiet ticks at each stop center so the jump targets are visible.
+                ForEach(0..<stepCount, id: \.self) { index in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.35))
+                        .frame(width: 3, height: 3)
+                        .position(x: cellWidth * (CGFloat(index) + 0.5), y: midY)
+                }
+
+                Circle()
+                    .fill(accentColor)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .shadow(color: accentColor.opacity(isDragging ? 0.35 : 0), radius: isDragging ? 4 : 0)
+                    .position(x: thumbX, y: midY)
+                    .animation(.spring(response: 0.22, dampingFraction: 0.78), value: selectedIndex)
+                    .animation(.easeOut(duration: 0.12), value: isDragging)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isDragging { isDragging = true }
+                        let raw = Int(value.location.x / cellWidth)
+                        let index = min(max(raw, 0), stepCount - 1)
+                        if index != selectedIndex {
+                            moveSelection(to: index)
+                        }
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+        }
+        .frame(height: 28)
+    }
+
+    private func moveSelection(to index: Int) {
+        guard index != selectedIndex else {
+            // Re-apply when tapping the already-selected label (no-op for rate).
+            applySliderIndex(index)
+            return
+        }
+        selectedIndex = index
+        UISelectionFeedbackGenerator().selectionChanged()
+        applySliderIndex(index)
+    }
+
+    private func applySliderIndex(_ index: Int) {
+        if index <= 0 {
+            guard !isRandomPlaybackSpeed else { return }
+            onSelectRandom()
+            return
+        }
+        let rateIndex = min(max(index - 1, 0), Self.sliderRates.count - 1)
+        let rate = Self.sliderRates[rateIndex]
+        if !isRandomPlaybackSpeed, PlaybackSpeed.isEqual(rate, playbackSpeed) { return }
+        onSelect(rate)
+    }
+
+    /// Random, then labeled majors with dots for the implied in-between stops.
+    private static func tickLabel(at index: Int) -> String {
+        if index == 0 { return PlaybackSpeed.randomMenuLabel }
+        switch index - 1 {
+        case 0: return "0.8x"
+        case 1: return "·"
+        case 2: return "1x"
+        case 3: return "·"
+        case 4: return "1.5x"
+        case 5: return "·"
+        case 6: return "2x"
+        default: return "·"
         }
     }
 }
