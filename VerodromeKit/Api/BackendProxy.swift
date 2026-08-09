@@ -42,8 +42,8 @@ public final class BackendProxy: BackendApi, @unchecked Sendable {
         activeApi?.generateStreamURL(for: playable, maxBitrate: maxBitrate, format: format)
     }
 
-    public func generateDownloadURL(for playable: PlayableRef) -> URL? {
-        activeApi?.generateDownloadURL(for: playable)
+    public func generateDownloadURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL? {
+        activeApi?.generateDownloadURL(for: playable, maxBitrate: maxBitrate, format: format)
     }
 
     public func generateArtworkURL(for artwork: ArtworkRef, size: Int?) -> URL? {

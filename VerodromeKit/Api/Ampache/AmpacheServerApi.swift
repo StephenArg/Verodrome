@@ -296,8 +296,15 @@ public final class AmpacheServerApi: @unchecked Sendable {
         return try? buildURL(action: "stream", parameters: params)
     }
 
-    public func downloadURL(for songId: String) -> URL? {
-        try? buildURL(action: "download", parameters: ["id": songId, "type": "song", "format": StreamFormat.raw.rawValue])
+    public func downloadURL(for songId: String, maxBitrate: Int? = nil, format: StreamFormat? = nil) -> URL? {
+        var params: [String: String] = ["id": songId, "type": "song"]
+        if let format, format != .original {
+            params["format"] = format.rawValue
+            if let maxBitrate { params["bitrate"] = String(maxBitrate * 1000) }
+        } else {
+            params["format"] = StreamFormat.raw.rawValue
+        }
+        return try? buildURL(action: "download", parameters: params)
     }
 
     public func artworkURL(for objectId: String, kind: ArtworkKind, size: Int?) -> URL? {

@@ -4,8 +4,8 @@ public final class BackendURLProvider: StreamURLProviding, @unchecked Sendable {
     private let backend: any BackendApi
     public init(backend: any BackendApi) { self.backend = backend }
 
-    public func streamURL(forPlayableId id: String, maxBitrate: Int, format: StreamFormat) async throws -> URL {
-        PlayTrace.mark("BackendURLProvider.streamURL", details: "id=\(id) bitrate=\(maxBitrate)")
+    public func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
+        PlayTrace.mark("BackendURLProvider.streamURL", details: "id=\(id) bitrate=\(maxBitrate.map(String.init) ?? "nil")")
         let ref = PlayableRef(id: id, title: id)
         let resolved: StreamFormat? = format == .original ? nil : format
         guard let url = backend.generateStreamURL(for: ref, maxBitrate: maxBitrate, format: resolved) else {
@@ -16,10 +16,10 @@ public final class BackendURLProvider: StreamURLProviding, @unchecked Sendable {
         return url
     }
 
-    public func downloadURL(forPlayableId id: String, format: StreamFormat) async throws -> URL {
+    public func downloadURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
         let ref = PlayableRef(id: id, title: id)
-        _ = format
-        guard let url = backend.generateDownloadURL(for: ref) else {
+        let resolved: StreamFormat? = format == .original ? nil : format
+        guard let url = backend.generateDownloadURL(for: ref, maxBitrate: maxBitrate, format: resolved) else {
             throw BackendError.invalidURL
         }
         return url

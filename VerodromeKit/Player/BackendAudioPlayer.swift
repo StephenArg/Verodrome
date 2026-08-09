@@ -190,12 +190,12 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
 
     public func play(
         item: QueueItem,
-        maxBitrate: Int,
+        maxBitrate: Int?,
         format: StreamFormat,
         startAt: TimeInterval = 0,
         startPaused: Bool = false
     ) async throws {
-        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate) format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
+        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
         let url: URL
         var source = "stream"
         var cachedPlayable: (id: String, kind: PlayableRef.Kind)?
@@ -252,7 +252,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         }
     }
 
-    public func preloadNext(item: QueueItem, maxBitrate: Int, format: StreamFormat) async {
+    public func preloadNext(item: QueueItem, maxBitrate: Int?, format: StreamFormat) async {
         guard gaplessEnabled || crossfadeSeconds > 0 else { return }
         do {
             let url: URL

@@ -177,7 +177,16 @@ public actor DownloadManager: DownloadManaging {
             await MainActor.run { DownloadCenter.shared.begin(playableId: id) }
         }
         do {
-            let remote = try await urlProvider.downloadURL(forPlayableId: id, format: .original)
+            let quality = await MainActor.run {
+                SettingsStore.shared.loadUserSettings().downloadTranscodeQuality
+            }
+            let contentType = await songContentType(for: id, kind: kind)
+            let resolved = AudioTranscodeResolver.resolve(quality: quality, contentType: contentType)
+            let remote = try await urlProvider.downloadURL(
+                forPlayableId: id,
+                maxBitrate: resolved.maxBitRate,
+                format: resolved.format ?? .original
+            )
             let session = ProgressDownloadSession()
             sessions[id] = session
             defer { sessions[id] = nil }
@@ -218,6 +227,17 @@ public actor DownloadManager: DownloadManaging {
             if (inFlight[id] ?? requestedReason).isUserPinnedReason {
                 await MainActor.run { DownloadCenter.shared.fail(playableId: id) }
             }
+        }
+    }
+
+    private func songContentType(for id: String, kind: PlayableRef.Kind) async -> String? {
+        guard kind == .song else { return nil }
+        return await MainActor.run {
+            guard let repository = VerodromeKit.shared.repository(),
+                  let account = try? VerodromeKit.shared.activeAccount(),
+                  let song = try? repository.resolveSong(remoteId: id, account: account)
+            else { return nil }
+            return song.contentType
         }
     }
 

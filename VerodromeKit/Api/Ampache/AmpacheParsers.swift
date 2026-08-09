@@ -137,7 +137,8 @@ enum AmpacheParsers {
                 discNumber: intValue(childText(node, "disk") ?? childText(node, "disc") ?? node.attributes["disk"]),
                 duration: timeInterval(childText(node, "time") ?? node.attributes["time"]),
                 artId: node.attributes["art"] ?? childText(node, "art"),
-                bitrate: intValue(childText(node, "bitrate") ?? node.attributes["bitrate"]),
+                // Ampache reports bits/sec; the rest of the app stores/displays kbps.
+                bitrate: Self.kilobitsPerSecond(intValue(childText(node, "bitrate") ?? node.attributes["bitrate"])),
                 // API 6 names this `format`; `type` on a song element is the older spelling.
                 format: childText(node, "format") ?? childText(node, "type") ?? node.attributes["type"],
                 playCount: intValue(childText(node, "playcount") ?? node.attributes["playcount"]),
@@ -330,6 +331,12 @@ enum AmpacheParsers {
     private static func intValue(_ raw: String?) -> Int? {
         guard let raw, !raw.isEmpty else { return nil }
         return Int(raw)
+    }
+
+    /// Ampache song `bitrate` is bits/sec; Verodrome stores kbps like Subsonic.
+    private static func kilobitsPerSecond(_ bitsPerSecond: Int?) -> Int? {
+        guard let bitsPerSecond, bitsPerSecond > 0 else { return bitsPerSecond }
+        return max(1, bitsPerSecond / 1000)
     }
 
     /// The user's own 0–5 rating. `preciserating` is the same value as a decimal on

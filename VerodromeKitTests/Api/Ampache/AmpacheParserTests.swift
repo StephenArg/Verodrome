@@ -64,6 +64,13 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertNil(songs[2].isFavorite)
     }
 
+    /// Ampache reports bits/sec; we store kbps so FLAC ~986000 becomes 986, not a
+    /// bogus display value after a second /1000 in the player.
+    func testSongParserConvertsBitrateToKilobits() throws {
+        let songs = try AmpacheParsers.parseSongs(data: try fixture("ampache_songs.xml"))
+        XCTAssertEqual(songs[0].bitrate, 986)
+    }
+
     /// Every Ampache text value arrives wrapped in CDATA, which `XMLParser` reports
     /// through a separate callback from ordinary character data.
     func testParserReadsCDATAWrappedText() throws {

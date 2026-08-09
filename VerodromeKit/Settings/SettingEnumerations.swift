@@ -325,6 +325,86 @@ public enum StreamFormatPreference: String, Codable, CaseIterable, Sendable {
     case aac
     case opus
     case flac
+
+    /// Maps legacy streaming-format prefs onto the MP3 bitrate quality model.
+    public var asTranscodeQuality: AudioTranscodeQuality {
+        switch self {
+        case .mp3: .mp3_320
+        case .original, .aac, .opus, .flac: .original
+        }
+    }
+}
+
+/// Server-side MP3 transcoding quality for lossless sources (FLAC, WAV, …).
+public enum AudioTranscodeQuality: String, Codable, CaseIterable, Sendable, Identifiable {
+    case original
+    case mp3_320
+    case mp3_256
+    case mp3_192
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .original: "Original"
+        case .mp3_320: "MP3 320 kbps"
+        case .mp3_256: "MP3 256 kbps"
+        case .mp3_192: "MP3 192 kbps"
+        }
+    }
+
+    /// Target bitrate in kbps for Subsonic `maxBitRate` / Ampache `bitrate`.
+    public var maxBitRate: Int? {
+        switch self {
+        case .original: nil
+        case .mp3_320: 320
+        case .mp3_256: 256
+        case .mp3_192: 192
+        }
+    }
+
+    public var streamFormat: StreamFormat? {
+        switch self {
+        case .original: nil
+        case .mp3_320, .mp3_256, .mp3_192: .mp3
+        }
+    }
+}
+
+/// Decides whether a play/download request should ask the server to transcode.
+public enum AudioTranscodeResolver {
+    private static let losslessTokens: Set<String> = [
+        "flac", "wav", "wave", "aiff", "aif", "alac", "ape", "wv", "dsf", "dff",
+        "pcm", "tak", "tta", "wvc", "audio/flac", "audio/x-flac", "audio/wav",
+        "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/x-alac", "audio/ape",
+        "audio/x-ape", "audio/x-wavpack",
+    ]
+
+    public static func isLossless(contentType: String?) -> Bool {
+        guard let raw = contentType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return false }
+        let lowered = raw.lowercased()
+        if losslessTokens.contains(lowered) { return true }
+        if let mimeSubtype = lowered.split(separator: "/").last,
+           losslessTokens.contains(String(mimeSubtype)) || losslessTokens.contains("audio/\(mimeSubtype)") {
+            return true
+        }
+        if let ext = lowered.split(separator: ".").last, losslessTokens.contains(String(ext)) {
+            return true
+        }
+        return false
+    }
+
+    /// Returns API params only when quality asks for MP3 and the source is lossless.
+    public static func resolve(
+        quality: AudioTranscodeQuality,
+        contentType: String?
+    ) -> (maxBitRate: Int?, format: StreamFormat?) {
+        guard quality != .original, isLossless(contentType: contentType) else {
+            return (nil, nil)
+        }
+        return (quality.maxBitRate, quality.streamFormat)
+    }
 }
 
 /// A user-selectable ordering for a library list.

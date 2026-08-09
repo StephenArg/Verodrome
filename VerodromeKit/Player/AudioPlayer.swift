@@ -120,9 +120,8 @@ public final class AudioPlayer: ObservableObject {
         preloadInvalidationTask?.cancel()
         preloadedNextItemId = nil
         let user = settings()
-        let bitrate = NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi
-        let format = user.cacheTranscodingFormat.streamFormat ?? .original
-        PlayTrace.mark("settings loaded", details: "bitrate=\(bitrate) format=\(format) eq=\(user.equalizerEnabled) expensiveNet=\(NetworkMonitor.shared.isExpensive)")
+        let (bitrate, format) = resolvedStreamParams(for: item)
+        PlayTrace.mark("settings loaded", details: "bitrate=\(bitrate.map(String.init) ?? "nil") format=\(format) eq=\(user.equalizerEnabled) expensiveNet=\(NetworkMonitor.shared.isExpensive)")
         // Repeat-one must not gapless-queue the next track — AudioStreaming would
         // auto-start it at EOF and bypass our replay path.
         let repeatOne = queueHandler.repeatMode == .one
@@ -165,7 +164,7 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         let showLyrics = user.showLyricsWhenAvailable
-        scheduleDeferredWork(for: item, showLyrics: showLyrics, bitrate: bitrate, format: format)
+        scheduleDeferredWork(for: item, showLyrics: showLyrics)
     }
 
     /// Post-play work shared by `playCurrent()` and `handleEngineAdvance()`: cache
@@ -173,14 +172,10 @@ public final class AudioPlayer: ObservableObject {
     /// Runs after a short delay so the new stream can claim bandwidth first.
     private func scheduleDeferredWork(
         for item: QueueItem,
-        showLyrics: Bool? = nil,
-        bitrate: Int? = nil,
-        format: StreamFormat? = nil
+        showLyrics: Bool? = nil
     ) {
         let user = settings()
         let showLyrics = showLyrics ?? user.showLyricsWhenAvailable
-        let bitrate = bitrate ?? (NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi)
-        let format = format ?? (user.cacheTranscodingFormat.streamFormat ?? .original)
         // Rapid skips would otherwise stack up prefetch passes for tracks we left behind.
         deferredWorkTask?.cancel()
         deferredWorkTask = Task { @MainActor [weak self] in
@@ -191,7 +186,8 @@ public final class AudioPlayer: ObservableObject {
             guard !Task.isCancelled else { return }
             PlayTrace.mark("post-play deferred work running")
             NotificationCenter.default.post(name: .verodromeQueueCacheReevaluate, object: nil)
-            await self.preloadUpcoming(bitrate: bitrate, format: format)
+            // Resolve against the *upcoming* track; the current item's format may differ.
+            await self.preloadUpcoming()
             PlayTrace.mark("preloadUpcoming done")
             await self.reportNowPlaying(for: item)
             PlayTrace.mark("reportNowPlaying done")
@@ -537,12 +533,33 @@ public final class AudioPlayer: ObservableObject {
         backend.setEqualizerEnabled(enabled)
     }
 
-    private func preloadUpcoming(bitrate: Int, format: StreamFormat) async {
+    private func preloadUpcoming() async {
         // Never queue the next song while repeating one track.
         guard queueHandler.repeatMode != .one else { return }
         guard let next = upcomingItem else { return }
         preloadedNextItemId = next.id
+        let (bitrate, format) = resolvedStreamParams(for: next)
         await backend.preloadNext(item: next, maxBitrate: bitrate, format: format)
+    }
+
+    /// Stream URL params for a queue item: MP3 + bitrate only for lossless when opted in.
+    private func resolvedStreamParams(for item: QueueItem) -> (maxBitRate: Int?, format: StreamFormat) {
+        let user = settings()
+        let quality = NetworkMonitor.shared.isExpensive
+            ? user.streamingQualityCellular
+            : user.streamingQualityWifi
+        let contentType = contentType(for: item)
+        let resolved = AudioTranscodeResolver.resolve(quality: quality, contentType: contentType)
+        return (resolved.maxBitRate, resolved.format ?? .original)
+    }
+
+    private func contentType(for item: QueueItem) -> String? {
+        guard item.kind == .song,
+              let repository = try? VerodromeKit.shared.repository(),
+              let account = try? VerodromeKit.shared.activeAccount(),
+              let song = try? repository.resolveSong(remoteId: item.playableId, account: account)
+        else { return nil }
+        return song.contentType
     }
 
     /// The track that would play after the current one, as the queue stands right now.
@@ -570,9 +587,7 @@ public final class AudioPlayer: ObservableObject {
             self.backend.clearPendingNext()
             self.preloadedNextItemId = nil
             guard self.backend.isPlaying else { return }
-            let user = self.settings()
-            let bitrate = NetworkMonitor.shared.isExpensive ? user.streamingBitrateCellular : user.streamingBitrateWifi
-            await self.preloadUpcoming(bitrate: bitrate, format: user.cacheTranscodingFormat.streamFormat ?? .original)
+            await self.preloadUpcoming()
         }
     }
 

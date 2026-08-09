@@ -35,7 +35,9 @@ public final class SettingsStore: ObservableObject {
     @Published public var changingColorsInPlayer: Bool = true
     @Published public var showRatingStars: Bool = true
     @Published public var showSongInfo: Bool = false
-    @Published public var streamFormat: StreamFormatPreference = .original
+    @Published public var streamingQualityWifi: AudioTranscodeQuality = .original
+    @Published public var streamingQualityCellular: AudioTranscodeQuality = .original
+    @Published public var downloadTranscodeQuality: AudioTranscodeQuality = .original
     @Published public var smartQueuePrefetchEnabled: Bool = true
     @Published public var smartQueueStaleHours: Int = 18
     @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
@@ -62,7 +64,9 @@ public final class SettingsStore: ObservableObject {
         var changingColorsInPlayer: Bool
         var showRatingStars: Bool
         var showSongInfo: Bool
-        var streamFormat: StreamFormatPreference
+        var streamingQualityWifi: AudioTranscodeQuality
+        var streamingQualityCellular: AudioTranscodeQuality
+        var downloadTranscodeQuality: AudioTranscodeQuality
         var smartQueuePrefetchEnabled: Bool
         var smartQueueStaleHours: Int
         var cacheLimitBytes: Int64
@@ -88,7 +92,9 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer: Bool,
             showRatingStars: Bool,
             showSongInfo: Bool,
-            streamFormat: StreamFormatPreference,
+            streamingQualityWifi: AudioTranscodeQuality,
+            streamingQualityCellular: AudioTranscodeQuality,
+            downloadTranscodeQuality: AudioTranscodeQuality,
             smartQueuePrefetchEnabled: Bool,
             smartQueueStaleHours: Int,
             cacheLimitBytes: Int64,
@@ -113,7 +119,9 @@ public final class SettingsStore: ObservableObject {
             self.changingColorsInPlayer = changingColorsInPlayer
             self.showRatingStars = showRatingStars
             self.showSongInfo = showSongInfo
-            self.streamFormat = streamFormat
+            self.streamingQualityWifi = streamingQualityWifi
+            self.streamingQualityCellular = streamingQualityCellular
+            self.downloadTranscodeQuality = downloadTranscodeQuality
             self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
             self.smartQueueStaleHours = smartQueueStaleHours
             self.cacheLimitBytes = cacheLimitBytes
@@ -126,6 +134,36 @@ public final class SettingsStore: ObservableObject {
             self.enabledHomeSections = enabledHomeSections
             self.enabledRootTabs = enabledRootTabs
             self.enabledLibraryCategories = enabledLibraryCategories
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case themePreference
+            case isLibrarySynced
+            case libraryDisplayType
+            case librarySort
+            case songsDownloadedOnly
+            case playerDisplayStyle
+            case showMiniLyrics
+            case showLyricsInPlayer
+            case changingColorsInPlayer
+            case showRatingStars
+            case showSongInfo
+            case streamingQualityWifi
+            case streamingQualityCellular
+            case downloadTranscodeQuality
+            case smartQueuePrefetchEnabled
+            case smartQueueStaleHours
+            case cacheLimitBytes
+            case offlineModeEnabled
+            case artworkDownloadSetting
+            case automaticDownloadNetwork
+            case swipeLeftAction
+            case swipeRightAction
+            case developerWindowSizes
+            case enabledHomeSections
+            case enabledRootTabs
+            case enabledLibraryCategories
+            case streamFormat // legacy
         }
 
         init(from decoder: Decoder) throws {
@@ -141,7 +179,11 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
             showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
-            streamFormat = try c.decode(StreamFormatPreference.self, forKey: .streamFormat)
+            let legacyFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .streamFormat)
+            let migrated = legacyFormat?.asTranscodeQuality ?? .original
+            streamingQualityWifi = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .streamingQualityWifi) ?? migrated
+            streamingQualityCellular = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .streamingQualityCellular) ?? migrated
+            downloadTranscodeQuality = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .downloadTranscodeQuality) ?? .original
             smartQueuePrefetchEnabled = try c.decode(Bool.self, forKey: .smartQueuePrefetchEnabled)
             smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
             cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
@@ -162,6 +204,36 @@ public final class SettingsStore: ObservableObject {
                 try c.decodeIfPresent([LibraryCategory].self, forKey: .enabledLibraryCategories)
                     ?? LibraryCategory.defaultVisible
             )
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(themePreference, forKey: .themePreference)
+            try c.encode(isLibrarySynced, forKey: .isLibrarySynced)
+            try c.encode(libraryDisplayType, forKey: .libraryDisplayType)
+            try c.encode(librarySort, forKey: .librarySort)
+            try c.encode(songsDownloadedOnly, forKey: .songsDownloadedOnly)
+            try c.encode(playerDisplayStyle, forKey: .playerDisplayStyle)
+            try c.encode(showMiniLyrics, forKey: .showMiniLyrics)
+            try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
+            try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
+            try c.encode(showRatingStars, forKey: .showRatingStars)
+            try c.encode(showSongInfo, forKey: .showSongInfo)
+            try c.encode(streamingQualityWifi, forKey: .streamingQualityWifi)
+            try c.encode(streamingQualityCellular, forKey: .streamingQualityCellular)
+            try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
+            try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
+            try c.encode(smartQueueStaleHours, forKey: .smartQueueStaleHours)
+            try c.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
+            try c.encode(offlineModeEnabled, forKey: .offlineModeEnabled)
+            try c.encode(artworkDownloadSetting, forKey: .artworkDownloadSetting)
+            try c.encode(automaticDownloadNetwork, forKey: .automaticDownloadNetwork)
+            try c.encode(swipeLeftAction, forKey: .swipeLeftAction)
+            try c.encode(swipeRightAction, forKey: .swipeRightAction)
+            try c.encode(developerWindowSizes, forKey: .developerWindowSizes)
+            try c.encode(enabledHomeSections, forKey: .enabledHomeSections)
+            try c.encode(enabledRootTabs, forKey: .enabledRootTabs)
+            try c.encode(enabledLibraryCategories, forKey: .enabledLibraryCategories)
         }
     }
 
@@ -197,7 +269,9 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer: changingColorsInPlayer,
             showRatingStars: showRatingStars,
             showSongInfo: showSongInfo,
-            streamFormat: streamFormat,
+            streamingQualityWifi: streamingQualityWifi,
+            streamingQualityCellular: streamingQualityCellular,
+            downloadTranscodeQuality: downloadTranscodeQuality,
             smartQueuePrefetchEnabled: smartQueuePrefetchEnabled,
             smartQueueStaleHours: smartQueueStaleHours,
             cacheLimitBytes: cacheLimitBytes,
@@ -237,7 +311,9 @@ public final class SettingsStore: ObservableObject {
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
         user.cacheLimitBytes = cacheLimitBytes
-        user.cacheTranscodingFormat = streamFormat
+        user.streamingQualityWifi = streamingQualityWifi
+        user.streamingQualityCellular = streamingQualityCellular
+        user.downloadTranscodeQuality = downloadTranscodeQuality
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer
@@ -254,7 +330,9 @@ public final class SettingsStore: ObservableObject {
         smartQueuePrefetchEnabled = settings.smartQueuePrefetchEnabled
         smartQueueStaleHours = settings.queuePrefetchStaleHours
         cacheLimitBytes = settings.cacheLimitBytes
-        streamFormat = settings.cacheTranscodingFormat
+        streamingQualityWifi = settings.streamingQualityWifi
+        streamingQualityCellular = settings.streamingQualityCellular
+        downloadTranscodeQuality = settings.downloadTranscodeQuality
         playerDisplayStyle = settings.playerDisplayStyle
         showMiniLyrics = settings.showLyricsWhenAvailable
         showLyricsInPlayer = settings.showLyricsInPlayer
@@ -301,7 +379,9 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer = snapshot.changingColorsInPlayer
             showRatingStars = snapshot.showRatingStars
             showSongInfo = snapshot.showSongInfo
-            streamFormat = snapshot.streamFormat
+            streamingQualityWifi = snapshot.streamingQualityWifi
+            streamingQualityCellular = snapshot.streamingQualityCellular
+            downloadTranscodeQuality = snapshot.downloadTranscodeQuality
             smartQueuePrefetchEnabled = snapshot.smartQueuePrefetchEnabled
             smartQueueStaleHours = snapshot.smartQueueStaleHours
             cacheLimitBytes = snapshot.cacheLimitBytes
@@ -323,7 +403,9 @@ public final class SettingsStore: ObservableObject {
         smartQueuePrefetchEnabled = user.smartQueuePrefetchEnabled
         smartQueueStaleHours = user.queuePrefetchStaleHours
         cacheLimitBytes = user.cacheLimitBytes
-        streamFormat = user.cacheTranscodingFormat
+        streamingQualityWifi = user.streamingQualityWifi
+        streamingQualityCellular = user.streamingQualityCellular
+        downloadTranscodeQuality = user.downloadTranscodeQuality
         playerDisplayStyle = user.playerDisplayStyle
         showMiniLyrics = user.showLyricsWhenAvailable
         showLyricsInPlayer = user.showLyricsInPlayer
@@ -343,7 +425,9 @@ public final class SettingsStore: ObservableObject {
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
         user.cacheLimitBytes = cacheLimitBytes
-        user.cacheTranscodingFormat = streamFormat
+        user.streamingQualityWifi = streamingQualityWifi
+        user.streamingQualityCellular = streamingQualityCellular
+        user.downloadTranscodeQuality = downloadTranscodeQuality
         user.playerDisplayStyle = playerDisplayStyle
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer

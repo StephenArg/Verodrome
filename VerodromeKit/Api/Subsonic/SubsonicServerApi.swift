@@ -263,8 +263,11 @@ public final class SubsonicServerApi: @unchecked Sendable {
         return try? buildURL(method: "stream", parameters: params)
     }
 
-    public func downloadURL(for songId: String) -> URL? {
-        try? buildURL(method: "download", parameters: ["id": songId])
+    public func downloadURL(for songId: String, maxBitrate: Int? = nil, format: StreamFormat? = nil) -> URL? {
+        var params: [String: String] = ["id": songId]
+        if let maxBitrate { params["maxBitRate"] = String(maxBitrate) }
+        if let format { params["format"] = format.rawValue }
+        return try? buildURL(method: "download", parameters: params)
     }
 
     public func coverArtURL(for coverArtId: String, size: Int?) -> URL? {

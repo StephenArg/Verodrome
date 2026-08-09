@@ -11,12 +11,12 @@ final class PlaylistDownloadCoordinatorTests: XCTestCase {
 
         var requested: [String] { lock.withLock { _requested } }
 
-        func downloadURL(forPlayableId id: String, format: StreamFormat) async throws -> URL {
+        func downloadURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             lock.withLock { _requested.append(id) }
             throw BackendError.invalidURL
         }
 
-        func streamURL(forPlayableId id: String, maxBitrate: Int, format: StreamFormat) async throws -> URL {
+        func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             throw BackendError.invalidURL
         }
 

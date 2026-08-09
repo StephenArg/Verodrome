@@ -47,7 +47,7 @@ public protocol BackendApi: AnyObject, Sendable {
     func login(credentials: LoginCredentials) async throws -> ServerInfo
 
     func generateStreamURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL?
-    func generateDownloadURL(for playable: PlayableRef) -> URL?
+    func generateDownloadURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL?
     func generateArtworkURL(for artwork: ArtworkRef, size: Int?) -> URL?
 
     func createLibrarySyncer(ingestor: LibraryIngesting) -> LibrarySyncer

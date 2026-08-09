@@ -10,6 +10,7 @@ struct PopupPlayerView: View {
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @ObservedObject private var playlistMembership = PlaylistMembershipIndex.shared
     @ObservedObject private var tintResolver = ArtworkTintResolver.shared
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var playerTint: ArtworkTint?
@@ -65,11 +66,18 @@ struct PopupPlayerView: View {
                             Spacer(minLength: 0)
 
                             if settings.showSongInfo, let song = currentSong, let info = songInfoText(for: song) {
-                                Text(info)
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                HStack(spacing: 4) {
+                                    if isTranscoding(song) {
+                                        Image(systemName: "wave.3.up")
+                                            .font(.caption2.weight(.semibold))
+                                            .accessibilityLabel("Transcoding")
+                                    }
+                                    Text(info)
+                                        .lineLimit(1)
+                                }
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
                     }
@@ -403,17 +411,42 @@ struct PopupPlayerView: View {
     }
 
     /// Compact file-type + bitrate label shown opposite the rating stars.
+    /// When lossless→MP3 transcoding is active, show the target stream quality instead
+    /// of the library file's original format/bitrate.
     private func songInfoText(for song: Song) -> String? {
+        if let quality = activeTranscodeQuality(for: song), let kbps = quality.maxBitRate {
+            return "MP3 · \(kbps) kbps"
+        }
         var parts: [String] = []
         if let format = fileTypeLabel(for: song.contentType) {
             parts.append(format)
         }
         if let bitrate = song.bitrate, bitrate > 0 {
-            let kbps = bitrate >= 1000 ? bitrate / 1000 : bitrate
-            parts.append("\(kbps) kbps")
+            parts.append("\(displayKilobitsPerSecond(bitrate)) kbps")
         }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " · ")
+    }
+
+    /// True when current streaming settings ask the server to convert this lossless file.
+    private func isTranscoding(_ song: Song) -> Bool {
+        activeTranscodeQuality(for: song) != nil
+    }
+
+    private func activeTranscodeQuality(for song: Song) -> AudioTranscodeQuality? {
+        let quality = networkMonitor.isExpensive
+            ? settings.streamingQualityCellular
+            : settings.streamingQualityWifi
+        guard AudioTranscodeResolver.resolve(quality: quality, contentType: song.contentType).format != nil else {
+            return nil
+        }
+        return quality
+    }
+
+    /// Library bitrates are stored in kbps (Subsonic/Navidrome). Ampache historically
+    /// stored bits/sec; values that large are still converted for display.
+    private func displayKilobitsPerSecond(_ bitrate: Int) -> Int {
+        bitrate >= 100_000 ? bitrate / 1000 : bitrate
     }
 
     private func fileTypeLabel(for contentType: String?) -> String? {

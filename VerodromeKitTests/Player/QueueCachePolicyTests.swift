@@ -68,10 +68,10 @@ final class QueueCachePolicyTests: XCTestCase {
     }
 
     final class MockURLProvider: StreamURLProviding, @unchecked Sendable {
-        func streamURL(forPlayableId id: String, maxBitrate: Int, format: StreamFormat) async throws -> URL {
+        func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             URL(string: "https://example.com/\(id)")!
         }
-        func downloadURL(forPlayableId id: String, format: StreamFormat) async throws -> URL {
+        func downloadURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             URL(string: "https://example.com/\(id)")!
         }
         func artworkURL(forArtId artId: String, kind: ArtworkKind, size: Int?) async throws -> URL {

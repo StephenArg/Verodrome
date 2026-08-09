@@ -1,8 +1,8 @@
 import Foundation
 
 public protocol StreamURLProviding: AnyObject, Sendable {
-    func streamURL(forPlayableId id: String, maxBitrate: Int, format: StreamFormat) async throws -> URL
-    func downloadURL(forPlayableId id: String, format: StreamFormat) async throws -> URL
+    func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL
+    func downloadURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL
     func artworkURL(forArtId artId: String, kind: ArtworkKind, size: Int?) async throws -> URL
 }
 

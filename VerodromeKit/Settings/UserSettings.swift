@@ -3,9 +3,9 @@ import Foundation
 public struct UserSettings: Codable, Equatable, Sendable {
     public var isOfflineMode: Bool
     public var cacheLimitBytes: Int64
-    public var streamingBitrateWifi: Int
-    public var streamingBitrateCellular: Int
-    public var cacheTranscodingFormat: StreamFormatPreference
+    public var streamingQualityWifi: AudioTranscodeQuality
+    public var streamingQualityCellular: AudioTranscodeQuality
+    public var downloadTranscodeQuality: AudioTranscodeQuality
     public var smartQueuePrefetchEnabled: Bool
     public var queuePrefetchStaleHours: Int
     public var appearanceMode: AppearanceMode
@@ -30,9 +30,9 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public init(
         isOfflineMode: Bool = false,
         cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue,
-        streamingBitrateWifi: Int = 320,
-        streamingBitrateCellular: Int = 192,
-        cacheTranscodingFormat: StreamFormatPreference = .original,
+        streamingQualityWifi: AudioTranscodeQuality = .original,
+        streamingQualityCellular: AudioTranscodeQuality = .original,
+        downloadTranscodeQuality: AudioTranscodeQuality = .original,
         smartQueuePrefetchEnabled: Bool = true,
         queuePrefetchStaleHours: Int = 18,
         appearanceMode: AppearanceMode = .system,
@@ -54,9 +54,9 @@ public struct UserSettings: Codable, Equatable, Sendable {
     ) {
         self.isOfflineMode = isOfflineMode
         self.cacheLimitBytes = cacheLimitBytes
-        self.streamingBitrateWifi = streamingBitrateWifi
-        self.streamingBitrateCellular = streamingBitrateCellular
-        self.cacheTranscodingFormat = cacheTranscodingFormat
+        self.streamingQualityWifi = streamingQualityWifi
+        self.streamingQualityCellular = streamingQualityCellular
+        self.downloadTranscodeQuality = downloadTranscodeQuality
         self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         self.queuePrefetchStaleHours = queuePrefetchStaleHours
         self.appearanceMode = appearanceMode
@@ -79,13 +79,50 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
     public static let `default` = UserSettings()
 
+    private enum CodingKeys: String, CodingKey {
+        case isOfflineMode
+        case cacheLimitBytes
+        case streamingQualityWifi
+        case streamingQualityCellular
+        case downloadTranscodeQuality
+        case smartQueuePrefetchEnabled
+        case queuePrefetchStaleHours
+        case appearanceMode
+        case hapticsEnabled
+        case replayGainEnabled
+        case equalizerEnabled
+        case playerDisplayStyle
+        case crossfadeEnabled
+        case crossfadeDurationSeconds
+        case gaplessPlaybackEnabled
+        case showLyricsWhenAvailable
+        case showLyricsInPlayer
+        case changingColorsInPlayer
+        case showRatingStars
+        case showSongInfo
+        case allowCellularDownloads
+        case confirmBeforeDeletingDownloads
+        case equalizerBands
+        // Legacy keys (decode-only)
+        case streamingBitrateWifi
+        case streamingBitrateCellular
+        case cacheTranscodingFormat
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         isOfflineMode = try c.decodeIfPresent(Bool.self, forKey: .isOfflineMode) ?? false
         cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
-        streamingBitrateWifi = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateWifi) ?? 320
-        streamingBitrateCellular = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateCellular) ?? 192
-        cacheTranscodingFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .cacheTranscodingFormat) ?? .original
+
+        let legacyFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .cacheTranscodingFormat)
+        let migrated = legacyFormat?.asTranscodeQuality ?? .original
+        streamingQualityWifi = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .streamingQualityWifi) ?? migrated
+        streamingQualityCellular = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .streamingQualityCellular) ?? migrated
+        downloadTranscodeQuality = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .downloadTranscodeQuality) ?? .original
+        // Ignore legacy Int bitrate keys if present.
+        _ = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateWifi)
+        _ = try c.decodeIfPresent(Int.self, forKey: .streamingBitrateCellular)
+
         smartQueuePrefetchEnabled = try c.decodeIfPresent(Bool.self, forKey: .smartQueuePrefetchEnabled) ?? true
         queuePrefetchStaleHours = try c.decodeIfPresent(Int.self, forKey: .queuePrefetchStaleHours) ?? 18
         appearanceMode = try c.decodeIfPresent(AppearanceMode.self, forKey: .appearanceMode) ?? .system
@@ -104,5 +141,32 @@ public struct UserSettings: Codable, Equatable, Sendable {
         allowCellularDownloads = try c.decodeIfPresent(Bool.self, forKey: .allowCellularDownloads) ?? false
         confirmBeforeDeletingDownloads = try c.decodeIfPresent(Bool.self, forKey: .confirmBeforeDeletingDownloads) ?? true
         equalizerBands = try c.decodeIfPresent([Float].self, forKey: .equalizerBands) ?? Array(repeating: 0, count: 10)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(isOfflineMode, forKey: .isOfflineMode)
+        try c.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
+        try c.encode(streamingQualityWifi, forKey: .streamingQualityWifi)
+        try c.encode(streamingQualityCellular, forKey: .streamingQualityCellular)
+        try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
+        try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
+        try c.encode(queuePrefetchStaleHours, forKey: .queuePrefetchStaleHours)
+        try c.encode(appearanceMode, forKey: .appearanceMode)
+        try c.encode(hapticsEnabled, forKey: .hapticsEnabled)
+        try c.encode(replayGainEnabled, forKey: .replayGainEnabled)
+        try c.encode(equalizerEnabled, forKey: .equalizerEnabled)
+        try c.encode(playerDisplayStyle, forKey: .playerDisplayStyle)
+        try c.encode(crossfadeEnabled, forKey: .crossfadeEnabled)
+        try c.encode(crossfadeDurationSeconds, forKey: .crossfadeDurationSeconds)
+        try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
+        try c.encode(showLyricsWhenAvailable, forKey: .showLyricsWhenAvailable)
+        try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
+        try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
+        try c.encode(showRatingStars, forKey: .showRatingStars)
+        try c.encode(showSongInfo, forKey: .showSongInfo)
+        try c.encode(allowCellularDownloads, forKey: .allowCellularDownloads)
+        try c.encode(confirmBeforeDeletingDownloads, forKey: .confirmBeforeDeletingDownloads)
+        try c.encode(equalizerBands, forKey: .equalizerBands)
     }
 }

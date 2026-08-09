@@ -11,12 +11,26 @@ struct PlayerSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Streaming") {
-                Picker("Format", selection: $settings.streamFormat) {
-                    ForEach(StreamFormatPreference.allCases, id: \.self) { format in
-                        Text(format.rawValue.uppercased()).tag(format)
+            Section {
+                Picker("On Wi-Fi", selection: $settings.streamingQualityWifi) {
+                    ForEach(AudioTranscodeQuality.allCases) { quality in
+                        Text(quality.displayName).tag(quality)
                     }
                 }
+                .pickerStyle(.navigationLink)
+                .onChange(of: settings.streamingQualityWifi) { _, _ in settings.save() }
+
+                Picker("On Cellular", selection: $settings.streamingQualityCellular) {
+                    ForEach(AudioTranscodeQuality.allCases) { quality in
+                        Text(quality.displayName).tag(quality)
+                    }
+                }
+                .pickerStyle(.navigationLink)
+                .onChange(of: settings.streamingQualityCellular) { _, _ in settings.save() }
+            } header: {
+                Text("Transcode Lossless")
+            } footer: {
+                Text("Live-convert FLAC, WAV, and other lossless files to MP3 while streaming. Already-compressed tracks stay original. Requires server transcoding (for example ffmpeg on Navidrome).")
             }
 
             Section("Smart Queue Prefetch") {

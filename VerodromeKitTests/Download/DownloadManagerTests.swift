@@ -14,7 +14,7 @@ final class DownloadManagerTests: XCTestCase {
         func release() { lock.withLock { _isReleased = true } }
         private var isReleased: Bool { lock.withLock { _isReleased } }
 
-        func downloadURL(forPlayableId id: String, format: StreamFormat) async throws -> URL {
+        func downloadURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             lock.withLock { _started.append(id) }
             while !isReleased {
                 try await Task.sleep(nanoseconds: 5_000_000)
@@ -22,7 +22,7 @@ final class DownloadManagerTests: XCTestCase {
             throw BackendError.invalidURL
         }
 
-        func streamURL(forPlayableId id: String, maxBitrate: Int, format: StreamFormat) async throws -> URL {
+        func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
             throw BackendError.invalidURL
         }
 

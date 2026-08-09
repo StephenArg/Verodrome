@@ -67,8 +67,8 @@ public final class SubsonicApi: BackendApi, @unchecked Sendable {
         server.streamURL(for: playable.id, maxBitrate: maxBitrate, format: format)
     }
 
-    public func generateDownloadURL(for playable: PlayableRef) -> URL? {
-        server.downloadURL(for: playable.id)
+    public func generateDownloadURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL? {
+        server.downloadURL(for: playable.id, maxBitrate: maxBitrate, format: format)
     }
 
     public func generateArtworkURL(for artwork: ArtworkRef, size: Int?) -> URL? {

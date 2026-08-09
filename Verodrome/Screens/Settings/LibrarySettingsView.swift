@@ -47,10 +47,18 @@ struct LibrarySettingsView: View {
                     settings.save()
                     Task { await VerodromeKit.shared.downloadNetworkPolicy?.apply() }
                 }
+
+                Picker("Transcode Lossless", selection: $settings.downloadTranscodeQuality) {
+                    ForEach(AudioTranscodeQuality.allCases) { quality in
+                        Text(quality.displayName).tag(quality)
+                    }
+                }
+                .pickerStyle(.navigationLink)
+                .onChange(of: settings.downloadTranscodeQuality) { _, _ in settings.save() }
             } header: {
                 Text("Downloads")
             } footer: {
-                Text("Albums, playlists, and songs wait for Wi-Fi when Only on Wi-Fi is selected. Tap Download Now on a waiting track to start it over cellular.")
+                Text("Albums, playlists, and songs wait for Wi-Fi when Only on Wi-Fi is selected. Tap Download Now on a waiting track to start it over cellular. Transcode Lossless applies to new downloads and queue prefetch; existing offline files are not re-fetched.")
             }
 
             Section("Library") {
