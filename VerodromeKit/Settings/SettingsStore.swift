@@ -45,6 +45,7 @@ public final class SettingsStore: ObservableObject {
     @Published public var developerWindowSizes: Bool = false
     @Published public var enabledHomeSections: [HomeSection] = HomeSection.allCases
     @Published public var enabledRootTabs: [RootTabItem] = RootTabItem.defaultVisible
+    @Published public var enabledLibraryCategories: [LibraryCategory] = LibraryCategory.defaultVisible
 
     private struct Snapshot: Codable {
         var themePreference: ThemePreference
@@ -69,6 +70,7 @@ public final class SettingsStore: ObservableObject {
         var developerWindowSizes: Bool
         var enabledHomeSections: [HomeSection]
         var enabledRootTabs: [RootTabItem]
+        var enabledLibraryCategories: [LibraryCategory]
 
         init(
             themePreference: ThemePreference,
@@ -92,7 +94,8 @@ public final class SettingsStore: ObservableObject {
             swipeRightAction: String,
             developerWindowSizes: Bool,
             enabledHomeSections: [HomeSection],
-            enabledRootTabs: [RootTabItem]
+            enabledRootTabs: [RootTabItem],
+            enabledLibraryCategories: [LibraryCategory]
         ) {
             self.themePreference = themePreference
             self.isLibrarySynced = isLibrarySynced
@@ -116,6 +119,7 @@ public final class SettingsStore: ObservableObject {
             self.developerWindowSizes = developerWindowSizes
             self.enabledHomeSections = enabledHomeSections
             self.enabledRootTabs = enabledRootTabs
+            self.enabledLibraryCategories = enabledLibraryCategories
         }
 
         init(from decoder: Decoder) throws {
@@ -146,6 +150,10 @@ public final class SettingsStore: ObservableObject {
             enabledHomeSections = try c.decode([HomeSection].self, forKey: .enabledHomeSections)
             enabledRootTabs = RootTabItem.normalized(
                 try c.decodeIfPresent([RootTabItem].self, forKey: .enabledRootTabs) ?? RootTabItem.defaultVisible
+            )
+            enabledLibraryCategories = LibraryCategory.normalized(
+                try c.decodeIfPresent([LibraryCategory].self, forKey: .enabledLibraryCategories)
+                    ?? LibraryCategory.defaultVisible
             )
         }
     }
@@ -179,7 +187,8 @@ public final class SettingsStore: ObservableObject {
             swipeRightAction: swipeRightAction,
             developerWindowSizes: developerWindowSizes,
             enabledHomeSections: enabledHomeSections,
-            enabledRootTabs: RootTabItem.normalized(enabledRootTabs)
+            enabledRootTabs: RootTabItem.normalized(enabledRootTabs),
+            enabledLibraryCategories: LibraryCategory.normalized(enabledLibraryCategories)
         )
         save(key: Keys.snapshot, value: snapshot)
         syncTypedStoresFromPublished()
@@ -280,6 +289,7 @@ public final class SettingsStore: ObservableObject {
             developerWindowSizes = snapshot.developerWindowSizes
             enabledHomeSections = snapshot.enabledHomeSections
             enabledRootTabs = RootTabItem.normalized(snapshot.enabledRootTabs)
+            enabledLibraryCategories = LibraryCategory.normalized(snapshot.enabledLibraryCategories)
             return
         }
         let app = loadAppSettings()

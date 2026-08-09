@@ -192,13 +192,15 @@ final class HomeCollectionViewController: UICollectionViewController {
     }
 
     func apply(sections: [HomeSection], tiles: [HomeSection: [HomeTileItem]]) {
-        guard self.sections != sections || self.tiles != tiles else { return }
-        self.sections = sections
+        // Skip empty carousels so their headers don't sit over a blank row.
+        let visibleSections = sections.filter { !(tiles[$0] ?? []).isEmpty }
+        guard self.sections != visibleSections || self.tiles != tiles else { return }
+        self.sections = visibleSections
         self.tiles = tiles
 
         var snapshot = NSDiffableDataSourceSnapshot<HomeSection, HomeEntry>()
-        snapshot.appendSections(sections)
-        for section in sections {
+        snapshot.appendSections(visibleSections)
+        for section in visibleSections {
             let entries = (tiles[section] ?? []).map { HomeEntry(section: section, tile: $0) }
             snapshot.appendItems(entries, toSection: section)
         }
@@ -209,7 +211,7 @@ final class HomeCollectionViewController: UICollectionViewController {
         dataSource.apply(snapshot, animatingDifferences: false)
         PerfTrace.end(
             token,
-            details: "sections=\(sections.count) items=\(snapshot.numberOfItems)"
+            details: "sections=\(visibleSections.count) items=\(snapshot.numberOfItems)"
         )
     }
 

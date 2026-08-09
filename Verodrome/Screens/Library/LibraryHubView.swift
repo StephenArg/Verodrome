@@ -1,32 +1,30 @@
 import SwiftUI
+import VerodromeKit
 
 struct LibraryHubView: View {
-    private let categories: [(title: String, symbol: String, destination: AnyView)] = [
-        ("Artists", "person.2.fill", AnyView(ArtistsView())),
-        ("Albums", "square.stack.fill", AnyView(AlbumsView())),
-        ("Songs", "music.note.list", AnyView(SongsView())),
-        ("Genres", "guitars.fill", AnyView(GenresView())),
-        ("Playlists", "music.note.house.fill", AnyView(PlaylistsView())),
-        ("Podcasts", "mic.fill", AnyView(PodcastsView())),
-        ("Radios", "dot.radiowaves.left.and.right", AnyView(RadiosView())),
-        ("Downloads", "arrow.down.circle.fill", AnyView(DownloadsView())),
-        ("Directories", "folder.fill", AnyView(DirectoriesView())),
-        ("Favorites", "heart.fill", AnyView(FavoritesView()))
-    ]
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var showEditor = false
 
     var body: some View {
         List {
-            ForEach(Array(categories.enumerated()), id: \.offset) { _, category in
+            ForEach(settings.enabledLibraryCategories) { category in
                 NavigationLink {
-                    category.destination
+                    destination(for: category)
                 } label: {
-                    Label(category.title, systemImage: category.symbol)
+                    Label(category.title, systemImage: category.systemImage)
                         .font(.body)
                 }
             }
         }
+        .listStyle(.plain)
         .navigationTitle("Library")
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showEditor = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("Customize Library")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink {
                     SettingsHostView()
@@ -34,6 +32,33 @@ struct LibraryHubView: View {
                     Image(systemName: "gearshape")
                 }
             }
+        }
+        .sheet(isPresented: $showEditor) {
+            NavigationStack {
+                LibraryEditorView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showEditor = false }
+                        }
+                    }
+            }
+            .environmentObject(settings)
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for category: LibraryCategory) -> some View {
+        switch category {
+        case .artists: ArtistsView()
+        case .albums: AlbumsView()
+        case .songs: SongsView()
+        case .genres: GenresView()
+        case .playlists: PlaylistsView()
+        case .podcasts: PodcastsView()
+        case .radios: RadiosView()
+        case .downloads: DownloadsView()
+        case .directories: DirectoriesView()
+        case .favorites: FavoritesView()
         }
     }
 }

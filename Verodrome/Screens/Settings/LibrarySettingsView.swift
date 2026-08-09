@@ -53,6 +53,12 @@ struct LibrarySettingsView: View {
                 Text("Albums, playlists, and songs wait for Wi-Fi when Only on Wi-Fi is selected. Tap Download Now on a waiting track to start it over cellular.")
             }
 
+            Section("Library") {
+                NavigationLink { LibraryEditorView() } label: {
+                    Text("Customize Library Categories")
+                }
+            }
+
             Section("Home") {
                 NavigationLink { HomeEditorView() } label: {
                     Text("Customize Home Sections")

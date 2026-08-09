@@ -337,6 +337,20 @@ public final class LibraryActions {
         }
         try repository?.replacePlaylistItems(playlist, with: songs)
     }
+
+    /// Replaces the playlist's song order on the server, then mirrors it locally.
+    public func reorderPlaylist(_ playlist: Playlist, songs: [Song]) async throws {
+        if let syncer {
+            try await syncer.reorderPlaylist(playlistId: playlist.remoteId, songIds: songs.map(\.remoteId))
+        }
+        try repository?.replacePlaylistItems(playlist, with: songs)
+        if let syncer {
+            // Reorder is clear-then-readd on both backends; pull once so we match the
+            // server if it dropped a duplicate or rewrote ids.
+            try? await syncer.syncPlaylistDown(id: playlist.remoteId)
+            kit.storage?.mainContext.processPendingChanges()
+        }
+    }
 }
 
 // Local helpers for Song download state when used from Kit.

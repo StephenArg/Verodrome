@@ -10,9 +10,15 @@ struct PlaylistDetailView: View {
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var songs: [Song] = []
+    /// Stable row ids so a playlist can hold the same song twice without ForEach collisions.
+    @State private var entries: [PlaylistRowItem] = []
     @State private var showPlaylistSelector = false
+    @State private var showRename = false
     @State private var artworkTint: ArtworkTint?
+    @State private var editMode: EditMode = .inactive
+    @State private var selection: Set<PlaylistRowItem.ID> = []
+    @State private var reorderTask: Task<Void, Never>?
+    @State private var isMutating = false
 
     init(playlistID: String) {
         self.playlistID = playlistID
@@ -24,8 +30,19 @@ struct PlaylistDetailView: View {
         (artworkTint ?? ArtworkTint(hue: 0, saturation: 0)).primaryButtonFill(for: colorScheme)
     }
 
+    private var songs: [Song] { entries.map(\.song) }
+
+    private var canEditPlaylist: Bool {
+        guard let playlist = playlists.first else { return false }
+        return playlist.isEditable
+            && !playlist.isSmart
+            && !LibraryActions.shared.playlistsRejectedByServer.contains(playlist.remoteId)
+    }
+
+    private var isEditing: Bool { editMode.isEditing && canEditPlaylist }
+
     var body: some View {
-        List {
+        List(selection: isEditing ? $selection : nil) {
             if let playlist = playlists.first {
                 Section {
                     DetailHeader(
@@ -40,56 +57,35 @@ struct PlaylistDetailView: View {
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
+                .allowsHitTesting(!isEditing)
 
                 Section("Songs") {
-                    if songs.isEmpty {
-                        Text("Loading songs…")
+                    if entries.isEmpty {
+                        Text(isMutating ? "Updating…" : "Loading songs…")
                             .foregroundStyle(.secondary)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(songs, id: \.compoundRemoteId) { song in
-                            Button { playSong(song) } label: {
-                                EntityRow(
-                                    title: song.title,
-                                    subtitle: song.displayArtist,
-                                    artworkURL: song.artworkToken,
-                                    isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
-                                    trailing: formatDuration(song.displayDuration),
-                                    downloadStatus: downloadCenter.status(
-                                        for: song.remoteId,
-                                        isDownloaded: song.isDownloadedLocally
-                                    )
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .songActions(song)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                        ForEach(entries) { entry in
+                            songRow(entry)
+                                // Opaque while editing so a lifted drag cell doesn't flash black
+                                // over the artwork-tinted list background.
+                                .listRowBackground(songRowBackground)
+                                .listRowSeparator(.hidden)
                         }
+                        .onMove(perform: isEditing ? moveEntries : nil)
+                        .onDelete(perform: isEditing ? deleteEntries : nil)
                     }
                 }
             }
         }
+        .environment(\.editMode, $editMode)
         .artworkTintedBackground(token: backgroundArtworkToken)
         .navigationBarTitleDisplayMode(.inline)
         .tint(navigationTint)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let playlist = playlists.first {
-                    playlistOptionsMenu(for: playlist)
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { PlaylistAddSongsView(playlistID: playlistID) } label: {
-                    Image(systemName: "plus")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .accessibilityLabel("Add Songs")
-            }
-        }
+        .toolbar { toolbarContent }
         .sheet(isPresented: $showPlaylistSelector) {
             PlaylistSelectorView { destination in
                 let tracks = songs
@@ -97,6 +93,16 @@ struct PlaylistDetailView: View {
                     try? await LibraryActions.shared.addSongs(tracks, to: destination)
                     ActionToast.addedToPlaylist(destination.name)
                 }
+            }
+        }
+        .sheet(isPresented: $showRename) {
+            NavigationStack {
+                PlaylistEditView(playlistID: playlistID)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showRename = false }
+                        }
+                    }
             }
         }
         .task(id: backgroundArtworkToken) {
@@ -107,8 +113,102 @@ struct PlaylistDetailView: View {
             loadSongs(for: playlist)
             guard let remoteId = playlists.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(playlistId: remoteId)
-            if let playlist = playlists.first {
-                loadSongs(for: playlist)
+            // Don't clobber an in-progress edit with the server pull.
+            guard !isEditing, let playlist = playlists.first else { return }
+            loadSongs(for: playlist)
+        }
+        .onChange(of: canEditPlaylist) { _, canEdit in
+            if !canEdit {
+                editMode = .inactive
+                selection.removeAll()
+            }
+        }
+        .onDisappear {
+            flushReorderIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private var songRowBackground: some View {
+        if isEditing {
+            Rectangle().fill(.background)
+        } else {
+            Color.clear
+        }
+    }
+
+    // MARK: - Rows
+
+    @ViewBuilder
+    private func songRow(_ entry: PlaylistRowItem) -> some View {
+        let song = entry.song
+        Group {
+            if isEditing {
+                EntityRow(
+                    title: song.title,
+                    subtitle: song.displayArtist,
+                    artworkURL: song.artworkToken,
+                    isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
+                    trailing: formatDuration(song.displayDuration),
+                    downloadStatus: downloadCenter.status(
+                        for: song.remoteId,
+                        isDownloaded: song.isDownloadedLocally
+                    )
+                )
+            } else {
+                Button { playSong(song, entryId: entry.id) } label: {
+                    EntityRow(
+                        title: song.title,
+                        subtitle: song.displayArtist,
+                        artworkURL: song.artworkToken,
+                        isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
+                        trailing: formatDuration(song.displayDuration),
+                        downloadStatus: downloadCenter.status(
+                            for: song.remoteId,
+                            isDownloaded: song.isDownloadedLocally
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .songActions(song)
+            }
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if canEditPlaylist {
+                if isEditing {
+                    if !selection.isEmpty {
+                        Button("Remove", role: .destructive) {
+                            removeSelected()
+                        }
+                        .disabled(isMutating)
+                    }
+                    Button("Done") {
+                        finishEditing()
+                    }
+                } else {
+                    Button("Edit") {
+                        withAnimation { editMode = .active }
+                    }
+                }
+            }
+
+            if let playlist = playlists.first, !isEditing {
+                playlistOptionsMenu(for: playlist)
+            }
+
+            if canEditPlaylist, !isEditing {
+                NavigationLink { PlaylistAddSongsView(playlistID: playlistID) } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .accessibilityLabel("Add Songs")
             }
         }
     }
@@ -153,6 +253,15 @@ struct PlaylistDetailView: View {
 
     private func playlistOptionsMenu(for playlist: Playlist) -> some View {
         Menu {
+            if canEditPlaylist {
+                Button {
+                    showRename = true
+                } label: {
+                    Label("Edit Name", systemImage: "pencil")
+                }
+                Divider()
+            }
+
             Button {
                 togglePlaylistDownload()
             } label: {
@@ -217,6 +326,101 @@ struct PlaylistDetailView: View {
         Task { await LibraryActions.shared.setKeepDownloaded(keep, for: playlist) }
     }
 
+    // MARK: - Edit mutations
+
+    private func moveEntries(from source: IndexSet, to destination: Int) {
+        entries.move(fromOffsets: source, toOffset: destination)
+        scheduleReorderCommit()
+    }
+
+    private func deleteEntries(at offsets: IndexSet) {
+        remove(at: offsets)
+    }
+
+    private func removeSelected() {
+        let offsets = IndexSet(entries.indices.filter { selection.contains(entries[$0].id) })
+        remove(at: offsets)
+    }
+
+    private func remove(at offsets: IndexSet) {
+        guard let playlist = playlists.first, !offsets.isEmpty else { return }
+        let indices = Array(offsets)
+        entries.remove(atOffsets: offsets)
+        selection.removeAll()
+        isMutating = true
+        Task {
+            defer { isMutating = false }
+            do {
+                try await LibraryActions.shared.removeSongs(at: indices, from: playlist)
+                if let playlist = playlists.first {
+                    loadSongs(for: playlist)
+                }
+            } catch {
+                if let playlist = playlists.first {
+                    loadSongs(for: playlist)
+                }
+                if LibraryActions.shared.notePlaylistEditRejected(playlist, error: error) {
+                    ActionToast.show("\(playlist.name) can't be edited")
+                    editMode = .inactive
+                } else {
+                    ActionToast.show("Couldn't remove from \(playlist.name)")
+                }
+            }
+        }
+    }
+
+    private func finishEditing() {
+        withAnimation {
+            editMode = .inactive
+            selection.removeAll()
+        }
+        flushReorderIfNeeded()
+    }
+
+    private func scheduleReorderCommit() {
+        guard playlists.first != nil else { return }
+        let ordered = entries.map(\.song)
+        reorderTask?.cancel()
+        reorderTask = Task {
+            // Coalesce rapid drag adjustments — both backends clear then re-add.
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            await commitReorder(songs: ordered)
+        }
+    }
+
+    /// Sends any outstanding local order to the server. Used after the debounce window
+    /// and when leaving edit mode so a final drag isn't abandoned.
+    private func flushReorderIfNeeded() {
+        reorderTask?.cancel()
+        guard let playlist = playlists.first else { return }
+        let ordered = entries.map(\.song)
+        let currentIds = playlist.items
+            .sorted { $0.order < $1.order }
+            .compactMap { $0.song?.remoteId }
+        guard currentIds != ordered.map(\.remoteId) else { return }
+        Task { await commitReorder(songs: ordered) }
+    }
+
+    private func commitReorder(songs ordered: [Song]) async {
+        guard let playlist = playlists.first else { return }
+        do {
+            try await LibraryActions.shared.reorderPlaylist(playlist, songs: ordered)
+            guard !isEditing, let playlist = playlists.first else { return }
+            loadSongs(for: playlist)
+        } catch {
+            if let playlist = playlists.first {
+                loadSongs(for: playlist)
+            }
+            if LibraryActions.shared.notePlaylistEditRejected(playlist, error: error) {
+                ActionToast.show("\(playlist.name) can't be edited")
+                editMode = .inactive
+            } else {
+                ActionToast.show("Couldn't reorder \(playlist.name)")
+            }
+        }
+    }
+
     // MARK: - Playback
 
     /// Prefer the playlist's own cover; fall back to the first song so the
@@ -227,16 +431,17 @@ struct PlaylistDetailView: View {
     }
 
     private func loadSongs(for playlist: Playlist) {
-        songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        let ordered = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        entries = ordered.map { PlaylistRowItem(song: $0) }
     }
 
     private func play(shuffle: Bool) {
         player.play(items: songs.map(QueueItem.from), shuffle: shuffle)
     }
 
-    private func playSong(_ song: Song) {
+    private func playSong(_ song: Song, entryId: PlaylistRowItem.ID) {
         let items = songs.map(QueueItem.from)
-        let index = songs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
+        let index = entries.firstIndex(where: { $0.id == entryId }) ?? 0
         player.play(items: items, startAt: index)
     }
 
@@ -244,5 +449,24 @@ struct PlaylistDetailView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// One playlist entry in the detail list. UUID identity keeps duplicate tracks distinct.
+private struct PlaylistRowItem: Identifiable, Hashable {
+    let id: UUID
+    let song: Song
+
+    init(id: UUID = UUID(), song: Song) {
+        self.id = id
+        self.song = song
+    }
+
+    static func == (lhs: PlaylistRowItem, rhs: PlaylistRowItem) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }

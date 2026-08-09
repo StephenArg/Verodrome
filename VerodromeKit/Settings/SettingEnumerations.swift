@@ -173,22 +173,18 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     }
 }
 
-/// Configurable library navigator categories (tabs / sidebar).
+/// Configurable library hub categories.
 public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiable {
     case artists
     case albums
     case songs
     case genres
-    case directories
     case playlists
     case podcasts
-    case downloads
-    case favoriteSongs
-    case favoriteAlbums
-    case favoriteArtists
-    case newestAlbums
-    case recentAlbums
     case radios
+    case downloads
+    case directories
+    case favorites
 
     public var id: String { rawValue }
 
@@ -198,40 +194,45 @@ public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiab
         case .albums: "Albums"
         case .songs: "Songs"
         case .genres: "Genres"
-        case .directories: "Directories"
         case .playlists: "Playlists"
         case .podcasts: "Podcasts"
-        case .downloads: "Downloads"
-        case .favoriteSongs: "Favorite Songs"
-        case .favoriteAlbums: "Favorite Albums"
-        case .favoriteArtists: "Favorite Artists"
-        case .newestAlbums: "Newest Albums"
-        case .recentAlbums: "Recently Played Albums"
         case .radios: "Radios"
+        case .downloads: "Downloads"
+        case .directories: "Directories"
+        case .favorites: "Favorites"
         }
     }
 
     public var systemImage: String {
         switch self {
-        case .artists: "music.mic"
-        case .albums: "square.stack"
-        case .songs: "music.note"
-        case .genres: "guitars"
-        case .directories: "folder"
-        case .playlists: "list.bullet"
-        case .podcasts: "headphones"
-        case .downloads: "arrow.down.circle"
-        case .favoriteSongs, .favoriteAlbums, .favoriteArtists: "heart.fill"
-        case .newestAlbums: "sparkles"
-        case .recentAlbums: "clock"
+        case .artists: "person.2.fill"
+        case .albums: "square.stack.fill"
+        case .songs: "music.note.list"
+        case .genres: "guitars.fill"
+        case .playlists: "music.note.house.fill"
+        case .podcasts: "mic.fill"
         case .radios: "dot.radiowaves.left.and.right"
+        case .downloads: "arrow.down.circle.fill"
+        case .directories: "folder.fill"
+        case .favorites: "heart.fill"
         }
     }
 
+    /// Matches the historical hardcoded library hub order.
     public static let defaultVisible: [LibraryCategory] = [
-        .artists, .albums, .newestAlbums, .recentAlbums, .songs,
-        .favoriteSongs, .directories, .playlists, .podcasts, .radios
+        .artists, .albums, .songs, .genres, .playlists,
+        .podcasts, .radios, .downloads, .directories, .favorites
     ]
+
+    /// Deduplicate and guarantee at least one category.
+    public static func normalized(_ categories: [LibraryCategory]) -> [LibraryCategory] {
+        var seen = Set<LibraryCategory>()
+        var result: [LibraryCategory] = []
+        for category in categories where seen.insert(category).inserted {
+            result.append(category)
+        }
+        return result.isEmpty ? defaultVisible : result
+    }
 }
 
 public enum PlayerDisplayStyle: String, Codable, CaseIterable, Sendable {

@@ -18,6 +18,17 @@ struct DisplaySettingsView: View {
                             .lineLimit(1)
                     }
                 }
+                NavigationLink {
+                    LibraryEditorView()
+                } label: {
+                    HStack {
+                        Text("Library Categories")
+                        Spacer()
+                        Text(libraryCategoriesSummary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
 
             Section("Library") {
@@ -43,5 +54,9 @@ struct DisplaySettingsView: View {
 
     private var tabBarSummary: String {
         settings.enabledRootTabs.map(\.title).joined(separator: ", ")
+    }
+
+    private var libraryCategoriesSummary: String {
+        settings.enabledLibraryCategories.map(\.title).joined(separator: ", ")
     }
 }
