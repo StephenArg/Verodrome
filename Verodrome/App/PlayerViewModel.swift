@@ -63,6 +63,8 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var playbackSpeed: Float = 1
     /// True while Random mode rolls a per-track rate from `PlaybackSpeed.randomOptions`.
     @Published private(set) var isRandomPlaybackSpeed = false
+    /// Wall-clock deadline for the sleep timer. Nil while inactive.
+    @Published private(set) var sleepTimerDeadline: Date?
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
@@ -77,6 +79,7 @@ final class PlayerViewModel: ObservableObject {
         impl.$isPlaying.receive(on: DispatchQueue.main).assign(to: &$isPlaying)
         impl.$sessionPlaybackRate.receive(on: DispatchQueue.main).assign(to: &$playbackSpeed)
         impl.$isRandomPlaybackSpeed.receive(on: DispatchQueue.main).assign(to: &$isRandomPlaybackSpeed)
+        impl.$sleepTimerDeadline.receive(on: DispatchQueue.main).assign(to: &$sleepTimerDeadline)
         impl.$isPlaying.receive(on: DispatchQueue.main).sink { [weak self] value in
             self?.nowPlaying.isPlaying = value
         }.store(in: &cancellables)
@@ -260,6 +263,19 @@ final class PlayerViewModel: ObservableObject {
         isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? true
     }
 
+    /// Starts (or restarts) a sleep timer for the given hours and minutes.
+    func startSleepTimer(hours: Int, minutes: Int) {
+        let duration = SleepTimer.duration(hours: hours, minutes: minutes)
+        facade?.startSleepTimer(duration)
+        sleepTimerDeadline = facade?.sleepTimerDeadline
+    }
+
+    /// Clears an active sleep timer without pausing playback.
+    func cancelSleepTimer() {
+        facade?.cancelSleepTimer()
+        sleepTimerDeadline = nil
+    }
+
     /// Asks the player to look up lyrics for the current track now, for when the
     /// automatic lookup is disabled or hasn't run yet.
     func requestLyrics() {
@@ -329,6 +345,7 @@ final class PlayerViewModel: ObservableObject {
         statusMessage = ""
         playbackSpeed = facade?.sessionPlaybackRate ?? 1
         isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? false
+        sleepTimerDeadline = facade?.sleepTimerDeadline
         progress.currentTime = 0
         progress.duration = 0
     }

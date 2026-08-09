@@ -55,6 +55,32 @@ public enum PlaybackSpeed {
     }
 }
 
+/// Wall-clock sleep timer helpers for the popup player.
+public enum SleepTimer {
+    public static let maxHours = 8
+
+    public static func duration(hours: Int, minutes: Int) -> TimeInterval {
+        let h = min(max(hours, 0), maxHours)
+        let m = min(max(minutes, 0), 59)
+        return TimeInterval(h * 3600 + m * 60)
+    }
+
+    public static func label(hours: Int, minutes: Int) -> String {
+        label(remaining: duration(hours: hours, minutes: minutes))
+    }
+
+    /// Formats a remaining interval as `"1h 29m"`, `"45m"`, or `"Off"` at zero.
+    public static func label(remaining: TimeInterval) -> String {
+        let total = max(0, Int(remaining.rounded(.up)))
+        guard total > 0 else { return "Off" }
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0, minutes > 0 { return "\(hours)h \(minutes)m" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(minutes)m"
+    }
+}
+
 
 public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
     /// Playable identity (song / episode / …). Not unique in the queue when the same

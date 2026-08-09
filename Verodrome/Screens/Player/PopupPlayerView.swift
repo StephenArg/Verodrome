@@ -247,6 +247,7 @@ struct PopupPlayerView: View {
             playbackSpeed: player.playbackSpeed,
             isRandomPlaybackSpeed: player.isRandomPlaybackSpeed,
             speedMenuEnabled: player.currentItem?.isLiveStream != true,
+            sleepTimerDeadline: player.sleepTimerDeadline,
             onDismiss: { dismiss() },
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
             onShare: { presentShareSheet() },
@@ -255,6 +256,8 @@ struct PopupPlayerView: View {
             onEqualizer: { bottomPanel = .equalizer },
             onSetPlaybackSpeed: { player.setPlaybackSpeed($0) },
             onSetPlaybackSpeedRandom: { player.setPlaybackSpeedRandom() },
+            onStartSleepTimer: { player.startSleepTimer(hours: $0, minutes: $1) },
+            onCancelSleepTimer: { player.cancelSleepTimer() },
             onToggleRatingStars: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     settings.showRatingStars.toggle()
@@ -323,7 +326,7 @@ struct PopupPlayerView: View {
         }
     }
 
-    // MARK: - Bottom action bar (AirPlay / Lyrics / Speed / Share / Queue)
+    // MARK: - Bottom action bar (AirPlay / Lyrics / Speed / Sleep / Share / Queue)
 
     private var bottomActionBar: some View {
         HStack(spacing: 28) {
@@ -363,6 +366,15 @@ struct PopupPlayerView: View {
             }
 
             Spacer()
+
+            if let deadline = player.sleepTimerDeadline {
+                SleepTimerChip(
+                    deadline: deadline,
+                    accentColor: themeManager.accentColor,
+                    onStart: { player.startSleepTimer(hours: $0, minutes: $1) },
+                    onCancel: { player.cancelSleepTimer() }
+                )
+            }
 
             Button {
                 presentShareSheet()
@@ -577,6 +589,7 @@ private struct PlayerHeader: View, Equatable {
     let playbackSpeed: Float
     let isRandomPlaybackSpeed: Bool
     let speedMenuEnabled: Bool
+    let sleepTimerDeadline: Date?
     let onDismiss: () -> Void
     let onOpenAlbum: () -> Void
     let onShare: () -> Void
@@ -585,6 +598,8 @@ private struct PlayerHeader: View, Equatable {
     let onEqualizer: () -> Void
     let onSetPlaybackSpeed: (Float) -> Void
     let onSetPlaybackSpeedRandom: () -> Void
+    let onStartSleepTimer: (Int, Int) -> Void
+    let onCancelSleepTimer: () -> Void
     let onToggleRatingStars: () -> Void
     let onToggleSongInfo: () -> Void
     let onToggleLyrics: () -> Void
@@ -628,7 +643,8 @@ private struct PlayerHeader: View, Equatable {
                         hasLyrics: hasLyrics,
                         playbackSpeed: playbackSpeed,
                         isRandomPlaybackSpeed: isRandomPlaybackSpeed,
-                        speedMenuEnabled: speedMenuEnabled
+                        speedMenuEnabled: speedMenuEnabled,
+                        sleepTimerDeadline: sleepTimerDeadline
                     ),
                     onShare: onShare,
                     onToggleFavorite: {
@@ -644,6 +660,8 @@ private struct PlayerHeader: View, Equatable {
                     onEqualizer: onEqualizer,
                     onSetPlaybackSpeed: onSetPlaybackSpeed,
                     onSetPlaybackSpeedRandom: onSetPlaybackSpeedRandom,
+                    onStartSleepTimer: onStartSleepTimer,
+                    onCancelSleepTimer: onCancelSleepTimer,
                     onToggleRatingStars: onToggleRatingStars,
                     onToggleSongInfo: onToggleSongInfo,
                     onToggleLyrics: onToggleLyrics
@@ -668,6 +686,7 @@ private struct PlayerHeader: View, Equatable {
             && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
             && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
             && lhs.speedMenuEnabled == rhs.speedMenuEnabled
+            && lhs.sleepTimerDeadline == rhs.sleepTimerDeadline
     }
 }
 
@@ -686,6 +705,7 @@ private struct PlayerOverflowMenuButton: View {
         var playbackSpeed: Float
         var isRandomPlaybackSpeed: Bool
         var speedMenuEnabled: Bool
+        var sleepTimerDeadline: Date?
 
         static func == (lhs: MenuState, rhs: MenuState) -> Bool {
             lhs.hasSong == rhs.hasSong
@@ -698,7 +718,14 @@ private struct PlayerOverflowMenuButton: View {
                 && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
                 && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
                 && lhs.speedMenuEnabled == rhs.speedMenuEnabled
+                && lhs.sleepTimerDeadline == rhs.sleepTimerDeadline
         }
+    }
+
+    private enum Submenu {
+        case none
+        case speed
+        case sleepTimer
     }
 
     var menuState: MenuState
@@ -710,16 +737,23 @@ private struct PlayerOverflowMenuButton: View {
     var onEqualizer: () -> Void
     var onSetPlaybackSpeed: (Float) -> Void
     var onSetPlaybackSpeedRandom: () -> Void
+    var onStartSleepTimer: (Int, Int) -> Void
+    var onCancelSleepTimer: () -> Void
     var onToggleRatingStars: () -> Void
     var onToggleSongInfo: () -> Void
     var onToggleLyrics: () -> Void
 
     @State private var showMenu = false
-    @State private var showingSpeedOptions = false
+    @State private var submenu: Submenu = .none
+
+    private var sleepTimerTrailingLabel: String {
+        guard let deadline = menuState.sleepTimerDeadline else { return "Off" }
+        return SleepTimer.label(remaining: deadline.timeIntervalSinceNow)
+    }
 
     var body: some View {
         Button {
-            showingSpeedOptions = false
+            submenu = .none
             showMenu = true
         } label: {
             Image(systemName: "ellipsis")
@@ -731,9 +765,23 @@ private struct PlayerOverflowMenuButton: View {
         .buttonStyle(.plain)
         .popover(isPresented: $showMenu, arrowEdge: .top) {
             Group {
-                if showingSpeedOptions {
+                switch submenu {
+                case .speed:
                     speedOptionsContent
-                } else {
+                case .sleepTimer:
+                    SleepTimerPanel(
+                        deadline: menuState.sleepTimerDeadline,
+                        onStart: { hours, minutes in
+                            showMenu = false
+                            onStartSleepTimer(hours, minutes)
+                        },
+                        onCancel: {
+                            showMenu = false
+                            onCancelSleepTimer()
+                        },
+                        onBack: { submenu = .none }
+                    )
+                case .none:
                     mainMenuContent
                 }
             }
@@ -741,7 +789,7 @@ private struct PlayerOverflowMenuButton: View {
             .padding(.horizontal, 12)
             .fixedSize(horizontal: true, vertical: true)
             .presentationCompactAdaptation(.popover)
-            .onDisappear { showingSpeedOptions = false }
+            .onDisappear { submenu = .none }
         }
     }
 
@@ -791,9 +839,32 @@ private struct PlayerOverflowMenuButton: View {
                 action: onToggleSongInfo
             )
             menuRow(title: "Equalizer", systemImage: "slider.vertical.3", action: onEqualizer)
-            menuRow(title: "Sleep Timer", systemImage: "moon.zzz", disabled: true) {}
             Button {
-                showingSpeedOptions = true
+                submenu = .sleepTimer
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "moon.zzz")
+                        .font(.body)
+                        .frame(width: 20, alignment: .center)
+                    Text("Sleep Timer")
+                        .font(.body)
+                    Spacer(minLength: 12)
+                    Text(sleepTimerTrailingLabel)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Button {
+                submenu = .speed
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "timer")
@@ -827,7 +898,7 @@ private struct PlayerOverflowMenuButton: View {
     private var speedOptionsContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                showingSpeedOptions = false
+                submenu = .none
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "chevron.left")
@@ -1128,6 +1199,174 @@ private struct PlaybackSpeedMenuButton: View {
         case 5: return "·"
         case 6: return "2x"
         default: return "·"
+        }
+    }
+}
+
+/// Hours + minutes pickers for the sleep timer. Used from the overflow submenu
+/// and from the bottom-bar countdown chip popover.
+private struct SleepTimerPanel: View {
+    var deadline: Date?
+    var onStart: (Int, Int) -> Void
+    var onCancel: () -> Void
+    /// When non-nil, shows a back chevron that returns to the overflow menu.
+    var onBack: (() -> Void)? = nil
+
+    @State private var hours: Double = 0
+    @State private var minutes: Double = 15
+
+    private var isActive: Bool { deadline != nil }
+    private var canStart: Bool { hours > 0 || minutes > 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let onBack {
+                Button(action: onBack) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 20, alignment: .center)
+                        Text("Sleep Timer")
+                            .font(.body.weight(.semibold))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Divider().padding(.vertical, 4)
+            } else {
+                Text("Sleep Timer")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
+            }
+
+            Text(SleepTimer.label(hours: Int(hours), minutes: Int(minutes)))
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Hours")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(hours))")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $hours, in: 0...Double(SleepTimer.maxHours), step: 1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Minutes")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(minutes))")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $minutes, in: 0...59, step: 1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
+
+            Button {
+                onStart(Int(hours), Int(minutes))
+            } label: {
+                Text(isActive ? "Update" : "Start")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canStart)
+            .padding(.horizontal, 14)
+
+            if isActive {
+                Button(role: .destructive, action: onCancel) {
+                    Text("Turn Off")
+                        .font(.body)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+            }
+        }
+        .frame(width: 280)
+        .onAppear { seedFromDeadline() }
+    }
+
+    private func seedFromDeadline() {
+        guard let deadline else { return }
+        let remaining = max(0, deadline.timeIntervalSinceNow)
+        let totalMinutes = Int((remaining / 60).rounded(.up))
+        hours = Double(min(totalMinutes / 60, SleepTimer.maxHours))
+        minutes = Double(totalMinutes % 60)
+    }
+}
+
+/// Live countdown chip shown left of Share while a sleep timer is active.
+/// Owns its own `Text(timerInterval:)` so only this view ticks each second.
+private struct SleepTimerChip: View {
+    let deadline: Date
+    var accentColor: Color
+    var onStart: (Int, Int) -> Void
+    var onCancel: () -> Void
+
+    @State private var showPanel = false
+
+    var body: some View {
+        Button {
+            showPanel = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "moon.zzz.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(
+                    timerInterval: Date()...deadline,
+                    pauseTime: nil,
+                    countsDown: true,
+                    showsHours: true
+                )
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+            }
+            .foregroundStyle(accentColor)
+            .accessibilityLabel("Sleep timer")
+        }
+        .popover(isPresented: $showPanel, arrowEdge: .bottom) {
+            SleepTimerPanel(
+                deadline: deadline,
+                onStart: { hours, minutes in
+                    showPanel = false
+                    onStart(hours, minutes)
+                },
+                onCancel: {
+                    showPanel = false
+                    onCancel()
+                }
+            )
+            .padding(.vertical, 10)
+            .padding(.horizontal, 4)
+            .presentationCompactAdaptation(.popover)
         }
     }
 }

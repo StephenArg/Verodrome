@@ -79,12 +79,16 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     @Published public private(set) var sessionPlaybackRate: Float = 1
     /// True while Random mode is on (per-track rolls from `PlaybackSpeed.randomOptions`).
     @Published public private(set) var isRandomPlaybackSpeed = false
+    /// Wall-clock deadline for the sleep timer. Nil while inactive. Publishes only on
+    /// start / cancel / fire so the player is not redrawn every second.
+    @Published public private(set) var sleepTimerDeadline: Date?
 
     /// The stored queue carries the scrub position, so it is rewritten as playback moves.
     /// Doing that per tick would be a file write a second; this interval keeps a relaunch
     /// within a few seconds of where the user was.
     private static let positionPersistInterval: TimeInterval = 5
     private var lastPersistedPosition: TimeInterval = 0
+    private var sleepTimer: Timer?
 
     public init(audioPlayer: AudioPlayer) {
         self.audioPlayer = audioPlayer
@@ -116,7 +120,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.backend.$isRandomPlaybackSpeed
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRandomPlaybackSpeed)
-        // A new play context (or cleared queue) drops any sticky speed / Random mode.
+        // A new play context (or cleared queue) drops any sticky speed / Random mode
+        // and cancels an active sleep timer — same "session" lifetime as playback speed.
         // No `receive(on:)` — queue mutations already happen on the main actor, and
         // the reset must land before the next `play(item:)` re-asserts session rate.
         audioPlayer.queueHandler.$contextGeneration
@@ -124,6 +129,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.setSessionPlaybackRate(1)
+                self?.cancelSleepTimer()
             }
             .store(in: &cancellables)
         audioPlayer.backend.$currentTime
@@ -189,6 +195,11 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     func test_applySessionRateForNewTrack() {
         audioPlayer.backend.applySessionRateForNewTrack()
         sessionPlaybackRate = audioPlayer.backend.sessionPlaybackRate
+    }
+
+    /// Test seam: evaluate the sleep timer against an injected clock.
+    func test_fireSleepTimerIfDue(now: Date) {
+        fireSleepTimerIfDue(now: now)
     }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
@@ -309,6 +320,47 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
             elapsed: currentTime,
             rate: audioPlayer.backend.playbackRate
         )
+    }
+
+    /// Starts (or restarts) a wall-clock sleep timer. Zero / negative durations cancel.
+    public func startSleepTimer(_ duration: TimeInterval) {
+        guard duration > 0 else {
+            cancelSleepTimer()
+            return
+        }
+        stopSleepTimerTick()
+        sleepTimerDeadline = Date().addingTimeInterval(duration)
+        startSleepTimerTick()
+    }
+
+    /// Clears an active sleep timer without pausing playback.
+    public func cancelSleepTimer() {
+        stopSleepTimerTick()
+        sleepTimerDeadline = nil
+    }
+
+    private func startSleepTimerTick() {
+        stopSleepTimerTick()
+        // Block-based timer on the main run loop; wall-clock comparison each tick
+        // survives drift and system sleep better than a single fire-at-deadline timer.
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fireSleepTimerIfDue(now: Date())
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        sleepTimer = timer
+    }
+
+    private func stopSleepTimerTick() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+    }
+
+    private func fireSleepTimerIfDue(now: Date) {
+        guard let deadline = sleepTimerDeadline, now >= deadline else { return }
+        cancelSleepTimer()
+        pause()
     }
 
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }

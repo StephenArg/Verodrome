@@ -60,6 +60,7 @@
 		4B889EC86AD648FCA975A6A9 /* RootSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6412450D52FF5701ED682D41 /* RootSplitView.swift */; };
 		4C587D2CC050EA6A41FF90A5 /* VerodromeIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F1E351E001D086403B6D6B /* VerodromeIntents.swift */; };
 		501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */; };
+		7E9F0A2B4C6D8E1F3A5B7C9D /* SleepTimerSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D8E2F4A1B3C5D7E9F0A2B4C /* SleepTimerSessionTests.swift */; };
 		50CF172EF318C532F3A6716A /* SubsonicServerApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9581EB85416D6AA0228EC528 /* SubsonicServerApi.swift */; };
 		515368D367BA06C6836ACB1F /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E89A508FC0EE0CAE006D5F18 /* LibraryModels.swift */; };
 		52063389D2F9B2C73A2EC634 /* LibrarySyncProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19183A4EE6ACBB78D78BB661 /* LibrarySyncProgressTests.swift */; };
@@ -280,6 +281,7 @@
 		04057A21F240E44C6F6AF9BE /* BackendApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendApi.swift; sourceTree = "<group>"; };
 		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSpeedSessionTests.swift; sourceTree = "<group>"; };
+		6D8E2F4A1B3C5D7E9F0A2B4C /* SleepTimerSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepTimerSessionTests.swift; sourceTree = "<group>"; };
 		08B57FFE233953B8C9F45598 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		08C787639EF6EA7F8FD4B3BA /* LyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsView.swift; sourceTree = "<group>"; };
 		09150A48F54A2C37448E7DEE /* ApiType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiType.swift; sourceTree = "<group>"; };
@@ -898,6 +900,7 @@
 				E2D9F3B48D830909B70F7111 /* PlaybackStallDetectorTests.swift */,
 				E11C71398F94E81333A5FB15 /* PlayQueueHandlerTests.swift */,
 				03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */,
+				6D8E2F4A1B3C5D7E9F0A2B4C /* SleepTimerSessionTests.swift */,
 			);
 			path = Player;
 			sourceTree = "<group>";
@@ -1286,6 +1289,7 @@
 				42B05DD5ADD0482650FE722C /* PlaybackStallDetectorTests.swift in Sources */,
 				091C2B72F31D2365A3585200 /* QueueCachePolicyTests.swift in Sources */,
 				B5BB2679EA5B685646BF045B /* ShuffleAllSessionTests.swift in Sources */,
+				7E9F0A2B4C6D8E1F3A5B7C9D /* SleepTimerSessionTests.swift in Sources */,
 				C0082494846694EA80FC9915 /* SubsonicParserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
