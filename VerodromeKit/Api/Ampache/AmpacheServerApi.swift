@@ -59,7 +59,7 @@ public final class AmpacheServerApi: @unchecked Sendable {
         serverVersion = handshake.version
 
         return ServerInfo(
-            name: handshake.serverName ?? "Ampache",
+            name: "Ampache",
             version: handshake.version,
             apiVersion: Self.clientVersion,
             isSupported: true

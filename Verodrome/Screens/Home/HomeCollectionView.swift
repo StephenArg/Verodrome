@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import VerodromeKit
 
-/// Identifies one tile within one section.
+/// Identifies one tile within one carousel section.
 ///
 /// A diffable data source requires item identifiers to be unique across the *whole*
 /// snapshot, and the same album legitimately appears in more than one carousel (Recently
@@ -14,6 +14,23 @@ private struct HomeEntry: Hashable {
     let tile: HomeTileItem
 }
 
+private enum HomeBoardSection: Hashable {
+    case stats
+    case carousel(HomeSection)
+}
+
+private enum HomeBoardItem: Hashable {
+    case stats
+    case tile(HomeEntry)
+}
+
+struct HomeStatsBarState: Equatable {
+    var albumCount: Int
+    var songCount: Int
+    var isShuffleBusy: Bool
+    var isShuffleDisabled: Bool
+}
+
 /// Home's carousels, rendered by a single `UICollectionView`.
 ///
 /// Every section is one orthogonally-scrolling row of the same collection view, which is
@@ -22,9 +39,11 @@ private struct HomeEntry: Hashable {
 struct HomeCollectionView: UIViewControllerRepresentable {
     let sections: [HomeSection]
     let tiles: [HomeSection: [HomeTileItem]]
+    let stats: HomeStatsBarState
     var onSelectTile: (HomeSection, HomeTileItem) -> Void
     var onPlayAlbum: (_ compoundId: String, _ remoteId: String) -> Void
     var onSeeAll: (HomeSection) -> Void
+    var onShuffle: () -> Void
     var onRefresh: @MainActor () async -> Void
 
     func makeUIViewController(context: Context) -> HomeCollectionViewController {
@@ -32,6 +51,7 @@ struct HomeCollectionView: UIViewControllerRepresentable {
         controller.onSelectTile = onSelectTile
         controller.onPlayAlbum = onPlayAlbum
         controller.onSeeAll = onSeeAll
+        controller.onShuffle = onShuffle
         controller.onRefresh = onRefresh
         return controller
     }
@@ -40,8 +60,9 @@ struct HomeCollectionView: UIViewControllerRepresentable {
         controller.onSelectTile = onSelectTile
         controller.onPlayAlbum = onPlayAlbum
         controller.onSeeAll = onSeeAll
+        controller.onShuffle = onShuffle
         controller.onRefresh = onRefresh
-        controller.apply(sections: sections, tiles: tiles)
+        controller.apply(sections: sections, tiles: tiles, stats: stats)
     }
 }
 
@@ -52,14 +73,23 @@ final class HomeCollectionViewController: UICollectionViewController {
     var onSelectTile: ((HomeSection, HomeTileItem) -> Void)?
     var onPlayAlbum: ((_ compoundId: String, _ remoteId: String) -> Void)?
     var onSeeAll: ((HomeSection) -> Void)?
+    var onShuffle: (() -> Void)?
     var onRefresh: (@MainActor () async -> Void)?
 
-    private var dataSource: UICollectionViewDiffableDataSource<HomeSection, HomeEntry>!
+    private var dataSource: UICollectionViewDiffableDataSource<HomeBoardSection, HomeBoardItem>!
     private var sections: [HomeSection] = []
     private var tiles: [HomeSection: [HomeTileItem]] = [:]
+    private var stats = HomeStatsBarState(
+        albumCount: 0,
+        songCount: 0,
+        isShuffleBusy: false,
+        isShuffleDisabled: true
+    )
 
     init() {
-        super.init(collectionViewLayout: Self.createLayout())
+        // Real compositional layout is installed in `viewDidLoad` once the data source
+        // exists — the section provider needs to read snapshot section identifiers.
+        super.init(collectionViewLayout: UICollectionViewFlowLayout())
     }
 
     required init?(coder: NSCoder) { nil }
@@ -69,6 +99,10 @@ final class HomeCollectionViewController: UICollectionViewController {
         collectionView.backgroundColor = .systemBackground
         collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
         collectionView.alwaysBounceVertical = true
+        collectionView.register(
+            HomeStatsCell.self,
+            forCellWithReuseIdentifier: HomeStatsCell.reuseID
+        )
         collectionView.register(
             HomeTileCell.self,
             forCellWithReuseIdentifier: HomeTileCell.reuseID
@@ -91,6 +125,7 @@ final class HomeCollectionViewController: UICollectionViewController {
         }
 
         configureDataSource()
+        collectionView.setCollectionViewLayout(createLayout(), animated: false)
 
         NotificationCenter.default.addObserver(
             self,
@@ -111,64 +146,114 @@ final class HomeCollectionViewController: UICollectionViewController {
         }
     }
 
-    private static func createLayout() -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout { _, environment in
-            let item = NSCollectionLayoutItem(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .fractionalHeight(1.0)
-                )
-            )
-            // Absolute height, deliberately not `.estimated`. A tile's height is fully
-            // determined by its own constraints, so there is nothing for self-sizing to
-            // discover — and an orthogonally-scrolling section needs its entire content
-            // size up front, so an estimate made UIKit instantiate and Auto Layout-measure
-            // *every* tile in the section on the main thread each time a snapshot was
-            // applied. `HomeTileCell.height(for:)` is the same arithmetic, done once.
-            let group = NSCollectionLayoutGroup.horizontal(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .absolute(tileWidth),
-                    heightDimension: .absolute(HomeTileCell.height(for: environment.traitCollection))
-                ),
-                subitems: [item]
-            )
-
-            let section = NSCollectionLayoutSection(group: group)
-            // Native orthogonal scrolling: no nested scroll views to fight over layout.
-            section.orthogonalScrollingBehavior = .continuous
-            section.interGroupSpacing = 16
-            section.contentInsets = NSDirectionalEdgeInsets(
-                top: 8,
-                leading: 16,
-                bottom: 24,
-                trailing: 16
-            )
-
-            let header = NSCollectionLayoutBoundarySupplementaryItem(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .estimated(44)
-                ),
-                elementKind: UICollectionView.elementKindSectionHeader,
-                alignment: .top
-            )
-            section.boundarySupplementaryItems = [header]
-            return section
+    private func createLayout() -> UICollectionViewCompositionalLayout {
+        UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
+            guard let self else { return nil }
+            let ids = self.dataSource.snapshot().sectionIdentifiers
+            guard sectionIndex < ids.count else { return nil }
+            switch ids[sectionIndex] {
+            case .stats:
+                return Self.makeStatsSection()
+            case .carousel:
+                return Self.makeCarouselSection(environment: environment)
+            }
         }
     }
 
+    private static func makeStatsSection() -> NSCollectionLayoutSection {
+        let item = NSCollectionLayoutItem(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1.0),
+                heightDimension: .estimated(44)
+            )
+        )
+        let group = NSCollectionLayoutGroup.horizontal(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1.0),
+                heightDimension: .estimated(44)
+            ),
+            subitems: [item]
+        )
+        return NSCollectionLayoutSection(group: group)
+    }
+
+    private static func makeCarouselSection(
+        environment: NSCollectionLayoutEnvironment
+    ) -> NSCollectionLayoutSection {
+        let item = NSCollectionLayoutItem(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1.0),
+                heightDimension: .fractionalHeight(1.0)
+            )
+        )
+        // Absolute height, deliberately not `.estimated`. A tile's height is fully
+        // determined by its own constraints, so there is nothing for self-sizing to
+        // discover — and an orthogonally-scrolling section needs its entire content
+        // size up front, so an estimate made UIKit instantiate and Auto Layout-measure
+        // *every* tile in the section on the main thread each time a snapshot was
+        // applied. `HomeTileCell.height(for:)` is the same arithmetic, done once.
+        let group = NSCollectionLayoutGroup.horizontal(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .absolute(tileWidth),
+                heightDimension: .absolute(HomeTileCell.height(for: environment.traitCollection))
+            ),
+            subitems: [item]
+        )
+
+        let section = NSCollectionLayoutSection(group: group)
+        // Native orthogonal scrolling: no nested scroll views to fight over layout.
+        section.orthogonalScrollingBehavior = .continuous
+        section.interGroupSpacing = 16
+        section.contentInsets = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: 16,
+            bottom: 24,
+            trailing: 16
+        )
+
+        let header = NSCollectionLayoutBoundarySupplementaryItem(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1.0),
+                heightDimension: .estimated(44)
+            ),
+            elementKind: UICollectionView.elementKindSectionHeader,
+            alignment: .top
+        )
+        section.boundarySupplementaryItems = [header]
+        return section
+    }
+
     private func configureDataSource() {
-        dataSource = UICollectionViewDiffableDataSource<HomeSection, HomeEntry>(
+        dataSource = UICollectionViewDiffableDataSource<HomeBoardSection, HomeBoardItem>(
             collectionView: collectionView
-        ) { collectionView, indexPath, entry in
-            guard let cell = collectionView.dequeueReusableCell(
-                withReuseIdentifier: HomeTileCell.reuseID,
-                for: indexPath
-            ) as? HomeTileCell else {
-                return UICollectionViewCell()
+        ) { [weak self] collectionView, indexPath, item in
+            guard let self else { return UICollectionViewCell() }
+            switch item {
+            case .stats:
+                guard let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: HomeStatsCell.reuseID,
+                    for: indexPath
+                ) as? HomeStatsCell else {
+                    return UICollectionViewCell()
+                }
+                cell.configure(
+                    albumCount: self.stats.albumCount,
+                    songCount: self.stats.songCount,
+                    isShuffleBusy: self.stats.isShuffleBusy,
+                    isShuffleDisabled: self.stats.isShuffleDisabled,
+                    onShuffle: { [weak self] in self?.onShuffle?() }
+                )
+                return cell
+            case .tile(let entry):
+                guard let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: HomeTileCell.reuseID,
+                    for: indexPath
+                ) as? HomeTileCell else {
+                    return UICollectionViewCell()
+                }
+                cell.configure(with: entry.tile, width: Self.tileWidth)
+                return cell
             }
-            cell.configure(with: entry.tile, width: Self.tileWidth)
-            return cell
         }
 
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
@@ -178,11 +263,14 @@ final class HomeCollectionViewController: UICollectionViewController {
                       ofKind: kind,
                       withReuseIdentifier: HomeSectionHeaderView.reuseID,
                       for: indexPath
-                  ) as? HomeSectionHeaderView,
-                  indexPath.section < self.sections.count
+                  ) as? HomeSectionHeaderView
             else { return nil }
 
-            let section = self.sections[indexPath.section]
+            let ids = self.dataSource.snapshot().sectionIdentifiers
+            guard indexPath.section < ids.count,
+                  case .carousel(let section) = ids[indexPath.section]
+            else { return nil }
+
             header.title = section.title
             let hasTiles = !(self.tiles[section] ?? []).isEmpty
             header.showsSeeAll = hasTiles
@@ -191,28 +279,48 @@ final class HomeCollectionViewController: UICollectionViewController {
         }
     }
 
-    func apply(sections: [HomeSection], tiles: [HomeSection: [HomeTileItem]]) {
+    func apply(
+        sections: [HomeSection],
+        tiles: [HomeSection: [HomeTileItem]],
+        stats: HomeStatsBarState
+    ) {
         // Skip empty carousels so their headers don't sit over a blank row.
         let visibleSections = sections.filter { !(tiles[$0] ?? []).isEmpty }
-        guard self.sections != visibleSections || self.tiles != tiles else { return }
+        let sectionsChanged = self.sections != visibleSections || self.tiles != tiles
+        let statsChanged = self.stats != stats
+        guard sectionsChanged || statsChanged else { return }
+
         self.sections = visibleSections
         self.tiles = tiles
+        self.stats = stats
 
-        var snapshot = NSDiffableDataSourceSnapshot<HomeSection, HomeEntry>()
-        snapshot.appendSections(visibleSections)
-        for section in visibleSections {
-            let entries = (tiles[section] ?? []).map { HomeEntry(section: section, tile: $0) }
-            snapshot.appendItems(entries, toSection: section)
+        if sectionsChanged {
+            var snapshot = NSDiffableDataSourceSnapshot<HomeBoardSection, HomeBoardItem>()
+            // Stats rides in the scroll view so it collapses with the large title.
+            snapshot.appendSections([.stats])
+            snapshot.appendItems([.stats], toSection: .stats)
+            for section in visibleSections {
+                let board = HomeBoardSection.carousel(section)
+                snapshot.appendSections([board])
+                let entries = (tiles[section] ?? []).map {
+                    HomeBoardItem.tile(HomeEntry(section: section, tile: $0))
+                }
+                snapshot.appendItems(entries, toSection: board)
+            }
+            // `animatingDifferences: false` on the main queue applies synchronously, and this
+            // layout has one orthogonal scroll view per section — so this call is a plausible
+            // home for main-thread stalls and is worth timing separately from the fetch.
+            let token = PerfTrace.begin("Home.applySnapshot")
+            dataSource.apply(snapshot, animatingDifferences: false)
+            PerfTrace.end(
+                token,
+                details: "sections=\(visibleSections.count) items=\(snapshot.numberOfItems)"
+            )
+        } else if statsChanged {
+            var snapshot = dataSource.snapshot()
+            snapshot.reconfigureItems([.stats])
+            dataSource.apply(snapshot, animatingDifferences: false)
         }
-        // `animatingDifferences: false` on the main queue applies synchronously, and this
-        // layout has one orthogonal scroll view per section — so this call is a plausible
-        // home for main-thread stalls and is worth timing separately from the fetch.
-        let token = PerfTrace.begin("Home.applySnapshot")
-        dataSource.apply(snapshot, animatingDifferences: false)
-        PerfTrace.end(
-            token,
-            details: "sections=\(visibleSections.count) items=\(snapshot.numberOfItems)"
-        )
     }
 
     @objc private func handleRefresh() {
@@ -246,7 +354,7 @@ final class HomeCollectionViewController: UICollectionViewController {
         didSelectItemAt indexPath: IndexPath
     ) {
         collectionView.deselectItem(at: indexPath, animated: true)
-        guard let entry = dataSource.itemIdentifier(for: indexPath) else { return }
+        guard case .tile(let entry) = dataSource.itemIdentifier(for: indexPath) else { return }
         onSelectTile?(entry.section, entry.tile)
     }
 
@@ -255,7 +363,7 @@ final class HomeCollectionViewController: UICollectionViewController {
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard let entry = dataSource.itemIdentifier(for: indexPath),
+        guard case .tile(let entry) = dataSource.itemIdentifier(for: indexPath),
               let compoundId = entry.tile.albumCompoundId,
               let remoteId = entry.tile.albumRemoteId
         else { return nil }
@@ -267,6 +375,34 @@ final class HomeCollectionViewController: UICollectionViewController {
                 }
             ])
         }
+    }
+}
+
+// MARK: - Stats bar
+
+@MainActor
+final class HomeStatsCell: UICollectionViewCell {
+    static let reuseID = "HomeStatsCell"
+
+    func configure(
+        albumCount: Int,
+        songCount: Int,
+        isShuffleBusy: Bool,
+        isShuffleDisabled: Bool,
+        onShuffle: @escaping () -> Void
+    ) {
+        contentConfiguration = UIHostingConfiguration {
+            LibraryShuffleCountBar(
+                counts: [
+                    (albumCount, "Album"),
+                    (songCount, "Song")
+                ],
+                isShuffleBusy: isShuffleBusy,
+                isShuffleDisabled: isShuffleDisabled,
+                onShuffle: onShuffle
+            )
+        }
+        .margins(.all, 0)
     }
 }
 
@@ -312,15 +448,18 @@ final class HomeSectionHeaderView: UICollectionReusableView {
         addSubview(seeAllButton)
         seeAllButton.addTarget(self, action: #selector(seeAllTapped), for: .touchUpInside)
 
+        // No extra horizontal padding here: the section's contentInsets already inset
+        // headers (`supplementariesFollowContentInsets` defaults to true), so matching
+        // that inset again would push the title past the left edge of the tiles.
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
             titleLabel.topAnchor.constraint(equalTo: topAnchor),
             titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
             titleLabel.trailingAnchor.constraint(
                 lessThanOrEqualTo: seeAllButton.leadingAnchor,
                 constant: -8
             ),
-            seeAllButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            seeAllButton.trailingAnchor.constraint(equalTo: trailingAnchor),
             seeAllButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor)
         ])
     }

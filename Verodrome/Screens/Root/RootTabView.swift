@@ -4,6 +4,7 @@ import VerodromeKit
 struct RootTabView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var account: AccountStore
     @State private var selection: RootTabItem = .home
 
     var body: some View {
@@ -25,7 +26,7 @@ struct RootTabView: View {
             ForEach(settings.enabledRootTabs) { tab in
                 tabContent(for: tab)
                     .tabItem {
-                        Label(tab.title, systemImage: tab.systemImage)
+                        Label(title(for: tab), systemImage: tab.systemImage)
                     }
                     .tag(tab)
             }
@@ -88,5 +89,9 @@ struct RootTabView: View {
         if !tabs.contains(selection) {
             selection = tabs[0]
         }
+    }
+
+    private func title(for tab: RootTabItem) -> String {
+        tab == .home ? account.homeTitle : tab.title
     }
 }

@@ -29,6 +29,8 @@ public struct AccountSettings: Codable, Equatable, Sendable {
     public var homeSections: [HomeSection]
     public var libraryDisplayTypesInUse: [LibraryDisplayType]
     public var apiType: ApiType
+    /// Raw product name from the server handshake/ping (`navidrome`, `Ampache`, …).
+    public var serverTypeName: String?
 
     public init(
         credentials: AccountCredentials = AccountCredentials(),
@@ -46,7 +48,8 @@ public struct AccountSettings: Codable, Equatable, Sendable {
         playlistSortDirection: SortDirection = .ascending,
         homeSections: [HomeSection] = HomeSection.allCases,
         libraryDisplayTypesInUse: [LibraryDisplayType] = [.grid3, .list],
-        apiType: ApiType = .notDetected
+        apiType: ApiType = .notDetected,
+        serverTypeName: String? = nil
     ) {
         self.credentials = credentials
         self.themeColorHex = themeColorHex
@@ -64,6 +67,7 @@ public struct AccountSettings: Codable, Equatable, Sendable {
         self.homeSections = homeSections
         self.libraryDisplayTypesInUse = libraryDisplayTypesInUse
         self.apiType = apiType
+        self.serverTypeName = serverTypeName
     }
 
     public static let `default` = AccountSettings()

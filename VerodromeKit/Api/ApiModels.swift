@@ -218,6 +218,13 @@ public struct ServerInfo: Sendable, Equatable {
         self.apiVersion = apiVersion
         self.isSupported = isSupported
     }
+
+    /// Title-cased product label for UI (e.g. ping `type="navidrome"` → "Navidrome").
+    public var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Home" }
+        return trimmed.localizedCapitalized
+    }
 }
 
 public struct SearchArtist: Sendable, Identifiable, Hashable {

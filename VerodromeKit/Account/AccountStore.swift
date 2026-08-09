@@ -19,6 +19,25 @@ public final class AccountStore: ObservableObject {
     @Published public private(set) var credentials: AccountCredentials?
     @Published public private(set) var lastError: String?
     @Published public private(set) var detectedApiType: ApiType?
+    /// Title-cased server product for Home ("Navidrome", "Ampache", …).
+    @Published public private(set) var serverTypeDisplayName: String?
+
+    /// Home tab/nav title — server product when known, otherwise `"Home"`.
+    public var homeTitle: String {
+        guard let name = serverTypeDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return "Home"
+        }
+        return name
+    }
+
+    /// True when we still need a handshake/ping to learn the server product name.
+    public var needsServerTypeName: Bool {
+        guard let name = serverTypeDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return true
+        }
+        return name.isEmpty
+    }
 
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -35,11 +54,26 @@ public final class AccountStore: ObservableObject {
         isLoggedIn = false
         lastError = nil
         detectedApiType = nil
+        serverTypeDisplayName = nil
         migrateLegacyIfNeeded()
         if let key = activeAccountKey(), let stored = loadCredentials(for: key) {
             credentials = stored
             isLoggedIn = true
+            serverTypeDisplayName = Self.displayName(
+                for: SettingsStore.shared.loadAccountSettings(for: key).serverTypeName
+            )
         }
+    }
+
+    public func rememberServerTypeName(_ rawName: String?) {
+        serverTypeDisplayName = Self.displayName(for: rawName)
+    }
+
+    public static func displayName(for rawName: String?) -> String? {
+        guard let rawName else { return nil }
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.localizedCapitalized
     }
 
     public func detectApiType(for urlString: String) async -> ApiType? {
@@ -83,6 +117,7 @@ public final class AccountStore: ObservableObject {
         credentials = nil
         isLoggedIn = false
         detectedApiType = nil
+        serverTypeDisplayName = nil
         NotificationCenter.default.post(name: .accountChanged, object: nil)
     }
 
@@ -99,10 +134,14 @@ public final class AccountStore: ObservableObject {
             defaults.set(data, forKey: Keys.activeKey)
             credentials = loadCredentials(for: info.key)
             isLoggedIn = credentials != nil
+            serverTypeDisplayName = Self.displayName(
+                for: SettingsStore.shared.loadAccountSettings(for: info.key).serverTypeName
+            )
         } else {
             defaults.removeObject(forKey: Keys.activeKey)
             credentials = nil
             isLoggedIn = false
+            serverTypeDisplayName = nil
         }
     }
 
@@ -143,9 +182,13 @@ public final class AccountStore: ObservableObject {
         if let key = activeAccountKey() {
             credentials = loadCredentials(for: key)
             isLoggedIn = credentials != nil
+            serverTypeDisplayName = Self.displayName(
+                for: SettingsStore.shared.loadAccountSettings(for: key).serverTypeName
+            )
         } else {
             credentials = nil
             isLoggedIn = false
+            serverTypeDisplayName = nil
         }
     }
 

@@ -208,7 +208,6 @@ public final class VerodromeKit: ObservableObject {
 
     public func login(credentials: LoginCredentials) async throws {
         let infoServer = try await backendProxy.login(credentials: credentials)
-        _ = infoServer
         let apiType = ApiType(backendProxy.apiType)
         let info = AccountInfo(serverURL: credentials.serverURL.absoluteString, username: credentials.username)
         let storedCreds = AccountCredentials(
@@ -220,6 +219,7 @@ public final class VerodromeKit: ObservableObject {
         accountStore.setActiveAccount(info)
         await repointQueueStore(to: info.key, forgetCurrent: false)
         observableSettings.reload(accountKey: info.key)
+        rememberServerType(infoServer)
         observableSettings.updateAccount { $0.apiType = apiType }
         settings.isLibrarySynced = false
         settings.save()
@@ -380,7 +380,7 @@ public final class VerodromeKit: ObservableObject {
         ) else {
             throw BackendError.invalidURL
         }
-        _ = try await backendProxy.login(credentials: login)
+        rememberServerType(try await backendProxy.login(credentials: login))
         _ = try await ensureActiveLibrarySyncer()
         await queueHandler?.loadFromDisk()
         await restoreParkedTrack()
@@ -434,6 +434,9 @@ public final class VerodromeKit: ObservableObject {
     @discardableResult
     public func ensureActiveLibrarySyncer() async throws -> (any LibrarySyncer)? {
         if let activeLibrarySyncer, backendProxy.isAuthenticated {
+            if accountStore.needsServerTypeName {
+                await refreshServerTypeIfNeeded()
+            }
             return activeLibrarySyncer
         }
         guard let storage else { return nil }
@@ -450,8 +453,10 @@ public final class VerodromeKit: ObservableObject {
             ) else {
                 throw BackendError.invalidURL
             }
-            _ = try await backendProxy.login(credentials: login)
+            rememberServerType(try await backendProxy.login(credentials: login))
             didAuthenticate = true
+        } else if accountStore.needsServerTypeName {
+            await refreshServerTypeIfNeeded()
         }
         // The ingester runs on its own ModelActor so sync writes never touch the main
         // thread; the account row is resolved lazily inside that actor's context.
@@ -498,5 +503,18 @@ public final class VerodromeKit: ObservableObject {
     public func repository() -> LibraryRepository? {
         guard let storage else { return nil }
         return LibraryRepository(storage: storage)
+    }
+
+    /// Persists the handshake/ping product name so Home can title itself after relaunch.
+    private func rememberServerType(_ info: ServerInfo) {
+        observableSettings.updateAccount { $0.serverTypeName = info.name }
+        accountStore.rememberServerTypeName(info.name)
+    }
+
+    private func refreshServerTypeIfNeeded() async {
+        guard accountStore.needsServerTypeName,
+              backendProxy.isAuthenticated,
+              let info = try? await backendProxy.serverInfo() else { return }
+        rememberServerType(info)
     }
 }

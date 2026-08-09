@@ -3,12 +3,13 @@ import VerodromeKit
 
 struct RootSplitView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var account: AccountStore
     @State private var selection: RootTabItem? = .home
 
     var body: some View {
         NavigationSplitView {
             List(settings.enabledRootTabs, selection: $selection) { item in
-                Label(item.title, systemImage: item.systemImage)
+                Label(title(for: item), systemImage: item.systemImage)
                     .tag(item)
             }
             .navigationTitle("Verodrome")
@@ -70,5 +71,9 @@ struct RootSplitView: View {
         // Only move selection when the active item was removed; reorder/add keep it.
         if let selection, tabs.contains(selection) { return }
         self.selection = fallbackSelection
+    }
+
+    private func title(for tab: RootTabItem) -> String {
+        tab == .home ? account.homeTitle : tab.title
     }
 }

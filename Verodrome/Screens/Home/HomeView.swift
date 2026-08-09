@@ -58,14 +58,23 @@ private enum HomeArtistNameBackfill {
     }
 }
 
+private struct HomeLibraryTotals: Equatable {
+    var albums = 0
+    var songs = 0
+}
+
 struct HomeView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @EnvironmentObject private var shuffle: ShuffleAllCoordinator
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.modelContext) private var modelContext
 
     @State private var showEditor = false
     @State private var randomSeed = Int.random(in: Int.min...Int.max)
     @State private var sectionTiles: [HomeSection: [HomeTileItem]] = [:]
+    @State private var libraryTotals = HomeLibraryTotals()
     @State private var didRequestInitialRefresh = false
     @State private var selectedAlbumId: String?
     @State private var selectedPlaylistId: String?
@@ -84,16 +93,23 @@ struct HomeView: View {
         HomeCollectionView(
             sections: settings.enabledHomeSections,
             tiles: sectionTiles,
+            stats: HomeStatsBarState(
+                albumCount: libraryTotals.albums,
+                songCount: libraryTotals.songs,
+                isShuffleBusy: shuffle.isStarting,
+                isShuffleDisabled: libraryTotals.songs == 0
+            ),
             onSelectTile: select,
             onPlayAlbum: playAlbum,
             onSeeAll: { selectedSectionList = $0 },
+            onShuffle: shuffleAllSongs,
             onRefresh: {
                 await refreshHomeLists()
                 randomSeed = Int.random(in: Int.min...Int.max)
             }
         )
         .ignoresSafeArea(edges: .bottom)
-        .navigationTitle("Home")
+        .navigationTitle(account.homeTitle)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showEditor = true } label: {
@@ -117,6 +133,7 @@ struct HomeView: View {
         .task(id: loadTrigger) {
             await HomeArtistNameBackfill.runIfNeeded()
             await loadTiles()
+            await loadLibraryTotals()
             // Server top-up runs once per view lifetime, after local tiles are on screen.
             guard !didRequestInitialRefresh, !librarySync.isSyncing else { return }
             didRequestInitialRefresh = true
@@ -127,12 +144,24 @@ struct HomeView: View {
             guard !Task.isCancelled else { return }
             await refreshHomeLists()
             await loadTiles()
+            await loadLibraryTotals()
         }
         .onChange(of: librarySync.isSyncing) { wasSyncing, isSyncing in
             // Only once the writes have stopped — reloading mid-sync competes with ingest
             // for the store and produced the slowest loads by far.
             guard wasSyncing, !isSyncing else { return }
-            Task { await loadTiles() }
+            Task {
+                await loadTiles()
+                await loadLibraryTotals()
+            }
+        }
+    }
+
+    private func shuffleAllSongs() {
+        Task {
+            if await shuffle.shuffleAll() {
+                router.openPlayer()
+            }
         }
     }
 
@@ -162,6 +191,22 @@ struct HomeView: View {
         case .recentlyPlayed, .recentlyAdded, .randomAlbums:
             AlbumsView()
         }
+    }
+
+    private func loadLibraryTotals() async {
+        let totals = await Self.fetchLibraryTotals()
+        guard !Task.isCancelled else { return }
+        guard totals != libraryTotals else { return }
+        libraryTotals = totals
+    }
+
+    private static func fetchLibraryTotals() async -> HomeLibraryTotals {
+        (try? await PersistentStorage.shared.backgroundActor.perform { context in
+            HomeLibraryTotals(
+                albums: (try? context.fetchCount(FetchDescriptor<Album>())) ?? 0,
+                songs: (try? context.fetchCount(FetchDescriptor<Song>())) ?? 0
+            )
+        }) ?? HomeLibraryTotals()
     }
 
     /// Fetches every section in one hop onto the storage actor, then publishes once.

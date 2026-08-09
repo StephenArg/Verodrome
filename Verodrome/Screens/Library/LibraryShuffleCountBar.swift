@@ -22,13 +22,28 @@ struct LibraryShuffleCountBar: View {
         isShuffleDisabled: Bool = false,
         onShuffle: @escaping () -> Void
     ) {
-        var parts = ["\(count.formatted()) \(count == 1 ? noun : noun + "s")"]
+        var parts = [(count, noun)]
         if let secondaryCount, let secondaryNoun {
-            parts.append(
-                "\(secondaryCount.formatted()) \(secondaryCount == 1 ? secondaryNoun : secondaryNoun + "s")"
-            )
+            parts.append((secondaryCount, secondaryNoun))
         }
-        self.countText = parts.joined(separator: " · ")
+        self.init(
+            counts: parts,
+            isShuffleBusy: isShuffleBusy,
+            isShuffleDisabled: isShuffleDisabled,
+            onShuffle: onShuffle
+        )
+    }
+
+    /// e.g. `[(12, "Artist"), (40, "Album"), (900, "Song")]` → "12 Artists · 40 Albums · 900 Songs".
+    init(
+        counts: [(Int, String)],
+        isShuffleBusy: Bool = false,
+        isShuffleDisabled: Bool = false,
+        onShuffle: @escaping () -> Void
+    ) {
+        self.countText = counts.map { count, noun in
+            "\(count.formatted()) \(count == 1 ? noun : noun + "s")"
+        }.joined(separator: " · ")
         self.isShuffleBusy = isShuffleBusy
         self.isShuffleDisabled = isShuffleDisabled
         self.onShuffle = onShuffle
