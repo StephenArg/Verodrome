@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		61B4F752F6F6AB78D5398DD7 /* AppIconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21327A24C658EA1868358292 /* AppIconSettingsView.swift */; };
 		026C06B27AC76431C9013DCC /* LibraryShuffleCountBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */; };
 		0271BA4A66E55B4F74FFD631 /* PlayerDownloadPreparationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F716E49C739CFF345661C9D3 /* PlayerDownloadPreparationHandler.swift */; };
 		03FF22CCA200362B9F4B4368 /* LibrarySortMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */; };
@@ -460,6 +461,7 @@
 		B7A20C8D15E116A95A99F0E4 /* DeepLinkHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkHandler.swift; sourceTree = "<group>"; };
 		B8447CB4A5A6EEF870FD4FCC /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B9B375C275C66C460363B5BA /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		21327A24C658EA1868358292 /* AppIconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconSettingsView.swift; sourceTree = "<group>"; };
 		BA846F04CF2BEED20268AD67 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		BBEA60A32EF4B6744F6B9755 /* DeveloperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsView.swift; sourceTree = "<group>"; };
 		BC132B986866D88F2741FAC9 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -1156,6 +1158,7 @@
 				CA9E6CCB4116401B609806C3 /* DisplaySettingsView.swift */,
 				1AF9AC85E0065B96024A63B2 /* EqualizerSettingsView.swift */,
 				75F057916C4439CFA0188162 /* EventLogView.swift */,
+				21327A24C658EA1868358292 /* AppIconSettingsView.swift */,
 				BA846F04CF2BEED20268AD67 /* GeneralSettingsView.swift */,
 				41A6CBD0A436BE4E10BE4BCF /* LibrarySettingsView.swift */,
 				4E37FF27D856DB7DE1372B21 /* PlayerSettingsView.swift */,
@@ -1488,6 +1491,7 @@
 				5C793B5CF49AD6610948C747 /* EqualizerView.swift in Sources */,
 				5467BEF19CB588185B537122 /* EventLogView.swift in Sources */,
 				5A354E5A19A0CECAEB75B519 /* FavoritesView.swift in Sources */,
+				61B4F752F6F6AB78D5398DD7 /* AppIconSettingsView.swift in Sources */,
 				2288598F5E584B00A3EFB509 /* GeneralSettingsView.swift in Sources */,
 				7852ABE5C0E68A3C3F657401 /* GenreDetailView.swift in Sources */,
 				9068E632E9C6F6DAAE3BD4D0 /* GenresView.swift in Sources */,
@@ -1659,6 +1663,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-WaveCyan AppIcon-WaveWhite AppIcon-WaveMono AppIcon-WavePeak AppIcon-WaveBright AppIcon-WaveDeep AppIcon-PrismV AppIcon-AuroraV AppIcon-SpectrumV AppIcon-NeonPulse AppIcon-SynthSun AppIcon-Signal AppIcon-Radar AppIcon-RetroGrid AppIcon-GlassPlay AppIcon-CrystalPlay AppIcon-HoloDisc AppIcon-Headphones AppIcon-Cassette AppIcon-VinylMark AppIcon-Groove AppIcon-GoldRibbon AppIcon-Speaker AppIcon-Layers AppIcon-Sleeve AppIcon-NightWave AppIcon-Ember AppIcon-PaperCut AppIcon-Vintage";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -1679,6 +1685,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-WaveCyan AppIcon-WaveWhite AppIcon-WaveMono AppIcon-WavePeak AppIcon-WaveBright AppIcon-WaveDeep AppIcon-PrismV AppIcon-AuroraV AppIcon-SpectrumV AppIcon-NeonPulse AppIcon-SynthSun AppIcon-Signal AppIcon-Radar AppIcon-RetroGrid AppIcon-GlassPlay AppIcon-CrystalPlay AppIcon-HoloDisc AppIcon-Headphones AppIcon-Cassette AppIcon-VinylMark AppIcon-Groove AppIcon-GoldRibbon AppIcon-Speaker AppIcon-Layers AppIcon-Sleeve AppIcon-NightWave AppIcon-Ember AppIcon-PaperCut AppIcon-Vintage";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;

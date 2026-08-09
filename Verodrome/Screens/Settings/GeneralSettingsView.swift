@@ -17,6 +17,12 @@ struct GeneralSettingsView: View {
                     settings.save()
                     theme.applyTheme()
                 }
+
+                NavigationLink {
+                    AppIconSettingsView()
+                } label: {
+                    Text("App Icon")
+                }
             }
 
             Section("Player") {
