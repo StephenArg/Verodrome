@@ -120,7 +120,7 @@ final class SleepTimerSessionTests: XCTestCase {
     func testDurationHelpers() {
         XCTAssertEqual(SleepTimer.duration(hours: 1, minutes: 30), 5400)
         XCTAssertEqual(SleepTimer.duration(hours: 0, minutes: 45), 2700)
-        XCTAssertEqual(SleepTimer.duration(hours: 99, minutes: 99), SleepTimer.duration(hours: 8, minutes: 59))
+        XCTAssertEqual(SleepTimer.duration(hours: 99, minutes: 99), SleepTimer.duration(hours: 23, minutes: 59))
         XCTAssertEqual(SleepTimer.label(hours: 1, minutes: 29), "1h 29m")
         XCTAssertEqual(SleepTimer.label(hours: 2, minutes: 0), "2h")
         XCTAssertEqual(SleepTimer.label(hours: 0, minutes: 45), "45m")

@@ -1203,8 +1203,8 @@ private struct PlaybackSpeedMenuButton: View {
     }
 }
 
-/// Hours + minutes pickers for the sleep timer. Used from the overflow submenu
-/// and from the bottom-bar countdown chip popover.
+/// Sleep-timer duration picker, laid out like the Clock app's timer wheels.
+/// Used from the overflow submenu and from the bottom-bar countdown chip popover.
 private struct SleepTimerPanel: View {
     var deadline: Date?
     var onStart: (Int, Int) -> Void
@@ -1212,118 +1212,136 @@ private struct SleepTimerPanel: View {
     /// When non-nil, shows a back chevron that returns to the overflow menu.
     var onBack: (() -> Void)? = nil
 
-    @State private var hours: Double = 0
-    @State private var minutes: Double = 15
+    @State private var hours = 0
+    @State private var minutes = 15
+
+    private static let wheelWidth: CGFloat = 74
+    private static let unitWidth: CGFloat = 56
+    private static let wheelHeight: CGFloat = 180
 
     private var isActive: Bool { deadline != nil }
     private var canStart: Bool { hours > 0 || minutes > 0 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let onBack {
-                Button(action: onBack) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "chevron.left")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 20, alignment: .center)
-                        Text("Sleep Timer")
-                            .font(.body.weight(.semibold))
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            header
+            wheels
+            actions
+        }
+        .frame(width: 2 * (Self.wheelWidth + Self.unitWidth) + 16)
+        .onAppear { seedFromDeadline() }
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        if let onBack {
+            Button(action: onBack) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.footnote.weight(.semibold))
+                    Text("Sleep Timer")
+                        .font(.body.weight(.semibold))
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-
-                Divider().padding(.vertical, 4)
-            } else {
-                Text("Sleep Timer")
-                    .font(.body.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .padding(.top, 4)
-                    .padding(.bottom, 8)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            Text(SleepTimer.label(hours: Int(hours), minutes: Int(minutes)))
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 10)
+            Divider()
+        } else {
+            Text("Sleep Timer")
+                .font(.body.weight(.semibold))
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+        }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Hours")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(Int(hours))")
-                        .font(.caption.weight(.semibold))
+        if let deadline {
+            Text("Pauses at \(deadline.formatted(date: .omitted, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 8)
+        }
+    }
+
+    private var wheels: some View {
+        HStack(spacing: 0) {
+            wheel("Hours", selection: $hours, range: 0...SleepTimer.maxHours, unit: "hours")
+            wheel("Minutes", selection: $minutes, range: 0...59, unit: "min")
+        }
+        .frame(height: Self.wheelHeight)
+        .padding(.horizontal, 8)
+    }
+
+    private func wheel(
+        _ name: String,
+        selection: Binding<Int>,
+        range: ClosedRange<Int>,
+        unit: String
+    ) -> some View {
+        HStack(spacing: 2) {
+            // Narrow wheels with the unit sitting just after the digits, so the two
+            // columns read as one "0 hours 15 min" line the way the Clock app does.
+            Picker(name, selection: selection) {
+                ForEach(Array(range), id: \.self) { value in
+                    Text("\(value)")
+                        .font(.title3)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
                 }
-                Slider(value: $hours, in: 0...Double(SleepTimer.maxHours), step: 1)
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 10)
+            .pickerStyle(.wheel)
+            .frame(width: Self.wheelWidth, height: Self.wheelHeight)
+            .clipped()
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Minutes")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(Int(minutes))")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $minutes, in: 0...59, step: 1)
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
+            Text(unit)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: Self.unitWidth, alignment: .leading)
+        }
+    }
 
+    private var actions: some View {
+        VStack(spacing: 8) {
             Button {
-                onStart(Int(hours), Int(minutes))
+                onStart(hours, minutes)
             } label: {
                 Text(isActive ? "Update" : "Start")
                     .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 9)
             }
             .buttonStyle(.borderedProminent)
             .disabled(!canStart)
-            .padding(.horizontal, 14)
 
             if isActive {
                 Button(role: .destructive, action: onCancel) {
                     Text("Turn Off")
                         .font(.body)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 9)
                 }
                 .buttonStyle(.bordered)
-                .padding(.horizontal, 14)
-                .padding(.top, 6)
             }
         }
-        .frame(width: 280)
-        .onAppear { seedFromDeadline() }
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
     }
 
     private func seedFromDeadline() {
         guard let deadline else { return }
         let remaining = max(0, deadline.timeIntervalSinceNow)
         let totalMinutes = Int((remaining / 60).rounded(.up))
-        hours = Double(min(totalMinutes / 60, SleepTimer.maxHours))
-        minutes = Double(totalMinutes % 60)
+        hours = min(totalMinutes / 60, SleepTimer.maxHours)
+        minutes = totalMinutes % 60
     }
 }
 
 /// Live countdown chip shown left of Share while a sleep timer is active.
-/// Owns its own `Text(timerInterval:)` so only this view ticks each second.
+/// Ticks locally via `TimelineView` so the rest of the player is not redrawn each second.
+/// Shows `H:MM` while an hour or more remains (no seconds), then `M:SS`.
 private struct SleepTimerChip: View {
     let deadline: Date
     var accentColor: Color
@@ -1339,15 +1357,12 @@ private struct SleepTimerChip: View {
             HStack(spacing: 4) {
                 Image(systemName: "moon.zzz.fill")
                     .font(.system(size: 14, weight: .semibold))
-                Text(
-                    timerInterval: Date()...deadline,
-                    pauseTime: nil,
-                    countsDown: true,
-                    showsHours: true
-                )
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-                .lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(Self.countdownLabel(until: deadline, at: context.date))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
             .foregroundStyle(accentColor)
             .accessibilityLabel("Sleep timer")
@@ -1368,6 +1383,18 @@ private struct SleepTimerChip: View {
             .padding(.horizontal, 4)
             .presentationCompactAdaptation(.popover)
         }
+    }
+
+    /// `H:MM` while ≥ 1 hour remains; `M:SS` once under an hour.
+    private static func countdownLabel(until deadline: Date, at now: Date) -> String {
+        let total = max(0, Int(deadline.timeIntervalSince(now).rounded(.down)))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d", hours, minutes)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

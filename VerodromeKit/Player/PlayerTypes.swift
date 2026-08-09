@@ -57,7 +57,7 @@ public enum PlaybackSpeed {
 
 /// Wall-clock sleep timer helpers for the popup player.
 public enum SleepTimer {
-    public static let maxHours = 8
+    public static let maxHours = 23
 
     public static func duration(hours: Int, minutes: Int) -> TimeInterval {
         let h = min(max(hours, 0), maxHours)
