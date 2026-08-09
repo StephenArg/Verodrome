@@ -525,6 +525,19 @@ extension QueueItem {
         )
     }
 
+    /// Album play/shuffle: stamp the album cover on every track.
+    ///
+    /// Servers such as Navidrome often give each song its own `coverArt` id that still
+    /// serves the album image. Sharing one token keeps the player from reloading the
+    /// same art on every skip.
+    public static func from(_ song: Song, albumArtworkId: String?) -> QueueItem {
+        var item = from(song)
+        if let albumArtworkId, !albumArtworkId.isEmpty {
+            item.artworkId = albumArtworkId
+        }
+        return item
+    }
+
     public static func from(_ episode: PodcastEpisode) -> QueueItem {
         QueueItem(
             playableId: episode.remoteId,

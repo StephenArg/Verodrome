@@ -7,6 +7,9 @@ import UIKit
 struct SeekableTimeSlider: View {
     let currentTime: TimeInterval
     let duration: TimeInterval
+    /// When set, the filled track (and thumb) use this color instead of the label color.
+    /// Used while hold-to-speed-skip is active so the bar matches the theme accent.
+    var accentTint: Color? = nil
     /// Fires with the thumb position while the user drags, and with `nil` once the
     /// drag ends or is cancelled.
     var onScrub: (TimeInterval?) -> Void = { _ in }
@@ -16,6 +19,7 @@ struct SeekableTimeSlider: View {
         SeekableTimeSliderUIKit(
             currentTime: currentTime,
             duration: duration,
+            accentTint: accentTint.map { UIColor($0) },
             onScrub: onScrub,
             onSeek: onSeek
         )
@@ -29,6 +33,7 @@ struct SeekableTimeSlider: View {
 struct SeekableTimeSliderUIKit: UIViewRepresentable {
     let currentTime: TimeInterval
     let duration: TimeInterval
+    var accentTint: UIColor? = nil
     let onScrub: (TimeInterval?) -> Void
     let onSeek: (TimeInterval) -> Void
 
@@ -49,11 +54,12 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp(_:)), for: .touchUpOutside)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.touchUp(_:)), for: .touchCancel)
 
-        Self.applyImages(to: slider)
+        context.coordinator.accentTint = accentTint
+        Self.applyImages(to: slider, accentTint: accentTint)
         // Track and thumb are pre-rendered bitmaps, so the label color baked into
         // them has to be redrawn when the appearance flips.
-        slider.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (slider: UISlider, _) in
-            Self.applyImages(to: slider)
+        slider.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { [weak coordinator = context.coordinator] (slider: UISlider, _) in
+            Self.applyImages(to: slider, accentTint: coordinator?.accentTint)
         }
 
         // Tap-to-seek: UISlider only moves the thumb when dragging by default.
@@ -70,10 +76,15 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         context.coordinator.onScrub = onScrub
         context.coordinator.liveTime = currentTime
         let maxValue = Float(max(duration, 1))
+        let tintChanged = !Self.sameColor(context.coordinator.accentTint, accentTint)
+        if tintChanged {
+            context.coordinator.accentTint = accentTint
+        }
         if abs(uiView.maximumValue - maxValue) > 0.01 {
             uiView.maximumValue = maxValue
-            // Re-apply track images since max-value changes can invalidate them.
-            Self.applyImages(to: uiView)
+            Self.applyImages(to: uiView, accentTint: accentTint)
+        } else if tintChanged {
+            Self.applyImages(to: uiView, accentTint: accentTint)
         }
         // Match Amperfy: never fight the thumb while the user is dragging, unless the
         // drag was cancelled for being idle — then the thumb tracks playback again.
@@ -97,6 +108,7 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
         var onSeek: (TimeInterval) -> Void
         /// Latest playback position, used to restore the thumb when a drag is cancelled.
         var liveTime: TimeInterval = 0
+        var accentTint: UIColor?
         private(set) var isScrubCancelled = false
         weak var tapGesture: UITapGestureRecognizer?
         private var idleTimer: Timer?
@@ -180,12 +192,13 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
 
     // MARK: - Asset rendering
 
-    private static func applyImages(to slider: UISlider) {
+    private static func applyImages(to slider: UISlider, accentTint: UIColor?) {
         // Resolve against the slider's own traits: an image renderer otherwise picks
         // up whatever appearance happens to be current when it runs.
         let traits = slider.traitCollection
+        let filled = (accentTint ?? UIColor.label).resolvedColor(with: traits)
         slider.setMinimumTrackImage(
-            makeTrackImage(height: trackHeight, color: UIColor.label.resolvedColor(with: traits)),
+            makeTrackImage(height: trackHeight, color: filled),
             for: .normal
         )
         slider.setMaximumTrackImage(
@@ -193,13 +206,21 @@ struct SeekableTimeSliderUIKit: UIViewRepresentable {
             for: .normal
         )
         slider.setThumbImage(
-            makeThumbImage(size: thumbDiameter, color: UIColor.label.resolvedColor(with: traits)),
+            makeThumbImage(size: thumbDiameter, color: filled),
             for: .normal
         )
         slider.setThumbImage(
-            makeThumbImage(size: scrubbingThumbDiameter, color: UIColor.label.resolvedColor(with: traits)),
+            makeThumbImage(size: scrubbingThumbDiameter, color: filled),
             for: .highlighted
         )
+    }
+
+    private static func sameColor(_ lhs: UIColor?, _ rhs: UIColor?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case (nil, _), (_, nil): return false
+        case let (l?, r?): return l === r || l.isEqual(r)
+        }
     }
 
     private static func makeTrackImage(height: CGFloat, color: UIColor) -> UIImage {

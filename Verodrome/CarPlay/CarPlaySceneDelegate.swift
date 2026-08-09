@@ -162,7 +162,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private func playAlbum(compoundRemoteId: String) {
         guard let album = try? VerodromeKit.shared.repository()?.fetchAlbum(compoundRemoteId: compoundRemoteId) else { return }
         let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-        play(songs.map(QueueItem.from))
+        play(songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) })
     }
 
     @MainActor

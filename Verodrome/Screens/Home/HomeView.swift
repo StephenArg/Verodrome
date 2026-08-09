@@ -421,7 +421,7 @@ struct HomeView: View {
                 PlayTrace.error("no songs to play")
                 return
             }
-            let items = songs.map(QueueItem.from)
+            let items = songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
             await VerodromeKit.shared.player?.play(items: items, startAt: 0)
         }
     }

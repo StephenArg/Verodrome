@@ -31,6 +31,7 @@ struct ArtistDetailView: View {
                         subtitle: headerSubtitle(for: artist),
                         artworkURL: artist.artworkToken,
                         tintToken: backgroundArtworkToken,
+                        tintKey: tintKey,
                         symbol: "person.fill",
                         onPlay: { play(shuffle: false, artist: artist) },
                         onShuffle: { play(shuffle: true, artist: artist) }
@@ -84,10 +85,15 @@ struct ArtistDetailView: View {
                 }
             }
         }
-        .artworkTintedBackground(token: backgroundArtworkToken)
+        .artworkTintedBackground(key: tintKey, token: backgroundArtworkToken)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedAlbum) { album in
             AlbumDetailView(albumID: album.id)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                artistOptionsMenu
+            }
         }
         .task(id: artists.first?.compoundRemoteId) {
             reloadArtistContent()
@@ -115,6 +121,27 @@ struct ArtistDetailView: View {
     private var backgroundArtworkToken: String? {
         if let token = artists.first?.artworkToken, !token.isEmpty { return token }
         return artistAlbums.first?.artworkToken
+    }
+
+    /// Keyed by the artist, not the cover, so the fallback album's art can change
+    /// without the screen picking up a different color.
+    private var tintKey: ArtworkTintKey { .artist(artistID) }
+
+    private var artistOptionsMenu: some View {
+        Menu {
+            Button {
+                let token = backgroundArtworkToken
+                Task { await ArtworkTintResolver.shared.refresh(key: tintKey, token: token) }
+            } label: {
+                Label("Refresh Background Color", systemImage: "eyedropper")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More options")
     }
 
     /// Prefer stored counts when album tracks haven't been backfilled yet.

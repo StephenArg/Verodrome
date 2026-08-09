@@ -26,6 +26,13 @@ final class NowPlayingModel: ObservableObject {
     }
 }
 
+/// Which way playback moved through the queue, so the player's cover can slide the way
+/// the listener just travelled.
+enum ArtworkSlideDirection {
+    case forward
+    case backward
+}
+
 @MainActor
 final class PlayerViewModel: ObservableObject {
     @Published private(set) var isPlaying = false
@@ -63,8 +70,14 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var playbackSpeed: Float = 1
     /// True while Random mode rolls a per-track rate from `PlaybackSpeed.randomOptions`.
     @Published private(set) var isRandomPlaybackSpeed = false
+    /// Temporary hold-to-scrub rate (`2` / `0.5`) while a skip control is held; nil otherwise.
+    @Published private(set) var holdSpeedRate: Float?
     /// Wall-clock deadline for the sleep timer. Nil while inactive.
     @Published private(set) var sleepTimerDeadline: Date?
+    /// Direction of the last move through the queue. Derived from the index rather than
+    /// the transport buttons so auto-advance, CarPlay and the lock screen all animate the
+    /// same way as a tap on skip.
+    @Published private(set) var artworkSlideDirection: ArtworkSlideDirection = .forward
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
@@ -195,9 +208,27 @@ final class PlayerViewModel: ObservableObject {
 
     /// Mirrors the player's queue snapshot into the state the UI observes.
     private func syncQueue(fallback: [QueueItem]? = nil) {
+        let previousIndex = currentIndex
+        let previousGeneration = contextGeneration
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
         contextGeneration = facade?.contextGeneration ?? contextGeneration
+        // A brand-new context isn't a step through a queue, so its index delta says
+        // nothing about direction — leave the last one standing.
+        if contextGeneration == previousGeneration,
+           let direction = Self.slideDirection(from: previousIndex, to: currentIndex, count: queue.count) {
+            artworkSlideDirection = direction
+        }
+        PlayerArtworkWarmer.shared.warm(queue: queue, currentIndex: currentIndex)
+    }
+
+    /// Nil when the queue didn't move. Repeat-all wraps the index around the ends, and
+    /// that is still one step forward (or back), not a jump the length of the queue.
+    private static func slideDirection(from previous: Int, to new: Int, count: Int) -> ArtworkSlideDirection? {
+        guard count > 0, previous != new else { return nil }
+        if previous == count - 1, new == 0 { return .forward }
+        if previous == 0, new == count - 1 { return .backward }
+        return new > previous ? .forward : .backward
     }
 
     func playPause() {
@@ -240,10 +271,12 @@ final class PlayerViewModel: ObservableObject {
             facade?.play()
             isPlaying = facade?.isPlaying ?? isPlaying
         }
+        holdSpeedRate = rate
         facade?.setPlaybackRate(rate)
     }
 
     func endHoldSpeed() {
+        holdSpeedRate = nil
         facade?.restoreSessionPlaybackRate()
     }
 

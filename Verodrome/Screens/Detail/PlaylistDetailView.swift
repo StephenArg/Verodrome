@@ -106,7 +106,7 @@ struct PlaylistDetailView: View {
             }
         }
         .task(id: backgroundArtworkToken) {
-            artworkTint = await ArtworkTintResolver.shared.tint(for: backgroundArtworkToken)
+            artworkTint = await ArtworkTintResolver.shared.tint(for: nil, token: backgroundArtworkToken)
         }
         .task(id: playlists.first?.remoteId) {
             guard let playlist = playlists.first else { return }

@@ -135,7 +135,9 @@ struct GenreDetailView: View {
         if items.isEmpty {
             PlayTrace.mark("fallback via album.songs…")
             items = genreAlbums.flatMap { album in
-                album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }.map(QueueItem.from)
+                album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }.map {
+                    QueueItem.from($0, albumArtworkId: album.artworkToken)
+                }
             }
         }
         PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")

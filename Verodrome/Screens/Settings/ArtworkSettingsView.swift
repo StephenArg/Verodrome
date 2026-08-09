@@ -99,6 +99,9 @@ struct ArtworkSettingsView: View {
         statusMessage = nil
         defer { isClearing = false }
         do {
+            // Stop the queue look-ahead first: a decode already in flight would otherwise
+            // land in the cache just after it was emptied.
+            PlayerArtworkWarmer.shared.stop()
             ArtworkImageCache.shared.removeAll()
             try await ArtworkResolver.shared.clearCaches()
             await refreshCacheStats()

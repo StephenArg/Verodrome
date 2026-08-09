@@ -9,7 +9,10 @@ struct PopupPlayerView: View {
     @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @ObservedObject private var playlistMembership = PlaylistMembershipIndex.shared
+    @ObservedObject private var tintResolver = ArtworkTintResolver.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var playerTint: ArtworkTint?
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
     @State private var artistCredits: [PlayerArtistCredit] = []
@@ -32,13 +35,31 @@ struct PopupPlayerView: View {
                 // whatever is left. Without this the cover claims its ideal square
                 // and the transport controls are pushed past the bottom edge.
                 VStack(alignment: .leading, spacing: 6) {
-                    if settings.showRatingStars || settings.showSongInfo {
+                    if settings.showRatingStars || settings.showSongInfo || player.holdSpeedRate != nil {
                         HStack(alignment: .center, spacing: 12) {
-                            if settings.showRatingStars, let song = currentSong {
-                                RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
-                                    Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                            // Hold-speed sits just right of the stars; when stars are hidden it
+                            // keeps the leading slot so it still lands where they would be.
+                            HStack(spacing: 8) {
+                                if settings.showRatingStars, let song = currentSong {
+                                    RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
+                                        Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
                                 }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+
+                                if let holdRate = player.holdSpeedRate {
+                                    Text(PlaybackSpeed.label(for: holdRate))
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(themeManager.accentColor)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .strokeBorder(themeManager.accentColor, lineWidth: 1)
+                                        )
+                                        .accessibilityLabel("Hold speed \(PlaybackSpeed.label(for: holdRate))")
+                                        .transition(.opacity)
+                                }
                             }
 
                             Spacer(minLength: 0)
@@ -93,23 +114,25 @@ struct PopupPlayerView: View {
                     .padding(.bottom, 16)
                     .layoutPriority(1)
             }
-            .background(
-                LinearGradient(
-                    colors: [
-                        (themeManager.playerTintColor ?? Color.accentColor).opacity(0.25),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .center
-                )
-                .ignoresSafeArea()
-            )
+            .background(playerBackground)
             .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
             .toolbar(.hidden, for: .navigationBar)
             .task(id: player.currentItem?.playableId) {
                 currentSong = resolveCurrentSong()
                 artistCredits = resolveArtistCredits()
                 if settings.showLyricsInPlayer { player.requestLyrics() }
+            }
+            .task(id: playerTintRequest) {
+                // Nothing to sample for a player the user has asked to leave plain.
+                guard settings.changingColorsInPlayer else { return }
+                let tint = await tintResolver.tint(
+                    for: playerTintKey,
+                    token: player.currentItem?.artworkId
+                )
+                // The track can change while the cover is still being read; without this
+                // the previous album's color wins the race and stays behind the new one.
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.4)) { playerTint = tint }
             }
             .onReceive(NotificationCenter.default.publisher(for: .songMetadataRefreshed)) { note in
                 guard let playableId = note.object as? String,
@@ -147,6 +170,42 @@ struct PopupPlayerView: View {
         .presentationCornerRadius(24)
     }
 
+    // MARK: - Changing colors
+
+    /// Wash of the cover's own color behind the player, in the same hue the album's
+    /// detail screen uses. Off leaves the sheet on its plain background.
+    @ViewBuilder
+    private var playerBackground: some View {
+        if settings.changingColorsInPlayer, let playerTint {
+            LinearGradient(
+                colors: [playerTint.top(for: colorScheme), Color.clear],
+                startPoint: .top,
+                endPoint: .center
+            )
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
+    }
+
+    /// The album the playing track belongs to, so every song on a record shares one
+    /// stored color. Tracks with no album fall back to the artist, then to the cover
+    /// itself for anything outside the library.
+    private var playerTintKey: ArtworkTintKey? {
+        if let albumId = currentSong?.album?.compoundRemoteId { return .album(albumId) }
+        if let artistId = currentSong?.artist?.compoundRemoteId { return .artist(artistId) }
+        return nil
+    }
+
+    /// Turning the feature back on has to sample a cover that was skipped while it
+    /// was off, so the setting belongs in what the lookup is keyed on.
+    private var playerTintRequest: ArtworkTintRequest {
+        ArtworkTintRequest(
+            key: playerTintKey,
+            token: settings.changingColorsInPlayer ? player.currentItem?.artworkId : nil,
+            revision: tintResolver.revision
+        )
+    }
+
     // MARK: - Hero panel (artwork / lyrics)
 
     /// A track only has lyrics once the lookup has actually produced text.
@@ -156,15 +215,17 @@ struct PopupPlayerView: View {
     /// track has some; otherwise the artwork stays put.
     private var showingLyrics: Bool { settings.showLyricsInPlayer && lyricsAvailable }
 
-    /// Artwork and lyrics are crossfaded rather than swapped, so `LargeArtworkView`
-    /// stays mounted and keeps feeding the background tint while lyrics are up.
+    /// Artwork and lyrics are crossfaded rather than swapped, so the cover keeps its
+    /// place behind the lyrics instead of being torn down and reloaded on the way back.
     private var heroPanel: some View {
         ZStack {
             LargeArtworkView(
                 urlString: player.currentItem?.artworkId,
                 symbol: player.currentItem?.kind == .radio
                     ? "dot.radiowaves.left.and.right"
-                    : "music.note"
+                    : "music.note",
+                trackID: player.currentItem?.id,
+                slideDirection: player.artworkSlideDirection
             )
             // Slide / scale with the crossfade so double-tap feels like the cover
             // gives way to lyrics (and the reverse when lyrics close).
@@ -268,6 +329,7 @@ struct PopupPlayerView: View {
             showRatingStars: settings.showRatingStars,
             showSongInfo: settings.showSongInfo,
             showLyrics: settings.showLyricsInPlayer,
+            changingColors: settings.changingColorsInPlayer,
             hasLyrics: lyricsAvailable,
             playbackSpeed: player.playbackSpeed,
             isRandomPlaybackSpeed: player.isRandomPlaybackSpeed,
@@ -295,7 +357,13 @@ struct PopupPlayerView: View {
                 }
                 settings.save()
             },
-            onToggleLyrics: { toggleLyrics() }
+            onToggleLyrics: { toggleLyrics() },
+            onToggleChangingColors: {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    settings.changingColorsInPlayer.toggle()
+                }
+                settings.save()
+            }
         ))
     }
 
@@ -642,6 +710,7 @@ private struct PlayerHeader: View, Equatable {
     let showRatingStars: Bool
     let showSongInfo: Bool
     let showLyrics: Bool
+    let changingColors: Bool
     let hasLyrics: Bool
     let playbackSpeed: Float
     let isRandomPlaybackSpeed: Bool
@@ -660,6 +729,7 @@ private struct PlayerHeader: View, Equatable {
     let onToggleRatingStars: () -> Void
     let onToggleSongInfo: () -> Void
     let onToggleLyrics: () -> Void
+    let onToggleChangingColors: () -> Void
 
     private let sideButtonWidth: CGFloat = 52
 
@@ -697,6 +767,7 @@ private struct PlayerHeader: View, Equatable {
                         showRatingStars: showRatingStars,
                         showSongInfo: showSongInfo,
                         showLyrics: showLyrics,
+                        changingColors: changingColors,
                         hasLyrics: hasLyrics,
                         playbackSpeed: playbackSpeed,
                         isRandomPlaybackSpeed: isRandomPlaybackSpeed,
@@ -721,7 +792,8 @@ private struct PlayerHeader: View, Equatable {
                     onCancelSleepTimer: onCancelSleepTimer,
                     onToggleRatingStars: onToggleRatingStars,
                     onToggleSongInfo: onToggleSongInfo,
-                    onToggleLyrics: onToggleLyrics
+                    onToggleLyrics: onToggleLyrics,
+                    onToggleChangingColors: onToggleChangingColors
                 )
                 .frame(width: sideButtonWidth, height: sideButtonWidth)
                 .accessibilityLabel("More options")
@@ -739,6 +811,7 @@ private struct PlayerHeader: View, Equatable {
             && lhs.showRatingStars == rhs.showRatingStars
             && lhs.showSongInfo == rhs.showSongInfo
             && lhs.showLyrics == rhs.showLyrics
+            && lhs.changingColors == rhs.changingColors
             && lhs.hasLyrics == rhs.hasLyrics
             && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
             && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
@@ -758,6 +831,7 @@ private struct PlayerOverflowMenuButton: View {
         var showRatingStars: Bool
         var showSongInfo: Bool
         var showLyrics: Bool
+        var changingColors: Bool
         var hasLyrics: Bool
         var playbackSpeed: Float
         var isRandomPlaybackSpeed: Bool
@@ -771,6 +845,7 @@ private struct PlayerOverflowMenuButton: View {
                 && lhs.showRatingStars == rhs.showRatingStars
                 && lhs.showSongInfo == rhs.showSongInfo
                 && lhs.showLyrics == rhs.showLyrics
+                && lhs.changingColors == rhs.changingColors
                 && lhs.hasLyrics == rhs.hasLyrics
                 && PlaybackSpeed.isEqual(lhs.playbackSpeed, rhs.playbackSpeed)
                 && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
@@ -799,6 +874,7 @@ private struct PlayerOverflowMenuButton: View {
     var onToggleRatingStars: () -> Void
     var onToggleSongInfo: () -> Void
     var onToggleLyrics: () -> Void
+    var onToggleChangingColors: () -> Void
 
     @State private var showMenu = false
     @State private var submenu: Submenu = .none
@@ -879,6 +955,11 @@ private struct PlayerOverflowMenuButton: View {
 
             Divider().padding(.vertical, 4)
 
+            menuRow(
+                title: menuState.changingColors ? "Hide Changing Colors" : "Show Changing Colors",
+                systemImage: menuState.changingColors ? "paintpalette.fill" : "paintpalette",
+                action: onToggleChangingColors
+            )
             menuRow(
                 title: menuState.showLyrics ? "Show Artwork" : "Show Lyrics",
                 systemImage: menuState.showLyrics ? "photo" : "text.quote",

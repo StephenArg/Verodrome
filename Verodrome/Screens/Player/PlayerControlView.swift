@@ -5,6 +5,7 @@ struct PlayerControlView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var progress: PlayerProgressModel
     @EnvironmentObject private var shuffleAll: ShuffleAllCoordinator
+    @EnvironmentObject private var themeManager: ThemeManager
 
     /// Thumb position while the user drags, so the time labels follow the scrub
     /// instead of the (still advancing) playback clock.
@@ -29,6 +30,7 @@ struct PlayerControlView: View {
                     SeekableTimeSlider(
                         currentTime: progress.currentTime,
                         duration: progress.duration,
+                        accentTint: usesAccentProgressBar ? themeManager.accentColor : nil,
                         onScrub: { scrubTime = $0 },
                         onSeek: { time in
                             scrubTime = nil
@@ -71,6 +73,13 @@ struct PlayerControlView: View {
 
     private var displayedTime: TimeInterval {
         scrubTime ?? progress.currentTime
+    }
+
+    /// Accent while hold-to-speed is active, or whenever sticky speed is Random / non-1×.
+    private var usesAccentProgressBar: Bool {
+        if player.holdSpeedRate != nil { return true }
+        if player.isRandomPlaybackSpeed { return true }
+        return !PlaybackSpeed.isEqual(player.playbackSpeed, 1)
     }
 
     // MARK: - Controls

@@ -13,6 +13,10 @@ struct ArtworkView: View {
     var showsProgress: Bool = true
 
     @State private var image: UIImage?
+    /// Token the current `image` was loaded for. Kept so a track change can leave the
+    /// previous cover on screen until the next one is ready, without treating that
+    /// stand-in as a successful load of the new token.
+    @State private var displayedToken: String?
     @State private var loadFailed = false
     /// Set only once the art is known to be missing from disk. A cached cover still takes
     /// a moment to read and decode, and a spinner for that flashes on every reopen.
@@ -41,6 +45,7 @@ struct ArtworkView: View {
             ArtworkImageCache.shared.bestAvailableImage(for: $0, size: size)
         }
         _image = State(initialValue: seeded?.image)
+        _displayedToken = State(initialValue: seeded != nil ? token : nil)
     }
 
     var body: some View {
@@ -63,14 +68,19 @@ struct ArtworkView: View {
                 }
                 if let cached {
                     if image !== cached.image { image = cached.image }
+                    displayedToken = token
                     loadFailed = false
                     if cached.isExact { return }
-                } else if image != nil {
+                } else if token == nil || token?.isEmpty == true {
                     image = nil
+                    displayedToken = nil
                 }
+                // Otherwise keep the previous cover on screen. Album tracks often carry
+                // distinct coverArt ids that resolve to the same image; clearing here made
+                // every skip flash a placeholder (and sometimes a spinner) for the same art.
                 loadFailed = false
                 isDownloading = false
-                await loadArtwork(hasStandIn: cached != nil)
+                await loadArtwork(hasStandIn: cached != nil || image != nil)
             }
             // Cold-start panels can finish before backend login; retry once the session is up.
             .onReceive(NotificationCenter.default.publisher(for: .backendAuthenticated)) { _ in
@@ -101,7 +111,10 @@ struct ArtworkView: View {
         let t0 = CFAbsoluteTimeGetCurrent()
         let ctx = isThumbnail ? "thumb" : (size == ArtworkPixelSize.homeTile ? "home" : "art")
         guard let token, !token.isEmpty else {
+            image = nil
+            displayedToken = nil
             loadFailed = false
+            isDownloading = false
             return
         }
 
@@ -121,10 +134,12 @@ struct ArtworkView: View {
                     return
                 }
             }
-            // Only a download is slow enough to be worth a spinner. Reading and decoding a
-            // cached cover takes a few milliseconds, and showing a spinner for that made
-            // every reopened album flash one.
-            isDownloading = true
+            // Only a download is slow enough to be worth a spinner — and only when nothing
+            // is on screen yet. Keeping the previous track's cover is preferable to a
+            // spinner over the same album art.
+            if !hasStandIn {
+                isDownloading = true
+            }
 
             // Show whatever smaller render is on disk rather than holding a placeholder
             // for the whole download. Deliberately not stored in `ArtworkImageCache` —
@@ -135,6 +150,7 @@ struct ArtworkView: View {
                     return
                 }
                 image = standIn
+                displayedToken = token
             }
         }
 
@@ -144,14 +160,21 @@ struct ArtworkView: View {
                 return
             }
             ArtworkImageCache.shared.store(loaded, for: token, size: size)
-            image = loaded
+            if image !== loaded { image = loaded }
+            displayedToken = token
             isDownloading = false
             let ms = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
             if ms >= PerfTrace.warnThresholdMs {
                 PerfTrace.event("Art.uiApply.slow", details: "\(ms)ms size=\(size) ctx=\(ctx)")
             }
         } else if !Task.isCancelled {
+            // Don't keep another album's cover after this token failed to load.
+            if displayedToken != token {
+                image = nil
+                displayedToken = nil
+            }
             loadFailed = true
+            isDownloading = false
         } else {
             ArtworkPerf.record(source: .cancel, size: size, ms: 0, context: ctx)
         }
@@ -184,10 +207,13 @@ final class ArtworkImageCacheBox {
     init() {
         small.countLimit = 1500
         small.totalCostLimit = 80 * 1024 * 1024
-        // ~14 covers: enough that going back to a recently opened album or playlist is a
-        // first-frame hit. The cost limit is what binds, not the count.
-        large.countLimit = 16
-        large.totalCostLimit = 48 * 1024 * 1024
+        // Sized for the player's warm window — the current cover plus the next ten queued
+        // ones (`PlayerArtworkWarmer`) — with room left for a detail hero and a couple of
+        // recently opened albums. Below this the look-ahead evicts the art about to play.
+        // The cost limit is what binds, not the count; NSCache still drops these first
+        // under memory pressure, and every one of them is re-readable from disk.
+        large.countLimit = 24
+        large.totalCostLimit = 72 * 1024 * 1024
     }
 
     private func cache(for size: Int) -> NSCache<NSString, UIImage> {
@@ -219,6 +245,14 @@ final class ArtworkImageCacheBox {
     func store(_ image: UIImage, for token: String, size: Int) {
         let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
         cache(for: size).setObject(image, forKey: key(token, size), cost: max(cost, 1))
+    }
+
+    /// Drops every decoded render of one token, for when the server's copy of that
+    /// cover has changed and the images in memory are of the old one.
+    func remove(token: String) {
+        for size in ArtworkPixelSize.all {
+            cache(for: size).removeObject(forKey: key(token, size))
+        }
     }
 
     func removeAll() {

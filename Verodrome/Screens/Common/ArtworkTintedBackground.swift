@@ -8,9 +8,11 @@ import VerodromeKit
 /// current appearance, so the same album yields a pale tint in light mode and a
 /// deep shade in dark mode and system label colors stay legible either way.
 struct ArtworkTintedBackground: View {
+    let key: ArtworkTintKey?
     let token: String?
 
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var resolver = ArtworkTintResolver.shared
     @State private var tint: ArtworkTint?
 
     var body: some View {
@@ -27,8 +29,8 @@ struct ArtworkTintedBackground: View {
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.4), value: tint)
-        .task(id: token) {
-            tint = await ArtworkTintResolver.shared.tint(for: token)
+        .task(id: ArtworkTintRequest(key: key, token: token, revision: resolver.revision)) {
+            tint = await resolver.tint(for: key, token: token)
         }
     }
 }
@@ -36,16 +38,29 @@ struct ArtworkTintedBackground: View {
 extension View {
     /// Replaces the scrollable content background of a detail screen with a tint
     /// derived from `token`'s artwork.
-    func artworkTintedBackground(token: String?) -> some View {
+    ///
+    /// `key` is the entity the color belongs to — an album rather than the cover it
+    /// happens to use — so the stored value survives relaunches and one refresh
+    /// clears it everywhere. Screens with no entity of their own pass nil and are
+    /// keyed by the artwork itself.
+    func artworkTintedBackground(key: ArtworkTintKey? = nil, token: String?) -> some View {
         scrollContentBackground(.hidden)
-            .background(ArtworkTintedBackground(token: token))
+            .background(ArtworkTintedBackground(key: key, token: token))
     }
+}
+
+/// The inputs a view's tint lookup depends on. `revision` changes when a stored
+/// color is discarded, which is what re-runs the lookup after a refresh.
+struct ArtworkTintRequest: Equatable {
+    let key: ArtworkTintKey?
+    let token: String?
+    let revision: Int
 }
 
 // MARK: - Tint
 
 /// One artwork hue, rendered as a light tint or a dark shade on demand.
-struct ArtworkTint: Equatable {
+struct ArtworkTint: Equatable, Codable {
     let hue: CGFloat
     let saturation: CGFloat
 
@@ -154,33 +169,76 @@ extension Color {
     }
 }
 
+// MARK: - Keys
+
+/// The thing a sampled color belongs to. Every track on a record shares its cover,
+/// so storing the color against the album — not the artwork token — keeps one value
+/// for the whole record and lets a single refresh clear it for the player and the
+/// detail screen at once.
+struct ArtworkTintKey: Hashable {
+    let rawValue: String
+
+    static func album(_ id: String) -> ArtworkTintKey { ArtworkTintKey(rawValue: "album:" + id) }
+    static func artist(_ id: String) -> ArtworkTintKey { ArtworkTintKey(rawValue: "artist:" + id) }
+    /// For art with no library entity behind it — playlists, radio, podcasts.
+    static func artwork(_ token: String) -> ArtworkTintKey { ArtworkTintKey(rawValue: "artwork:" + token) }
+}
+
 // MARK: - Resolver
 
-/// Extracts and caches artwork tints. Color quantization runs off the main
-/// thread, and each token is only ever quantized once per launch.
+/// Extracts and stores artwork tints. Color quantization runs off the main thread,
+/// and each key is only ever quantized once — the result outlives the launch, so a
+/// familiar album is already colored the moment it opens.
 @MainActor
-final class ArtworkTintResolver {
+final class ArtworkTintResolver: ObservableObject {
     static let shared = ArtworkTintResolver()
+
+    /// Bumped when a stored color is discarded. Views key their lookup on it so a
+    /// refresh reaches every screen showing that artwork.
+    @Published private(set) var revision = 0
 
     private var cache: [String: ArtworkTint] = [:]
     private var inFlight: [String: Task<ArtworkTint?, Never>] = [:]
+    private let store = ArtworkTintStore.shared
 
-    func tint(for token: String?) async -> ArtworkTint? {
+    /// Color for `key`, sampling `token`'s artwork when nothing is stored yet.
+    /// A nil `key` falls back to keying by the artwork itself.
+    func tint(for key: ArtworkTintKey?, token: String?) async -> ArtworkTint? {
         guard let token, !token.isEmpty else { return nil }
-        if let cached = cache[token] { return cached }
-        if let running = inFlight[token] { return await running.value }
+        let id = (key ?? .artwork(token)).rawValue
+        if let cached = cache[id] { return cached }
+        if let running = inFlight[id] { return await running.value }
 
+        let store = store
         let task = Task<ArtworkTint?, Never> {
+            if let stored = await store.tint(for: id) { return stored }
             guard let image = await Self.artwork(for: token),
                   let components = await DominantColorExtractor.dominantComponents(of: image)
             else { return nil }
-            return ArtworkTint(hue: components.hue, saturation: components.saturation)
+            let tint = ArtworkTint(hue: components.hue, saturation: components.saturation)
+            await store.store(tint, for: id)
+            return tint
         }
-        inFlight[token] = task
+        inFlight[id] = task
         let tint = await task.value
-        inFlight[token] = nil
-        if let tint { cache[token] = tint }
+        inFlight[id] = nil
+        if let tint { cache[id] = tint }
         return tint
+    }
+
+    /// Throws away the stored color for `key` so it is sampled again from whatever
+    /// artwork the server serves now. The decoded cover goes with it: a cover that
+    /// changed would otherwise be re-quantized from the copy already in memory.
+    func refresh(key: ArtworkTintKey, token: String?) async {
+        let id = key.rawValue
+        cache[id] = nil
+        inFlight[id]?.cancel()
+        inFlight[id] = nil
+        await store.remove(id)
+        if let token, !token.isEmpty {
+            ArtworkImageCache.shared.remove(token: token)
+        }
+        revision += 1
     }
 
     /// Prefers any already-decoded size — the detail header's hero art is
@@ -193,5 +251,73 @@ final class ArtworkTintResolver {
             }
         }
         return await ArtworkResolver.shared.loadImage(for: token, size: ArtworkPixelSize.homeTile)
+    }
+}
+
+// MARK: - Store
+
+/// Sampled tints kept on disk between launches.
+///
+/// Small enough to hold the whole map in memory once read: two numbers per album or
+/// artist the user has opened.
+private actor ArtworkTintStore {
+    static let shared = ArtworkTintStore()
+
+    private let fileURL: URL
+    private var entries: [String: ArtworkTint]?
+
+    init(fileURL: URL? = nil) {
+        self.fileURL = fileURL ?? Self.defaultFileURL
+    }
+
+    private static var defaultFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("VerodromeArtworkTints", isDirectory: true)
+            .appendingPathComponent("tints.json", isDirectory: false)
+    }
+
+    func tint(for key: String) -> ArtworkTint? {
+        loaded()[key]
+    }
+
+    func store(_ tint: ArtworkTint, for key: String) {
+        var current = loaded()
+        current[key] = tint
+        entries = current
+        write(current)
+    }
+
+    func remove(_ key: String) {
+        var current = loaded()
+        guard current.removeValue(forKey: key) != nil else { return }
+        entries = current
+        write(current)
+    }
+
+    private func loaded() -> [String: ArtworkTint] {
+        if let entries { return entries }
+        let decoded: [String: ArtworkTint]
+        if let data = try? Data(contentsOf: fileURL),
+           let parsed = try? JSONDecoder().decode([String: ArtworkTint].self, from: data) {
+            decoded = parsed
+        } else {
+            decoded = [:]
+        }
+        entries = decoded
+        return decoded
+    }
+
+    private func write(_ entries: [String: ArtworkTint]) {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(entries)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // Colors are re-derivable from the artwork; a failed write only costs
+            // one more quantization next launch.
+        }
     }
 }

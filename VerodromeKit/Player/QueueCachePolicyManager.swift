@@ -4,6 +4,9 @@ import Foundation
 public final class QueueCachePolicyManager {
     public static let previousKeepCount = 2
     public static let nextKeepCount = 5
+    /// Covers reach further ahead than audio: a JPEG is a fraction of a track's bytes, and
+    /// a warm cover is what keeps a run of skips from ever showing a placeholder.
+    public static let artworkNextKeepCount = 10
     /// Player / Now Playing resolution; smaller UI sizes reuse this via ArtworkDownloadManager.
     public static let artworkPrefetchSize = ArtworkDownloadManager.largestRequestedSize
 
@@ -110,11 +113,15 @@ public final class QueueCachePolicyManager {
             Task { await downloader.enqueue(playableId: item.playableId, kind: item.kind, reason: .queuePrefetch) }
         }
 
-        // Cover art is small and shared across album tracks; prefetch the whole window
-        // (including current) so skip / Now Playing don't wait on the network.
+        // Cover art is small and shared across album tracks; prefetch a wider window than
+        // audio (including current) so skip / Now Playing don't wait on the network.
         if let artwork {
+            let artItems = queue.windowItems(
+                previous: Self.previousKeepCount,
+                next: Self.artworkNextKeepCount
+            )
             var seenArtIds = Set<String>()
-            for item in keepItems {
+            for item in artItems {
                 guard let artId = item.artworkId, !artId.isEmpty, seenArtIds.insert(artId).inserted else { continue }
                 let artKind: ArtworkKind = item.kind == .podcastEpisode ? .podcast : .album
                 Task {

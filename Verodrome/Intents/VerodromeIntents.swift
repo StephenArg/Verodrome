@@ -185,7 +185,8 @@ enum IntentLibraryPlayback {
             throw IntentPlaybackError.notFound(trimmed)
         }
         let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-        Task { await VerodromeKit.shared.player?.play(items: songs.map(QueueItem.from), startAt: 0) }
+        let items = songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
+        Task { await VerodromeKit.shared.player?.play(items: items, startAt: 0) }
     }
 
     static func playPlaylist(named name: String) throws {

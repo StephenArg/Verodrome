@@ -377,13 +377,14 @@ final class QueueCachePolicyTests: XCTestCase {
     }
 
     /// Queue-window reevaluate also disk-prefetches cover art (player size) for
-    /// upcoming tracks so skip / Now Playing don't wait on the network.
+    /// upcoming tracks so skip / Now Playing don't wait on the network. Covers reach
+    /// further ahead than audio: the next ten tracks rather than the next five.
     func testReevaluatePrefetchesArtworkForWindow() async {
         let cache = MockCache()
         let downloader = SpyDownloader()
         let artwork = SpyArtwork()
         let queue = PlayQueueHandler()
-        let items = (0..<10).map { i in
+        let items = (0..<30).map { i in
             QueueItem(
                 playableId: "\(i)",
                 title: "S\(i)",
@@ -403,9 +404,12 @@ final class QueueCachePolicyTests: XCTestCase {
         policy.reevaluate()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
-        // Window at index 5 keeps items 3…9; shared album-A is enqueued once.
+        // Art window at index 5 keeps items 3…15; shared album-A is enqueued once.
         let artIds = Set(artwork.enqueued.map(\.artId))
-        XCTAssertEqual(artIds, ["art-3", "album-A", "art-5", "art-7", "art-9"])
+        XCTAssertEqual(
+            artIds,
+            ["album-A", "art-3", "art-5", "art-7", "art-9", "art-11", "art-13", "art-15"]
+        )
         XCTAssertTrue(artwork.enqueued.allSatisfy { $0.size == QueueCachePolicyManager.artworkPrefetchSize })
         XCTAssertTrue(artwork.enqueued.allSatisfy { $0.kind == .album })
         XCTAssertEqual(artwork.enqueued.filter { $0.artId == "album-A" }.count, 1)

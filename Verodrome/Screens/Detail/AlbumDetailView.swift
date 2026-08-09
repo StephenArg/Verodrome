@@ -11,6 +11,7 @@ struct AlbumDetailView: View {
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
 
+    @ObservedObject private var tintResolver = ArtworkTintResolver.shared
     @State private var tracks: [Song] = []
     @State private var showPlaylistSelector = false
     @State private var artworkTint: ArtworkTint?
@@ -19,6 +20,10 @@ struct AlbumDetailView: View {
         self.albumID = albumID
         _albums = Query(filter: #Predicate<Album> { $0.compoundRemoteId == albumID })
     }
+
+    /// Every track here shares the album's cover, so the color is stored against the
+    /// album rather than the artwork it happens to use.
+    private var tintKey: ArtworkTintKey { .album(albumID) }
 
     /// Same fill as the Play button — used for the back chevron and options glyph so
     /// the top bar belongs to the artwork the way the action buttons do.
@@ -34,6 +39,7 @@ struct AlbumDetailView: View {
                         title: album.title,
                         subtitle: "\(album.displayArtist) · \(album.year ?? 0)",
                         artworkURL: album.artworkToken,
+                        tintKey: tintKey,
                         onPlay: { play(shuffle: false) },
                         onShuffle: { play(shuffle: true) },
                         accessory: { albumStatusBar(for: album) }
@@ -67,7 +73,7 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .artworkTintedBackground(token: albums.first?.artworkToken)
+        .artworkTintedBackground(key: tintKey, token: albums.first?.artworkToken)
         .navigationBarTitleDisplayMode(.inline)
         .tint(navigationTint)
         .toolbar {
@@ -86,8 +92,14 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .task(id: albums.first?.artworkToken) {
-            artworkTint = await ArtworkTintResolver.shared.tint(for: albums.first?.artworkToken)
+        .task(
+            id: ArtworkTintRequest(
+                key: tintKey,
+                token: albums.first?.artworkToken,
+                revision: tintResolver.revision
+            )
+        ) {
+            artworkTint = await tintResolver.tint(for: tintKey, token: albums.first?.artworkToken)
         }
         .task(id: albums.first?.remoteId) {
             guard let album = albums.first else { return }
@@ -166,7 +178,9 @@ struct AlbumDetailView: View {
             Divider()
 
             Button {
-                player.addToQueueTemporarily(tracks.map(QueueItem.from))
+                player.addToQueueTemporarily(
+                    queueItems(for: tracks, albumArtworkId: albums.first?.artworkToken)
+                )
             } label: {
                 Label("Add to Queue", systemImage: "text.append")
             }
@@ -182,6 +196,15 @@ struct AlbumDetailView: View {
             // Text for now — swap the item for a share URL once albums have one.
             ShareLink(item: "\(album.title) — \(album.displayArtist)") {
                 Label("Share", systemImage: "square.and.arrow.up")
+            }
+
+            Divider()
+
+            Button {
+                let token = album.artworkToken
+                Task { await tintResolver.refresh(key: tintKey, token: token) }
+            } label: {
+                Label("Refresh Background Color", systemImage: "eyedropper")
             }
         } label: {
             // Plain ellipsis (same glyph as the player). Centered in the toolbar hit
@@ -235,7 +258,7 @@ struct AlbumDetailView: View {
 
     private func play(shuffle: Bool) {
         guard let album = albums.first else { return }
-        var items = tracks.map(QueueItem.from)
+        var items = queueItems(for: tracks, albumArtworkId: album.artworkToken)
 
         if items.isEmpty {
             Task {
@@ -243,7 +266,7 @@ struct AlbumDetailView: View {
                 if let album = albums.first {
                     loadTracks(for: album)
                 }
-                items = tracks.map(QueueItem.from)
+                items = queueItems(for: tracks, albumArtworkId: album.artworkToken)
                 guard !items.isEmpty else {
                     PlayTrace.error("no tracks after sync")
                     return
@@ -257,9 +280,14 @@ struct AlbumDetailView: View {
     }
 
     private func playSong(_ song: Song, tracks: [Song]) {
-        let items = tracks.map(QueueItem.from)
+        let albumArt = albums.first?.artworkToken
+        let items = queueItems(for: tracks, albumArtworkId: albumArt)
         let index = tracks.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         player.play(items: items, startAt: index)
+    }
+
+    private func queueItems(for tracks: [Song], albumArtworkId: String?) -> [QueueItem] {
+        tracks.map { QueueItem.from($0, albumArtworkId: albumArtworkId) }
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

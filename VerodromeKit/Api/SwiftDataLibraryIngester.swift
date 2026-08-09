@@ -206,10 +206,14 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             song.contentType = item.format
             song.artistName = item.artistName
             song.albumTitle = item.albumName
-            if let artId = item.artId {
+            // Prefer the album's cover so every track on a record shares one artwork
+            // identity. Servers such as Navidrome hand each song its own `coverArt` id
+            // that serves the same picture, which made the player treat an in-album skip
+            // as new art and reload it.
+            if let albumArt = album?.artworkToken, !albumArt.isEmpty {
+                song.artworkToken = albumArt
+            } else if let artId = item.artId {
                 song.artworkToken = artId
-            } else if song.artworkToken == nil {
-                song.artworkToken = album?.artworkToken
             }
             if let disc = item.discNumber { song.disc = disc }
             // Inherit album genre so genre detail can find tracks by genreName.

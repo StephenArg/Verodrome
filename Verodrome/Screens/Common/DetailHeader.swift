@@ -8,6 +8,9 @@ struct DetailHeader<Accessory: View>: View {
     /// image, say) should pass the same token they tint the background with.
     let artworkURL: String?
     let tintToken: String?
+    /// Entity the button color is stored against, so it matches the background and
+    /// is cleared by the same refresh.
+    let tintKey: ArtworkTintKey?
     let symbol: String
     let onPlay: () -> Void
     let onShuffle: () -> Void
@@ -20,6 +23,7 @@ struct DetailHeader<Accessory: View>: View {
         subtitle: String,
         artworkURL: String? = nil,
         tintToken: String? = nil,
+        tintKey: ArtworkTintKey? = nil,
         symbol: String = "music.note",
         onPlay: @escaping () -> Void,
         onShuffle: @escaping () -> Void,
@@ -29,6 +33,7 @@ struct DetailHeader<Accessory: View>: View {
         self.subtitle = subtitle
         self.artworkURL = artworkURL
         self.tintToken = tintToken
+        self.tintKey = tintKey
         self.symbol = symbol
         self.onPlay = onPlay
         self.onShuffle = onShuffle
@@ -37,6 +42,7 @@ struct DetailHeader<Accessory: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var router: AppRouter
+    @ObservedObject private var resolver = ArtworkTintResolver.shared
     @State private var tint: ArtworkTint?
 
     private var resolvedTint: ArtworkTint {
@@ -102,8 +108,14 @@ struct DetailHeader<Accessory: View>: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .animation(.easeOut(duration: 0.4), value: tint)
-        .task(id: tintToken ?? artworkURL) {
-            tint = await ArtworkTintResolver.shared.tint(for: tintToken ?? artworkURL)
+        .task(
+            id: ArtworkTintRequest(
+                key: tintKey,
+                token: tintToken ?? artworkURL,
+                revision: resolver.revision
+            )
+        ) {
+            tint = await resolver.tint(for: tintKey, token: tintToken ?? artworkURL)
         }
     }
 
@@ -118,6 +130,7 @@ extension DetailHeader where Accessory == EmptyView {
         subtitle: String,
         artworkURL: String? = nil,
         tintToken: String? = nil,
+        tintKey: ArtworkTintKey? = nil,
         symbol: String = "music.note",
         onPlay: @escaping () -> Void,
         onShuffle: @escaping () -> Void
@@ -127,6 +140,7 @@ extension DetailHeader where Accessory == EmptyView {
             subtitle: subtitle,
             artworkURL: artworkURL,
             tintToken: tintToken,
+            tintKey: tintKey,
             symbol: symbol,
             onPlay: onPlay,
             onShuffle: onShuffle,
