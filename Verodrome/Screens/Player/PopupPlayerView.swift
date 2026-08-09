@@ -166,7 +166,11 @@ struct PopupPlayerView: View {
                     ? "dot.radiowaves.left.and.right"
                     : "music.note"
             )
+            // Slide / scale with the crossfade so double-tap feels like the cover
+            // gives way to lyrics (and the reverse when lyrics close).
+            .offset(y: showingLyrics ? -28 : 0)
             .opacity(showingLyrics ? 0 : 1)
+            .scaleEffect(showingLyrics ? 0.96 : 1, anchor: .center)
             .allowsHitTesting(!showingLyrics)
             // Keep dismiss-swipe local to artwork so it cannot steal
             // button / sheet gestures — or fight lyrics scrolling.
@@ -178,18 +182,36 @@ struct PopupPlayerView: View {
                         }
                     }
             )
+            .onTapGesture(count: 2) {
+                guard lyricsToggleEnabled else { return }
+                toggleLyrics()
+            }
+            .accessibilityHint(
+                lyricsToggleEnabled
+                    ? "Double tap to \(settings.showLyricsInPlayer ? "hide" : "show") lyrics"
+                    : ""
+            )
 
             // Only mounted while the user wants lyrics, so the playback clock isn't
             // redrawing an invisible lyric list four times a second.
             if settings.showLyricsInPlayer {
-                SyncedLyricsView()
-                    .opacity(showingLyrics ? 1 : 0)
-                    .allowsHitTesting(showingLyrics)
-                    .transition(.opacity)
+                SyncedLyricsView(onDoubleTap: {
+                    guard lyricsToggleEnabled else { return }
+                    toggleLyrics()
+                })
+                .offset(y: showingLyrics ? 0 : 28)
+                .opacity(showingLyrics ? 1 : 0)
+                .allowsHitTesting(showingLyrics)
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: 28)),
+                        removal: .opacity.combined(with: .offset(y: 28))
+                    )
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.25), value: showingLyrics)
+        .animation(.easeInOut(duration: 0.28), value: showingLyrics)
     }
 
     private var lyricsButtonTint: Color {
@@ -218,7 +240,7 @@ struct PopupPlayerView: View {
     }
 
     private func toggleLyrics() {
-        withAnimation(.easeInOut(duration: 0.25)) {
+        withAnimation(.easeInOut(duration: 0.28)) {
             settings.showLyricsInPlayer.toggle()
         }
         settings.save()

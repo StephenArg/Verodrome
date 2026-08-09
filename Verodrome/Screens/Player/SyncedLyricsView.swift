@@ -11,6 +11,9 @@ struct SyncedLyricsView: View {
 
     var horizontalPadding: CGFloat = VerodromeTheme.playerContentHorizontalPadding
     var alignment: TextAlignment = .leading
+    /// Double-tap anywhere in the list (including on a line) toggles lyrics in the
+    /// popup player. Optional so the inspector lyrics pane stays tap-to-seek only.
+    var onDoubleTap: (() -> Void)? = nil
 
     /// Auto-scroll stays out of the way for this long after the user drags.
     private let manualScrollGracePeriod: TimeInterval = 4
@@ -54,6 +57,10 @@ struct SyncedLyricsView: View {
                 // what tells us the user took over.
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4).onChanged { _ in lastManualScroll = Date() }
+                )
+                // simultaneous so line seek buttons still receive their single tap.
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded { onDoubleTap?() }
                 )
                 .onPreferenceChange(VisibleLyricLinesKey.self) { visibleLines = $0 }
                 .onChange(of: activeIndex) { _, index in
