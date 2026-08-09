@@ -19,6 +19,8 @@ public actor DownloadManager: DownloadManaging {
     /// Transfers running right now, and the reason each is being kept for. The reason can
     /// change mid-transfer when the user downloads a track a prefetch already started.
     private var inFlight: [String: CacheReason] = [:]
+    /// Live URL sessions for in-flight transfers so `cancelAll` can tear them down.
+    private var sessions: [String: ProgressDownloadSession] = [:]
 
     public init(
         urlProvider: any StreamURLProviding,
@@ -115,6 +117,7 @@ public actor DownloadManager: DownloadManaging {
         pending.removeAll { $0.0 == playableId }
         deferred.removeAll { $0.0 == playableId }
         inFlight.removeValue(forKey: playableId)
+        sessions.removeValue(forKey: playableId)?.cancel()
         await MainActor.run {
             DownloadCenter.shared.clearActive(playableId: playableId)
         }
@@ -125,6 +128,11 @@ public actor DownloadManager: DownloadManaging {
         deferred.removeAll()
         inFlight.removeAll()
         activeCount = 0
+        let activeSessions = sessions
+        sessions.removeAll()
+        for session in activeSessions.values {
+            session.cancel()
+        }
         await MainActor.run {
             DownloadCenter.shared.clearAllActive()
         }
@@ -171,6 +179,8 @@ public actor DownloadManager: DownloadManaging {
         do {
             let remote = try await urlProvider.downloadURL(forPlayableId: id, format: .original)
             let session = ProgressDownloadSession()
+            sessions[id] = session
+            defer { sessions[id] = nil }
             let tempURL = try await session.download(from: remote) { progress in
                 guard reportsProgress else { return }
                 Task { @MainActor in
@@ -202,6 +212,8 @@ public actor DownloadManager: DownloadManaging {
             if reason.isUserPinnedReason {
                 await MainActor.run { DownloadCenter.shared.complete(playableId: id) }
             }
+        } catch is CancellationError {
+            // Cancelled by offline mode / terminate — leave UI cleared by cancelAll.
         } catch {
             if (inFlight[id] ?? requestedReason).isUserPinnedReason {
                 await MainActor.run { DownloadCenter.shared.fail(playableId: id) }

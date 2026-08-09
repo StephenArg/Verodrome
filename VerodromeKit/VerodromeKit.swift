@@ -206,6 +206,25 @@ public final class VerodromeKit: ObservableObject {
         }
     }
 
+    /// Writes the scrub position and drains pending queue files. Call when leaving the
+    /// foreground so a force-quit cannot take the last few seconds of progress with it.
+    public func persistForBackground() async {
+        player?.persistPlaybackPosition()
+        await queueHandler?.flushPendingWrites()
+    }
+
+    /// Best-effort teardown when the process is about to die. Stops audio and releases
+    /// the session first so silence lands quickly; persistence is kicked but not awaited
+    /// because `applicationWillTerminate` will not wait for structured concurrency.
+    public func haltForTermination() {
+        player?.haltPlayback()
+        nowPlayingHandler.clear()
+        audioSessionHandler.deactivate()
+        queueCachePolicy?.stop()
+        Task { await downloadManager?.cancelAll() }
+        Task { await queueHandler?.flushPendingWrites() }
+    }
+
     public func login(credentials: LoginCredentials) async throws {
         let infoServer = try await backendProxy.login(credentials: credentials)
         let apiType = ApiType(backendProxy.apiType)

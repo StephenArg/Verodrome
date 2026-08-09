@@ -5,6 +5,7 @@ final class ProgressDownloadSession: NSObject, URLSessionDownloadDelegate, @unch
     private var progressHandler: (@Sendable (Double) -> Void)?
     private var continuation: CheckedContinuation<URL, Error>?
     private var session: URLSession!
+    private var isCancelled = false
 
     override init() {
         super.init()
@@ -16,7 +17,23 @@ final class ProgressDownloadSession: NSObject, URLSessionDownloadDelegate, @unch
         progressHandler = onProgress
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
+            if isCancelled {
+                continuation.resume(throwing: CancellationError())
+                self.continuation = nil
+                return
+            }
             session.downloadTask(with: url).resume()
+        }
+    }
+
+    /// Tears down the underlying session so a force-quit / offline flip doesn't leave
+    /// URLSession work holding the process open.
+    func cancel() {
+        isCancelled = true
+        session.invalidateAndCancel()
+        if let continuation {
+            continuation.resume(throwing: CancellationError())
+            self.continuation = nil
         }
     }
 

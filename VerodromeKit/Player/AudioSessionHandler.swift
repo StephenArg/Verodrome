@@ -29,4 +29,12 @@ public final class AudioSessionHandler {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
     }
+
+    /// Releases the shared playback session so the process can die (or sleep) without
+    /// holding an active audio claim. Observers are removed first so a deactivate
+    /// notification cannot bounce back into the player.
+    public func deactivate() {
+        deactivateObservers()
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
 }

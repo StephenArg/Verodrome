@@ -276,12 +276,32 @@ struct PopupPlayerView: View {
     }
 
     private var lyricsButtonTint: Color {
-        // Accent while the preference is on — including tracks with no lyrics, so the
-        // control still reads as active and can be used to turn lyrics off.
         // Same `themeManager.accentColor` as the active speed control (not `.accentColor`,
         // which can diverge from the themed tint in this presentation).
-        if settings.showLyricsInPlayer { return themeManager.accentColor }
-        return lyricsAvailable ? .primary : Color.secondary.opacity(0.4)
+        // Dim only while lyrics mode is on but this track has nothing to show — never
+        // while the preference is off.
+        if settings.showLyricsInPlayer {
+            return lyricsAvailable ? themeManager.accentColor : lyricsModeDimTint
+        }
+        return .primary
+    }
+
+    /// Accent, nudged darker so "lyrics on, no text" doesn't read as fully active.
+    private var lyricsModeDimTint: Color {
+        let ui = themeManager.accentUIColor
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard ui.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return themeManager.accentColor.opacity(0.75)
+        }
+        return Color(
+            hue: hue,
+            saturation: saturation,
+            brightness: max(0, brightness * 0.78),
+            opacity: alpha
+        )
     }
 
     /// Matches the timer icon: accent when Random or non-1×, otherwise primary.
@@ -427,13 +447,14 @@ struct PopupPlayerView: View {
                 .frame(width: 24, height: 24)
 
             Button {
+                // Always tappable so SwiftUI's disabled styling can't grey the icon out
+                // while lyrics mode is off. Tint alone reflects active / empty-lyrics state.
                 toggleLyrics()
             } label: {
                 Image(systemName: "text.quote")
                     .font(.title3)
                     .foregroundStyle(lyricsButtonTint)
             }
-            .disabled(!lyricsToggleEnabled)
             .accessibilityLabel(settings.showLyricsInPlayer ? "Show Artwork" : "Show Lyrics")
 
             HStack(spacing: 6) {

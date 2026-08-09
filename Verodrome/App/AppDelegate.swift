@@ -36,6 +36,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         BackgroundFetchSyncer.performFetch(completion: completionHandler)
     }
 
+    func applicationWillTerminate(_ application: UIApplication) {
+        // Rare on modern iOS, but when it does run we want audio gone immediately.
+        MainActor.assumeIsolated {
+            VerodromeKit.shared.haltForTermination()
+        }
+    }
+
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])

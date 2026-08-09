@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import VerodromeKit
 
 @main
@@ -45,10 +46,31 @@ struct VerodromeApp: App {
                     themeManager.applyTheme()
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    // Being killed while backgrounded is the normal way this app ends, and
-                    // the tick that would have carried the scrub position never arrives.
-                    guard phase == .background else { return }
-                    kit.player?.persistPlaybackPosition()
+                    switch phase {
+                    case .inactive:
+                        // App Switcher / Control Center — persist early so a swipe-away
+                        // still has a recent scrub position if `.background` is skipped.
+                        kit.player?.persistPlaybackPosition()
+                    case .background:
+                        // Being killed while backgrounded is the normal way this app ends.
+                        // Hold a background task long enough for the queue file to land.
+                        var taskId = UIBackgroundTaskIdentifier.invalid
+                        taskId = UIApplication.shared.beginBackgroundTask(withName: "PersistPlayback") {
+                            if taskId != .invalid {
+                                UIApplication.shared.endBackgroundTask(taskId)
+                                taskId = .invalid
+                            }
+                        }
+                        Task {
+                            await kit.persistForBackground()
+                            if taskId != .invalid {
+                                UIApplication.shared.endBackgroundTask(taskId)
+                                taskId = .invalid
+                            }
+                        }
+                    default:
+                        break
+                    }
                 }
         }
         .modelContainer(PersistentStorage.shared.container)

@@ -341,11 +341,12 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     private func startSleepTimerTick() {
         stopSleepTimerTick()
-        // Block-based timer on the main run loop; wall-clock comparison each tick
-        // survives drift and system sleep better than a single fire-at-deadline timer.
+        // Block-based timer on the main run loop. Fire inline via `assumeIsolated`
+        // — a `Task { @MainActor }` hop delayed pause under main-actor load.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.fireSleepTimerIfDue(now: Date())
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.fireSleepTimerIfDue(now: Date())
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -360,7 +361,20 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     private func fireSleepTimerIfDue(now: Date) {
         guard let deadline = sleepTimerDeadline, now >= deadline else { return }
         cancelSleepTimer()
+        persistPlaybackPosition()
         pause()
+    }
+
+    /// Stops engine output and the sleep timer without clearing the stored queue.
+    /// Used when the process is about to die so audio releases immediately.
+    public func haltPlayback() {
+        cancelSleepTimer()
+        persistPlaybackPosition()
+        let elapsed = currentTime
+        audioPlayer.stop()
+        isPlaying = false
+        currentTime = elapsed
+        nowPlayingHandler?.updatePlaybackState(isPlaying: false, elapsed: elapsed, rate: 0)
     }
 
     public func enqueueNext(_ items: [QueueItem]) { audioPlayer.queueHandler.enqueueNext(items) }
