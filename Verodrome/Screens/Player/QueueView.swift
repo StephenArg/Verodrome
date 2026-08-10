@@ -3,8 +3,9 @@ import UIKit
 import VerodromeKit
 
 struct QueueView: View {
-    @EnvironmentObject private var player: PlayerViewModel
-    @ObservedObject private var downloadCenter = DownloadCenter.shared
+    /// Narrow queue identity — not the full `PlayerViewModel`, so lyrics / EQ / progress
+    /// ticks don't rebuild every row while scrolling.
+    @EnvironmentObject private var queueList: QueueListModel
 
     /// Dismisses the hosting sheet (full-player queue). Nil when embedded (e.g. iPad inspector).
     var onDismiss: (() -> Void)? = nil
@@ -18,14 +19,19 @@ struct QueueView: View {
     @State private var playlistTarget: Song?
     /// Token + distance to nudge the list when "Added to Queue" grows above the viewport.
     @State private var scrollBump = ScrollBump.zero
+    /// playableId → badge, refreshed only when the queue or download membership changes —
+    /// never on byte-level progress (that would rebuild every row).
+    @State private var downloadBadges: [String: DownloadStatus] = [:]
+    /// Set around a row tap so jump-driven playhead changes don't force `scrollTo`.
+    @State private var suppressScrollToCurrent = false
 
     /// Where "Added to Queue" is drawn. Extends the handler's waiting run to include the
     /// playhead when that row is itself user-queued, so the current song stays under the
     /// section header instead of popping out above it the moment it starts.
     private var userQueued: Range<Int> {
-        let queue = player.queue
-        let current = player.currentIndex
-        let waiting = player.userQueuedRange
+        let queue = queueList.queue
+        let current = queueList.currentIndex
+        let waiting = queueList.userQueuedRange
         guard queue.indices.contains(current), queue[current].isUserQueued else {
             return waiting
         }
@@ -34,23 +40,16 @@ struct QueueView: View {
 
     /// The handler's run — rows still waiting after the playhead. Edit offsets go through
     /// this, not `userQueued`, so the playing track isn't treated as a movable queued row.
-    private var editableUserQueued: Range<Int> { player.userQueuedRange }
-
-    /// Identity of the playing row, so edits that only shift indices don't read as a
-    /// change of track.
-    private var currentEntryId: UUID? {
-        guard player.queue.indices.contains(player.currentIndex) else { return nil }
-        return player.queue[player.currentIndex].entryId
-    }
+    private var editableUserQueued: Range<Int> { queueList.userQueuedRange }
 
     /// Counts that together tell an insert apart from a reorder.
     private var queueShape: QueueShape {
-        QueueShape(total: player.queue.count, queued: userQueued.count)
+        QueueShape(total: queueList.queue.count, queued: userQueued.count)
     }
 
     /// Any non-empty queue can be edited — replaying the album / playlist rebuilds it.
     private var showsEditButton: Bool {
-        player.isQueueReorderable
+        queueList.isReorderable
     }
 
     private var isEditing: Bool {
@@ -98,11 +97,34 @@ struct QueueView: View {
                 // growth so the song that was queued from stays visually put.
                 QueueListScrollBump(bump: scrollBump)
             }
-            .onAppear { scrollToCurrent(using: proxy) }
+            .onAppear {
+                refreshDownloadBadges()
+                scrollToCurrent(using: proxy)
+            }
+            .onChange(of: queueList.queue) { _, _ in
+                refreshDownloadBadges()
+            }
+            .onReceive(DownloadCenter.shared.$activityEpoch) { _ in
+                refreshDownloadBadges()
+            }
+            // Queue-window prefetch writes files without touching DownloadCenter, so
+            // membership epochs alone miss new cache glyphs. A slow poll is enough —
+            // unlike the old per-row `fileExists` on every progress tick.
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled else { return }
+                    refreshDownloadBadges()
+                }
+            }
             // Keyed on which track is playing, not on its index: a reorder shifts every
             // index below the edit, and scrolling back to the playhead on each drop is
             // what made a placed row appear to jump away.
-            .onChange(of: currentEntryId) { _, _ in
+            .onChange(of: queueList.currentEntryId) { _, _ in
+                if suppressScrollToCurrent {
+                    suppressScrollToCurrent = false
+                    return
+                }
                 scrollToCurrent(using: proxy)
             }
             .onChange(of: queueShape) { old, new in
@@ -140,7 +162,7 @@ struct QueueView: View {
     /// The queue as the list renders it: every track, with the group labels in the same
     /// run so a Next Up drag can travel past "Added to Queue" into the head.
     private var rows: [QueueEntry] {
-        let queue = player.queue
+        let queue = queueList.queue
         let queued = userQueued
         var entries: [QueueEntry] = []
         entries.reserveCapacity(queue.count + 2)
@@ -168,18 +190,25 @@ struct QueueView: View {
 
     @ViewBuilder
     private func row(_ item: QueueItem, at offset: Int) -> some View {
-        let status = downloadStatus(for: item)
+        let status = item.kind == .song ? downloadBadges[item.playableId] : nil
         HStack(spacing: 0) {
             Button {
-                player.jump(to: offset)
+                // The tapped row is already on screen — don't chase it with scrollTo, and
+                // don't animate the "Added to Queue" relocation that jump may perform.
+                suppressScrollToCurrent = true
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    queueList.jump(to: offset)
+                }
             } label: {
                 EntityRow(
                     title: item.title,
                     subtitle: item.artist ?? "",
                     artworkURL: item.artworkId,
                     symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
-                    isPlaying: player.currentItem?.entryId == item.entryId
-                        || (player.currentItem == nil && player.currentIndex == offset),
+                    isPlaying: queueList.currentEntryId == item.entryId
+                        || (queueList.currentEntryId == nil && queueList.currentIndex == offset),
                     downloadStatus: status
                 )
             }
@@ -201,7 +230,7 @@ struct QueueView: View {
     // MARK: - Editing
 
     private func canDelete(at index: Int) -> Bool {
-        isEditing && index != player.currentIndex
+        isEditing && index != queueList.currentIndex
     }
 
     /// Row drags arrive in list positions, which count the group labels; the player edits
@@ -225,12 +254,12 @@ struct QueueView: View {
             // Waiting rows keep the user-queue path (rewrites only that side file). A drag
             // that involves the playing queued track has to use the absolute move.
             if sources.allSatisfy({ editable.contains($0) }) {
-                player.moveUserQueued(
+                queueList.moveUserQueued(
                     from: IndexSet(sources.map { $0 - editable.lowerBound }),
                     to: clamped - editable.lowerBound
                 )
             } else {
-                player.moveQueue(from: IndexSet(sources), to: clamped)
+                queueList.moveQueue(from: IndexSet(sources), to: clamped)
             }
             return
         }
@@ -238,18 +267,20 @@ struct QueueView: View {
         // Context → "Added to Queue": copy at the drop index. No animation — List already
         // opened a gap there for a move, and animating a snap-back + end-insert reads as lag.
         if dropLandsInQueued(destination: destination, target: target, entries: entries) {
-            let items = sources.sorted().compactMap { player.queue.indices.contains($0) ? player.queue[$0] : nil }
+            let items = sources.sorted().compactMap {
+                queueList.queue.indices.contains($0) ? queueList.queue[$0] : nil
+            }
             guard !items.isEmpty else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                player.addToQueueTemporarily(items, at: target)
+                queueList.addToQueueTemporarily(items, at: target)
             }
             return
         }
 
         // Crossing past the run (Next Up ↔ head) lands outside it — a normal context move.
-        player.moveQueue(from: IndexSet(sources), to: target)
+        queueList.moveQueue(from: IndexSet(sources), to: target)
     }
 
     private func handleDelete(_ offsets: IndexSet) {
@@ -259,9 +290,9 @@ struct QueueView: View {
 
         let editable = editableUserQueued
         if indices.allSatisfy({ editable.contains($0) }) {
-            player.removeUserQueued(at: IndexSet(indices.map { $0 - editable.lowerBound }))
+            queueList.removeUserQueued(at: IndexSet(indices.map { $0 - editable.lowerBound }))
         } else {
-            player.removeFromQueue(at: IndexSet(indices))
+            queueList.removeFromQueue(at: IndexSet(indices))
         }
     }
 
@@ -271,7 +302,7 @@ struct QueueView: View {
         for entry in entries.dropFirst(min(destination, entries.count)) {
             if let index = entry.queueIndex { return index }
         }
-        return player.queue.count
+        return queueList.queue.count
     }
 
     /// True when the gap the user released in belongs to "Added to Queue" — the section
@@ -304,7 +335,7 @@ struct QueueView: View {
         guard oldCount == 0 else { return addedSongs }
         var labels = Self.estimatedHeaderHeight // "Added to Queue"
         // "Next Up" only appears when context tracks remain after the new run.
-        if userQueued.upperBound < player.queue.count {
+        if userQueued.upperBound < queueList.queue.count {
             labels += Self.estimatedHeaderHeight
         }
         return addedSongs + labels
@@ -323,11 +354,11 @@ struct QueueView: View {
         // relocated "Added to Queue" run is already accounted for.
         // List needs a layout pass before cells register for scrollTo.
         DispatchQueue.main.async {
-            guard player.queue.indices.contains(player.currentIndex) else { return }
-            if userQueued.contains(player.currentIndex) {
+            guard queueList.queue.indices.contains(queueList.currentIndex) else { return }
+            if userQueued.contains(queueList.currentIndex) {
                 proxy.scrollTo(QueueSectionHeader.userQueued, anchor: .top)
             } else {
-                proxy.scrollTo(player.queue[player.currentIndex].entryId, anchor: .top)
+                proxy.scrollTo(queueList.queue[queueList.currentIndex].entryId, anchor: .top)
             }
         }
     }
@@ -341,26 +372,36 @@ struct QueueView: View {
         return status
     }
 
-    /// Library songs only — radio and the like stay unmarked. A file kept offline by
-    /// the user gets the download arrow; a queue-prefetch / stream cache gets a drive
-    /// glyph so the two don't look the same.
-    private func downloadStatus(for item: QueueItem) -> DownloadStatus? {
-        guard item.kind == .song else { return nil }
+    /// Probe the filesystem once per queue / membership change, not from every row `body`.
+    private func refreshDownloadBadges() {
+        let center = DownloadCenter.shared
         let cache = VerodromeKit.shared.playableCache
-        let hasFile = cache?.hasPlayableFile(id: item.playableId, kind: item.kind) == true
-        let status = downloadCenter.status(for: item.playableId, isDownloaded: hasFile)
-        switch status {
-        case .downloaded:
-            // `DownloadCenter` treats any on-disk file as downloaded; only pinned
-            // reasons are a real keep-forever download.
-            if cache?.isUserPinned(id: item.playableId, kind: item.kind) == true {
-                return .downloaded
+        var next: [String: DownloadStatus] = [:]
+        next.reserveCapacity(queueList.queue.count)
+        for item in queueList.queue where item.kind == .song {
+            if next[item.playableId] != nil { continue }
+            let hasFile = cache?.hasPlayableFile(id: item.playableId, kind: item.kind) == true
+            let status = center.status(for: item.playableId, isDownloaded: hasFile)
+            switch status {
+            case .downloaded:
+                // `DownloadCenter` treats any on-disk file as downloaded; only pinned
+                // reasons are a real keep-forever download. Queue rows collapse live
+                // fractions so progress ticks never reach the List.
+                if cache?.isUserPinned(id: item.playableId, kind: item.kind) == true {
+                    next[item.playableId] = .downloaded
+                } else {
+                    next[item.playableId] = hasFile ? .cached : .none
+                }
+            case .none:
+                next[item.playableId] = hasFile ? .cached : .none
+            case .downloading:
+                next[item.playableId] = .downloading(0)
+            default:
+                next[item.playableId] = status
             }
-            return hasFile ? .cached : DownloadStatus.none
-        case .none:
-            return hasFile ? .cached : DownloadStatus.none
-        default:
-            return status
+        }
+        if next != downloadBadges {
+            downloadBadges = next
         }
     }
 }

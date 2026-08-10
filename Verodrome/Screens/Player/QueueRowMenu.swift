@@ -12,15 +12,15 @@ struct QueueRowMenu: View {
     let onOpenAlbum: (String) -> Void
     let onAddToPlaylist: (Song) -> Void
 
-    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var queueList: QueueListModel
     @State private var song: Song?
     @State private var showMenu = false
     /// Which edge of the popover faces the ellipsis. Flips when the row sits in the
     /// lower half of the screen so the menu grows upward instead of clipping.
     @State private var arrowEdge: Edge = .top
-    /// Latest global midY of the ellipsis, read when opening so the edge is settled
-    /// before the popover presents.
-    @State private var buttonMidY: CGFloat = 0
+    /// Samples the button's global midY only when opening — not via a live preference
+    /// that updates on every scroll frame.
+    @State private var frameSampler = QueueRowMenuFrameSampler()
 
     private var downloadActionTitle: String {
         switch downloadStatus {
@@ -43,8 +43,10 @@ struct QueueRowMenu: View {
 
     var body: some View {
         Button {
-            // Below mid-screen → arrow on the popover's bottom edge (menu above).
-            arrowEdge = buttonMidY > UIScreen.main.bounds.midY ? .bottom : .top
+            // Resolve the library song only when the menu is actually opened.
+            if song == nil { song = resolveSong() }
+            let midY = frameSampler.globalMidY()
+            arrowEdge = midY > UIScreen.main.bounds.midY ? .bottom : .top
             showMenu = true
         } label: {
             Image(systemName: "ellipsis")
@@ -56,20 +58,11 @@ struct QueueRowMenu: View {
         .buttonStyle(.plain)
         .accessibilityLabel("More options")
         .background {
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: QueueRowMenuMidYKey.self,
-                    value: geo.frame(in: .global).midY
-                )
-            }
+            QueueRowMenuFrameProbe(sampler: frameSampler)
         }
-        .onPreferenceChange(QueueRowMenuMidYKey.self) { buttonMidY = $0 }
         .popover(isPresented: $showMenu, arrowEdge: arrowEdge) {
             menuContent
                 .presentationCompactAdaptation(.popover)
-        }
-        .task(id: item.playableId) {
-            song = resolveSong()
         }
     }
 
@@ -85,7 +78,7 @@ struct QueueRowMenu: View {
             }
 
             menuRow(title: "Add to Queue", systemImage: "text.append") {
-                player.addToQueueTemporarily([item])
+                queueList.addToQueueTemporarily([item])
             }
 
             menuRow(title: "Share", systemImage: "square.and.arrow.up") {
@@ -164,10 +157,30 @@ struct QueueRowMenu: View {
     }
 }
 
-private struct QueueRowMenuMidYKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+/// Holds a weak reference to the probe UIView so the button can sample its frame on tap.
+@MainActor
+private final class QueueRowMenuFrameSampler {
+    weak var view: UIView?
+
+    func globalMidY() -> CGFloat {
+        guard let view, let window = view.window else { return 0 }
+        return view.convert(view.bounds, to: window).midY
+    }
+}
+
+private struct QueueRowMenuFrameProbe: UIViewRepresentable {
+    let sampler: QueueRowMenuFrameSampler
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        sampler.view = view
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        sampler.view = uiView
     }
 }
 

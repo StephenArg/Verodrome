@@ -32,8 +32,16 @@ public final class DownloadCenter: ObservableObject {
     @Published public private(set) var activeDownloads: [String: Double] = [:]
     @Published public private(set) var failedIds: Set<String> = []
     @Published public private(set) var completedIds: Set<String> = []
+    /// Bumps when a download starts, finishes, fails, or is cleared — not on progress
+    /// ticks. Queue lists and other dense UIs observe this instead of `activeDownloads`
+    /// so byte-level updates don't rebuild every row.
+    @Published public private(set) var activityEpoch: UInt = 0
 
     private init() {}
+
+    private func noteActivityChange() {
+        activityEpoch &+= 1
+    }
 
     /// A song sitting behind `DownloadManager.maxConcurrent` still needs a spinner —
     /// on a full album most tracks are here, not in `activeDownloads`.
@@ -42,6 +50,7 @@ public final class DownloadCenter: ObservableObject {
         completedIds.remove(playableId)
         deferredIds.remove(playableId)
         pendingIds.insert(playableId)
+        noteActivityChange()
     }
 
     /// Accepted, but parked until the connection allows automatic downloads.
@@ -50,10 +59,12 @@ public final class DownloadCenter: ObservableObject {
         completedIds.remove(playableId)
         pendingIds.remove(playableId)
         deferredIds.insert(playableId)
+        noteActivityChange()
     }
 
     public func clearDeferred(playableId: String) {
-        deferredIds.remove(playableId)
+        guard deferredIds.remove(playableId) != nil else { return }
+        noteActivityChange()
     }
 
     public func begin(playableId: String) {
@@ -62,9 +73,12 @@ public final class DownloadCenter: ObservableObject {
         pendingIds.remove(playableId)
         deferredIds.remove(playableId)
         activeDownloads[playableId] = 0
+        noteActivityChange()
     }
 
     public func update(playableId: String, progress: Double) {
+        // Progress alone must not bump `activityEpoch` — album rings still observe
+        // `activeDownloads`, while list badges only care about membership changes.
         activeDownloads[playableId] = min(1, max(0, progress))
     }
 
@@ -74,6 +88,7 @@ public final class DownloadCenter: ObservableObject {
         activeDownloads.removeValue(forKey: playableId)
         failedIds.remove(playableId)
         completedIds.insert(playableId)
+        noteActivityChange()
     }
 
     public func fail(playableId: String) {
@@ -81,6 +96,7 @@ public final class DownloadCenter: ObservableObject {
         deferredIds.remove(playableId)
         activeDownloads.removeValue(forKey: playableId)
         failedIds.insert(playableId)
+        noteActivityChange()
     }
 
     public func clearActive(playableId: String) {
@@ -89,20 +105,26 @@ public final class DownloadCenter: ObservableObject {
         activeDownloads.removeValue(forKey: playableId)
         failedIds.remove(playableId)
         completedIds.remove(playableId)
+        noteActivityChange()
     }
 
     public func clearAllActive() {
         pendingIds.removeAll()
         deferredIds.removeAll()
         activeDownloads.removeAll()
+        noteActivityChange()
     }
 
     public func clearCompleted() {
+        guard !completedIds.isEmpty else { return }
         completedIds.removeAll()
+        noteActivityChange()
     }
 
     public func clearFailed() {
+        guard !failedIds.isEmpty else { return }
         failedIds.removeAll()
+        noteActivityChange()
     }
 
     /// Everything queued or transferring right now.

@@ -25,6 +25,7 @@ struct VerodromeApp: App {
                 .environmentObject(player)
                 .environmentObject(player.progress)
                 .environmentObject(player.nowPlaying)
+                .environmentObject(player.queueList)
                 .environmentObject(shuffleAll)
                 .environmentObject(themeManager)
                 .preferredColorScheme(colorScheme)

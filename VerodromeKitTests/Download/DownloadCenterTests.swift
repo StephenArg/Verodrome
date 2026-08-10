@@ -31,6 +31,25 @@ final class DownloadCenterTests: XCTestCase {
         XCTAssertFalse(center.isWorking(on: "a"))
     }
 
+    /// Dense lists observe `activityEpoch` so progress ticks don't rebuild every row.
+    func testActivityEpochIgnoresProgressTicks() {
+        let before = center.activityEpoch
+        center.enqueued(playableId: "a")
+        let afterEnqueue = center.activityEpoch
+        XCTAssertGreaterThan(afterEnqueue, before)
+
+        center.begin(playableId: "a")
+        let afterBegin = center.activityEpoch
+        XCTAssertGreaterThan(afterBegin, afterEnqueue)
+
+        center.update(playableId: "a", progress: 0.25)
+        center.update(playableId: "a", progress: 0.75)
+        XCTAssertEqual(center.activityEpoch, afterBegin)
+
+        center.complete(playableId: "a")
+        XCTAssertGreaterThan(center.activityEpoch, afterBegin)
+    }
+
     func testFailureIsReportedUntilTheDownloadIsRetried() {
         center.enqueued(playableId: "a")
         center.fail(playableId: "a")

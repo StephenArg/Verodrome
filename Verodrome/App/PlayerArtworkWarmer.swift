@@ -15,8 +15,8 @@ final class PlayerArtworkWarmer {
     /// Matches the disk prefetch window, so nothing is decoded that the policy manager
     /// hasn't also arranged to have locally.
     private static let lookAhead = QueueCachePolicyManager.artworkNextKeepCount
-    /// The player's own render. Warming any other size would not be a hit for the hero.
-    private static let size = ArtworkPixelSize.large
+    /// Hero for the player cover; thumbnail for the queue sheet behind it.
+    private static let sizes = [ArtworkPixelSize.large, ArtworkPixelSize.thumbnail]
 
     private var warmTask: Task<Void, Never>?
     private var warmedWindow: [String] = []
@@ -34,15 +34,18 @@ final class PlayerArtworkWarmer {
         warmTask = Task(priority: .utility) {
             for cover in covers {
                 if Task.isCancelled { return }
-                if ArtworkImageCache.shared.image(for: cover.token, size: Self.size) != nil { continue }
-                let image = await ArtworkResolver.shared.loadImage(
-                    for: cover.token,
-                    kind: cover.kind,
-                    size: Self.size
-                )
-                if Task.isCancelled { return }
-                guard let image else { continue }
-                ArtworkImageCache.shared.store(image, for: cover.token, size: Self.size)
+                for size in Self.sizes {
+                    if Task.isCancelled { return }
+                    if ArtworkImageCache.shared.image(for: cover.token, size: size) != nil { continue }
+                    let image = await ArtworkResolver.shared.loadImage(
+                        for: cover.token,
+                        kind: cover.kind,
+                        size: size
+                    )
+                    if Task.isCancelled { return }
+                    guard let image else { continue }
+                    ArtworkImageCache.shared.store(image, for: cover.token, size: size)
+                }
             }
         }
     }

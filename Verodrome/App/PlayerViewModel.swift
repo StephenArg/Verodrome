@@ -26,6 +26,49 @@ final class NowPlayingModel: ObservableObject {
     }
 }
 
+/// Queue sheet identity + mutations. Kept separate from `PlayerViewModel` so scrolling
+/// the queue isn't invalidated by lyrics / EQ / progress / hold-speed publishes.
+@MainActor
+final class QueueListModel: ObservableObject {
+    @Published private(set) var queue: [QueueItem] = []
+    @Published private(set) var currentIndex = 0
+    @Published private(set) var currentEntryId: UUID?
+    @Published private(set) var userQueuedRange: Range<Int> = 0..<0
+    @Published private(set) var isReorderable = false
+
+    fileprivate weak var player: PlayerViewModel?
+
+    func apply(queue: [QueueItem], currentIndex: Int) {
+        let entryId = queue.indices.contains(currentIndex) ? queue[currentIndex].entryId : nil
+        let range = queue.userQueuedRun(after: currentIndex)
+        let reorderable = !queue.isEmpty
+        guard self.queue != queue
+            || self.currentIndex != currentIndex
+            || self.currentEntryId != entryId
+            || self.userQueuedRange != range
+            || self.isReorderable != reorderable
+        else { return }
+        self.queue = queue
+        self.currentIndex = currentIndex
+        self.currentEntryId = entryId
+        self.userQueuedRange = range
+        self.isReorderable = reorderable
+    }
+
+    func jump(to index: Int) { player?.jump(to: index) }
+    func moveQueue(from source: IndexSet, to destination: Int) {
+        player?.moveQueue(from: source, to: destination)
+    }
+    func removeFromQueue(at offsets: IndexSet) { player?.removeFromQueue(at: offsets) }
+    func moveUserQueued(from source: IndexSet, to destination: Int) {
+        player?.moveUserQueued(from: source, to: destination)
+    }
+    func removeUserQueued(at offsets: IndexSet) { player?.removeUserQueued(at: offsets) }
+    func addToQueueTemporarily(_ items: [QueueItem], at insertAt: Int? = nil) {
+        player?.addToQueueTemporarily(items, at: insertAt)
+    }
+}
+
 /// Which way playback moved through the queue, so the player's cover can slide the way
 /// the listener just travelled.
 enum ArtworkSlideDirection {
@@ -81,12 +124,18 @@ final class PlayerViewModel: ObservableObject {
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
+    let queueList = QueueListModel()
 
     private var facade: PlayerFacadeImpl?
     private var cancellables = Set<AnyCancellable>()
 
+    init() {
+        queueList.player = self
+    }
+
     func attach(facade: (any PlayerFacade)?) {
         cancellables.removeAll()
+        queueList.player = self
         guard let impl = facade as? PlayerFacadeImpl else { return }
         self.facade = impl
         impl.$isPlaying.receive(on: DispatchQueue.main).assign(to: &$isPlaying)
@@ -213,6 +262,7 @@ final class PlayerViewModel: ObservableObject {
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
         contextGeneration = facade?.contextGeneration ?? contextGeneration
+        queueList.apply(queue: queue, currentIndex: currentIndex)
         // A brand-new context isn't a step through a queue, so its index delta says
         // nothing about direction — leave the last one standing.
         if contextGeneration == previousGeneration,
@@ -370,6 +420,7 @@ final class PlayerViewModel: ObservableObject {
         facade?.clearQueue()
         queue = []
         currentIndex = 0
+        queueList.apply(queue: [], currentIndex: 0)
         currentItem = nil
         nowPlaying.currentItem = nil
         nowPlaying.isPlaying = false

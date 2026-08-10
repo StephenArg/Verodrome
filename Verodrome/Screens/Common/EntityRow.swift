@@ -99,6 +99,8 @@ struct EntityRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 28, alignment: .trailing)
         } else {
+            // ArtworkView already clipShapes; don't add another clipped()/clipShape pass
+            // per scrolling cell.
             Group {
                 if compactArtwork {
                     ArtworkView.thumbnail(artworkURL, symbol: symbol)
@@ -107,8 +109,6 @@ struct EntityRow: View {
                 }
             }
             .frame(width: 48, height: 48)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: VerodromeTheme.artworkCornerRadius, style: .continuous))
         }
     }
 }
