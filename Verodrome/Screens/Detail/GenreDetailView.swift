@@ -69,6 +69,7 @@ struct GenreDetailView: View {
                 }
             }
         }
+        .detailCollapsingNavTitle(genres.first?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: genres.first?.name) {
             reloadGenreContent()

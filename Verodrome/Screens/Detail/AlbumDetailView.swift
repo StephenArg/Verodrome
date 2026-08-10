@@ -74,6 +74,7 @@ struct AlbumDetailView: View {
             }
         }
         .artworkTintedBackground(key: tintKey, token: albums.first?.artworkToken)
+        .detailCollapsingNavTitle(albums.first?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .tint(navigationTint)
         .toolbar {

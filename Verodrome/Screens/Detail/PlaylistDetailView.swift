@@ -12,6 +12,9 @@ struct PlaylistDetailView: View {
 
     /// Stable row ids so a playlist can hold the same song twice without ForEach collisions.
     @State private var entries: [PlaylistRowItem] = []
+    @State private var searchText = ""
+    /// True once the in-header filter row has scrolled under the nav.
+    @State private var isFilterOffScreen = false
     @State private var showPlaylistSelector = false
     @State private var showRename = false
     @State private var artworkTint: ArtworkTint?
@@ -32,6 +35,45 @@ struct PlaylistDetailView: View {
 
     private var songs: [Song] { entries.map(\.song) }
 
+    /// Distinct albums among loaded tracks. Partial until `entries` is filled — playlist
+    /// metadata only carries a song count, not an album total.
+    private var loadedAlbumCount: Int {
+        var seen = Set<String>()
+        for song in songs {
+            if let id = song.album?.compoundRemoteId, !id.isEmpty {
+                seen.insert(id)
+            } else if let title = song.albumTitle, !title.isEmpty {
+                seen.insert(title)
+            }
+        }
+        return seen.count
+    }
+
+    /// Songs first (the playlist's unit), then albums once tracks have loaded —
+    /// same ` · ` pairing as artist / genre headers.
+    private func headerSubtitle(for playlist: Playlist) -> String {
+        let songCount = max(playlist.songCount, entries.count)
+        let songLabel = songCount == 1 ? "1 song" : "\(songCount) songs"
+        let albums = loadedAlbumCount
+        guard albums > 0 else { return songLabel }
+        let albumLabel = albums == 1 ? "1 album" : "\(albums) albums"
+        return "\(songLabel) · \(albumLabel)"
+    }
+
+    /// Local filter over the loaded playlist — same title/artist match as Add Songs.
+    private var filterQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredEntries: [PlaylistRowItem] {
+        let query = filterQuery
+        guard !query.isEmpty else { return entries }
+        return entries.filter {
+            $0.song.title.localizedCaseInsensitiveContains(query)
+                || $0.song.displayArtist.localizedCaseInsensitiveContains(query)
+        }
+    }
+
     private var canEditPlaylist: Bool {
         guard let playlist = playlists.first else { return false }
         return playlist.isEditable
@@ -41,13 +83,17 @@ struct PlaylistDetailView: View {
 
     private var isEditing: Bool { editMode.isEditing && canEditPlaylist }
 
+    /// Pin a copy under the nav only after the in-header bar has scrolled away — and
+    /// only while it still holds a query, so filtered results stay explainable.
+    private var showsStickyFilterBar: Bool { !searchText.isEmpty && isFilterOffScreen }
+
     var body: some View {
         List(selection: isEditing ? $selection : nil) {
             if let playlist = playlists.first {
                 Section {
                     DetailHeader(
                         title: playlist.name,
-                        subtitle: "\(playlist.songCount) songs",
+                        subtitle: headerSubtitle(for: playlist),
                         artworkURL: playlist.displayArtworkToken,
                         tintToken: backgroundArtworkToken,
                         symbol: "music.note.house.fill",
@@ -67,25 +113,46 @@ struct PlaylistDetailView: View {
                             .foregroundStyle(.secondary)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
+                    } else if filteredEntries.isEmpty {
+                        Text("No Matching Songs")
+                            .foregroundStyle(.secondary)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     } else {
-                        ForEach(entries) { entry in
+                        ForEach(filteredEntries) { entry in
                             songRow(entry)
                                 // Opaque while editing so a lifted drag cell doesn't flash black
                                 // over the artwork-tinted list background.
                                 .listRowBackground(songRowBackground)
                                 .listRowSeparator(.hidden)
                         }
-                        .onMove(perform: isEditing ? moveEntries : nil)
-                        .onDelete(perform: isEditing ? deleteEntries : nil)
+                        // Reorder/delete need the full playlist order; hide while filtered.
+                        .onMove(perform: isEditing && filterQuery.isEmpty ? moveEntries : nil)
+                        .onDelete(perform: isEditing && filterQuery.isEmpty ? deleteEntries : nil)
                     }
                 }
             }
         }
         .environment(\.editMode, $editMode)
         .artworkTintedBackground(token: backgroundArtworkToken)
+        .detailCollapsingNavTitle(playlists.first?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .tint(navigationTint)
         .toolbar { toolbarContent }
+        // Overlay (not safeAreaInset) so pinning doesn't shove list content and
+        // feedback into the scroll offset the moment the bar appears.
+        .overlay(alignment: .top) {
+            if showsStickyFilterBar {
+                playlistStatusBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(.bar)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: showsStickyFilterBar)
+        .onDetailListScrollOffset(handleScroll)
         .sheet(isPresented: $showPlaylistSelector) {
             PlaylistSelectorView { destination in
                 let tracks = songs
@@ -239,11 +306,15 @@ struct PlaylistDetailView: View {
         return summary.status
     }
 
-    /// Playlists have no favorite/rating in the library model yet, so this bar is the
-    /// download control alone — same slot as the album's right-hand cluster.
+    /// Filter field plus download control — same accessory slot as the album's
+    /// rating / download / favorite cluster. The field matches the Songs list.
     private var playlistStatusBar: some View {
         HStack(spacing: 12) {
-            Spacer(minLength: 0)
+            LibraryFilterBar(
+                prompt: "Filter songs",
+                text: $searchText,
+                showsOuterPadding: false
+            )
 
             Button {
                 togglePlaylistDownload()
@@ -256,6 +327,17 @@ struct PlaylistDetailView: View {
             .accessibilityLabel(downloadActionTitle)
         }
         .padding(.horizontal, 4)
+    }
+
+    /// Pin only once the in-header filter has cleared the top of the list. Keyboard
+    /// focus can nudge offset by tens of points — thresholds sit past the accessory
+    /// itself so typing never flips this.
+    private func handleScroll(_ offset: CGFloat) {
+        let pinAt = DetailHeaderMetrics.accessoryTopDistance + 24
+        let unpinAt = DetailHeaderMetrics.accessoryTopDistance - 8
+        let shouldPin = isFilterOffScreen ? offset > unpinAt : offset > pinAt
+        guard shouldPin != isFilterOffScreen else { return }
+        isFilterOffScreen = shouldPin
     }
 
     private var downloadActionTitle: String {

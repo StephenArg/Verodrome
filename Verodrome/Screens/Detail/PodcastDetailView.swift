@@ -49,6 +49,7 @@ struct PodcastDetailView: View {
                 }
             }
         }
+        .detailCollapsingNavTitle(podcasts.first?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: podcasts.first?.remoteId) {
             guard let podcast = podcasts.first else { return }

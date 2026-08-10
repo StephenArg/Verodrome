@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// Full-width filter field for a library list. Always open: the list it heads is long
-/// enough that filtering is a normal way to use it, and a field that is already there
-/// costs one tap less than one that has to be revealed.
+/// Filter field used by library lists and detail accessories. Always open: the list it
+/// heads is long enough that filtering is a normal way to use it, and a field that is
+/// already there costs one tap less than one that has to be revealed.
 struct LibraryFilterBar: View {
     let prompt: String
     @Binding var text: String
+    /// When true (default), adds the inset used above a full-width library table.
+    /// Detail accessories sit inside an already-padded header and pass `false`.
+    var showsOuterPadding: Bool = true
 
     @FocusState private var isFocused: Bool
 
@@ -46,8 +49,8 @@ struct LibraryFilterBar: View {
                 .fill(Color(uiColor: .secondarySystemFill))
         )
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, showsOuterPadding ? 16 : 0)
+        .padding(.vertical, showsOuterPadding ? 8 : 0)
         .animation(.easeOut(duration: 0.15), value: text.isEmpty)
     }
 }

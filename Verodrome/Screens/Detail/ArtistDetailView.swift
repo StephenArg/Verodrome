@@ -86,6 +86,7 @@ struct ArtistDetailView: View {
             }
         }
         .artworkTintedBackground(key: tintKey, token: backgroundArtworkToken)
+        .detailCollapsingNavTitle(artists.first?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedAlbum) { album in
             AlbumDetailView(albumID: album.id)
