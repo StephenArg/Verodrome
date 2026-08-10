@@ -11,7 +11,7 @@ struct PlayerControlView: View {
     /// instead of the (still advancing) playback clock.
     @State private var scrubTime: TimeInterval?
 
-    /// 0 = resting under the icon; animates 0→1 for one clockwise lap while shuffle-all is locked.
+    /// Locked reshuffle feedback: 0→1 first dot lap, 1→2 line lap, 2→3 second dot lap.
     @State private var shuffleOrbitProgress: CGFloat = 0
     @State private var isShuffleOrbiting = false
 
@@ -22,7 +22,9 @@ struct PlayerControlView: View {
     private let controlSpacing: CGFloat = 36
     private let statusDotSize: CGFloat = 4
     private let statusDotSpacing: CGFloat = 5
-    private let shuffleOrbitDuration: TimeInterval = 0.65
+    /// One lap each for dot → line → dot.
+    private let shuffleOrbitLapDuration: TimeInterval = 0.42
+    private var shuffleOrbitDuration: TimeInterval { shuffleOrbitLapDuration * 3 }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -138,9 +140,9 @@ struct PlayerControlView: View {
     private var shuffleButton: some View {
         // A Shuffle All queue arrives in an order the server chose and keeps growing as
         // it plays, so there is nothing to turn shuffle off and go back to. The control
-        // stays on; a tap reshuffles the whole pool (current track included) and orbits
-        // the status dot. Full opacity, unlike the live-stream case: this state is
-        // accurate, not unavailable.
+        // stays on; a tap reshuffles the whole pool (current track included) and plays
+        // the dot → line → dot orbit. Full opacity, unlike the live-stream case: this
+        // state is accurate, not unavailable.
         let isLocked = shuffleAll.isShuffleLocked
         let isLiveStream = player.currentItem?.isLiveStream == true
         let isOn = isLocked || player.shuffleMode == .on
@@ -166,7 +168,7 @@ struct PlayerControlView: View {
                 }
 
                 if isShuffleOrbiting {
-                    ShuffleOrbitingDot(
+                    ShuffleOrbitingIndicator(
                         progress: shuffleOrbitProgress,
                         dotSize: statusDotSize,
                         iconSize: sideIconSize,
@@ -215,7 +217,7 @@ struct PlayerControlView: View {
         Haptics.impact(.light)
         shuffleOrbitProgress = 0
         withAnimation(.linear(duration: shuffleOrbitDuration)) {
-            shuffleOrbitProgress = 1
+            shuffleOrbitProgress = 3
         }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(shuffleOrbitDuration))
@@ -370,10 +372,11 @@ struct RepeatControlIcon: View {
 
 // MARK: - Shuffle-all locked orbit
 
-/// Accent status dot that travels once around the shuffle glyph. `Animatable`
-/// so SwiftUI interpolates the angle (a circular path) rather than lerping the
-/// offset as a straight chord between samples.
-private struct ShuffleOrbitingDot: View, Animatable {
+/// Locked-reshuffle feedback around the shuffle glyph: a dot lap, then a short
+/// tangent line lap, then another dot lap. `progress` runs 0…3 (one unit per lap).
+/// `Animatable` so SwiftUI interpolates the angle on the circle rather than
+/// lerping the offset as a straight chord.
+private struct ShuffleOrbitingIndicator: View, Animatable {
     var progress: CGFloat
     var dotSize: CGFloat
     var iconSize: CGFloat
@@ -387,15 +390,29 @@ private struct ShuffleOrbitingDot: View, Animatable {
     var body: some View {
         let iconCenterY = -(spacing + dotSize) / 2
         let radius = iconSize / 2 + spacing + dotSize / 2
+        let total = min(max(progress, 0), 3)
+        let lapIndex = total >= 3 ? 2 : Int(total)
+        let lapT = total >= 3 ? 1 : total - CGFloat(lapIndex)
         // Start under the icon; increasing angle is clockwise with y-down.
-        let angle = (.pi / 2) + (progress * 2 * .pi)
-        Circle()
-            .fill(Color.accentColor)
-            .frame(width: dotSize, height: dotSize)
-            .offset(
-                x: radius * cos(angle),
-                y: iconCenterY + radius * sin(angle)
-            )
+        let angle = (.pi / 2) + (lapT * 2 * .pi)
+        let x = radius * cos(angle)
+        let y = iconCenterY + radius * sin(angle)
+        let showsLine = lapIndex == 1
+
+        ZStack {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: dotSize, height: dotSize)
+                .opacity(showsLine ? 0 : 1)
+
+            // Tangential dash — reads as a rotating line segment on the orbit.
+            Capsule()
+                .fill(Color.accentColor)
+                .frame(width: dotSize * 3.2, height: dotSize)
+                .rotationEffect(.radians(angle + .pi / 2))
+                .opacity(showsLine ? 1 : 0)
+        }
+        .offset(x: x, y: y)
     }
 }
 

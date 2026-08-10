@@ -100,7 +100,7 @@ struct FavoritesView: View {
                         sectionKey: song.title.sectionInitial,
                         title: song.title,
                         subtitle: song.displayArtist,
-                        artworkToken: song.artworkToken,
+                        artworkToken: song.displayArtworkToken,
                         playableId: song.remoteId
                     )
                 }

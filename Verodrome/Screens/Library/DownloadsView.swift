@@ -344,7 +344,7 @@ struct DownloadedSongRow: Identifiable, Hashable, Sendable {
         remoteId = song.remoteId
         title = song.title
         subtitle = song.displayArtist
-        artworkToken = song.artworkToken
+        artworkToken = song.displayArtworkToken
         duration = song.playDuration
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60

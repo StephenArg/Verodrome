@@ -140,6 +140,23 @@ final class ArtworkCacheTests: XCTestCase {
         XCTAssertNotNil(found)
     }
 
+    /// UI always asks for a standard pixel size; size-0 embedded art still has to answer.
+    func testEmbeddedSizeZeroSatisfiesStandardRequest() async throws {
+        let manager = makeManager()
+        let data = try XCTUnwrap(
+            UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+                .image { $0.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
+                .pngData()
+        )
+
+        await manager.storeEmbeddedArtwork(artId: "embedded-song1", data: data)
+
+        let found = await manager.localURL(for: "embedded-song1", size: 300)
+        let image = await manager.loadImage(for: "embedded-song1", size: 300)
+        XCTAssertNotNil(found)
+        XCTAssertNotNil(image)
+    }
+
     func testClearCacheDropsRenders() async throws {
         try writeRender(artId: "album1", size: 120)
         let manager = makeManager()

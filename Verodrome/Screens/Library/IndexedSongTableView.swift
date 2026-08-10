@@ -28,7 +28,7 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
         sectionKey = (song.sortTitle.isEmpty ? song.title : song.sortTitle).sectionInitial
         artistName = song.artistName ?? "Unknown Artist"
         albumTitle = song.albumTitle ?? "Unknown Album"
-        artworkToken = song.artworkToken
+        artworkToken = song.displayArtworkToken
         duration = song.playDuration
         trailingRating = sort == .ratingHighest ? song.rating : nil
         trailingText = trailingRating == nil ? Self.trailingText(for: song, sort: sort) : nil

@@ -58,7 +58,7 @@ struct GenreDetailView: View {
                                 EntityRow(
                                     title: song.title,
                                     subtitle: song.displayArtist,
-                                    artworkURL: song.artworkToken,
+                                    artworkURL: song.displayArtworkToken,
                                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
                                     trailing: formatDuration(song.displayDuration)
                                 )

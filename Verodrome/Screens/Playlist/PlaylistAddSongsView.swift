@@ -120,6 +120,6 @@ struct AddSongRow: Identifiable, Hashable, Sendable {
         id = song.compoundRemoteId
         title = song.title
         subtitle = song.artistName ?? "Unknown"
-        artworkToken = song.artworkToken
+        artworkToken = song.displayArtworkToken
     }
 }

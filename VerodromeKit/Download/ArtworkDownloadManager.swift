@@ -86,6 +86,10 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
         for larger in Self.standardSizes where larger > size {
             if let cached = memory[cacheKey(artId: artId, size: larger)] { return cached }
         }
+        // Embedded tag art is stored at size 0 and should answer any UI size request.
+        if size != 0, let embedded = memory[cacheKey(artId: artId, size: 0)] {
+            return embedded
+        }
         return nil
     }
 
@@ -168,21 +172,22 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
             let tPrep = CFAbsoluteTimeGetCurrent()
             let decoded = await Self.decodeDownsampled(fileURL: url, target: size)
             let prepMs = Int(((CFAbsoluteTimeGetCurrent() - tPrep) * 1000).rounded())
-            guard let decoded else {
-                ArtworkPerf.record(source: .miss, size: size, ms: prepMs, context: "diskRead")
-                return nil
+            if let decoded {
+                // `localURL` may hand back a larger already-cached render, so track what the
+                // file actually contained versus what we asked for.
+                let totalMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
+                ArtworkPerf.record(
+                    source: .disk,
+                    size: size,
+                    ms: totalMs,
+                    context: "loadImage",
+                    details: "prep=\(prepMs)ms src=\(decoded.sourcePixels)px want=\(size)px file=\(url.lastPathComponent)"
+                )
+                return decoded.image
             }
-            // `localURL` may hand back a larger already-cached render, so track what the
-            // file actually contained versus what we asked for.
-            let totalMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
-            ArtworkPerf.record(
-                source: .disk,
-                size: size,
-                ms: totalMs,
-                context: "loadImage",
-                details: "prep=\(prepMs)ms src=\(decoded.sourcePixels)px want=\(size)px file=\(url.lastPathComponent)"
-            )
-            return decoded.image
+            // 401/HTML (or other garbage) was persisted earlier — drop it and try the network.
+            removeCachedFile(at: url)
+            ArtworkPerf.record(source: .miss, size: size, ms: prepMs, context: "diskPoison")
         }
         // Gate concurrent network loads so Home's many tiles don't flood URLSession.
         await acquireLoadSlot()
@@ -192,34 +197,73 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
             return nil
         }
         do {
+            let remote: URL
+            if url.isFileURL {
+                // Disk entry was poisoned; resolve a fresh remote URL.
+                guard let fresh = try? await urlProvider.artworkURL(forArtId: artId, kind: kind, size: size) else {
+                    ArtworkPerf.record(source: .miss, size: size, ms: 0, context: "loadImage")
+                    return nil
+                }
+                remote = fresh
+            } else {
+                remote = url
+            }
             let tNet = CFAbsoluteTimeGetCurrent()
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: remote)
             let netMs = Int(((CFAbsoluteTimeGetCurrent() - tNet) * 1000).rounded())
             if Task.isCancelled {
                 ArtworkPerf.record(source: .cancel, size: size, ms: netMs, context: "network")
                 return nil
             }
-            // Persist to disk so the next visit hits the file cache instead of the network.
-            let dest = fileURL(for: artId, size: size)
-            try? data.write(to: dest, options: .atomic)
-            noteStored(artId: artId, size: size, at: dest)
-            // Decode off the actor, straight to the size we need.
+            guard Self.isSuccessfulImageResponse(response, data: data) else {
+                ArtworkPerf.record(source: .miss, size: size, ms: netMs, context: "badResponse")
+                return nil
+            }
+            // Decode before writing so error bodies never poison the disk cache.
             let tPrep = CFAbsoluteTimeGetCurrent()
             let prepared = await Self.decodeDownsampled(data: data, target: size)
             let prepMs = Int(((CFAbsoluteTimeGetCurrent() - tPrep) * 1000).rounded())
+            guard let prepared else {
+                ArtworkPerf.record(source: .miss, size: size, ms: netMs + prepMs, context: "decodeMiss")
+                return nil
+            }
+            let dest = fileURL(for: artId, size: size)
+            try? data.write(to: dest, options: .atomic)
+            noteStored(artId: artId, size: size, at: dest)
             let totalMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
             ArtworkPerf.record(
-                source: prepared == nil ? .miss : .network,
+                source: .network,
                 size: size,
                 ms: totalMs,
                 context: "loadImage",
                 details: "net=\(netMs)ms prep=\(prepMs)ms bytes=\(data.count)"
             )
-            return prepared?.image
+            return prepared.image
         } catch {
             let totalMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
             ArtworkPerf.record(source: .miss, size: size, ms: totalMs, context: "networkError")
             return nil
+        }
+    }
+
+    private static func isSuccessfulImageResponse(_ response: URLResponse, data: Data? = nil) -> Bool {
+        if let data, data.isEmpty { return false }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            return false
+        }
+        if let mime = response.mimeType?.lowercased(),
+           !mime.hasPrefix("image/"),
+           mime != "application/octet-stream",
+           mime != "binary/octet-stream" {
+            return false
+        }
+        return true
+    }
+
+    private func removeCachedFile(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        if let key = memory.first(where: { $0.value == url })?.key {
+            memory[key] = nil
         }
     }
 
@@ -343,7 +387,16 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
         }
         do {
             let remote = try await urlProvider.artworkURL(forArtId: artId, kind: kind, size: size)
-            let (temp, _) = try await URLSession.shared.download(from: remote)
+            let (temp, response) = try await URLSession.shared.download(from: remote)
+            // Reject error/HTML bodies before they become permanent cache misses.
+            let attrs = try FileManager.default.attributesOfItem(atPath: temp.path)
+            let byteCount = (attrs[.size] as? NSNumber)?.intValue ?? 0
+            guard byteCount > 0,
+                  Self.isSuccessfulImageResponse(response),
+                  await Self.decodeDownsampled(fileURL: temp, target: min(size, 64)) != nil else {
+                try? FileManager.default.removeItem(at: temp)
+                return
+            }
             let dest = fileURL(for: artId, size: size)
             if FileManager.default.fileExists(atPath: dest.path) {
                 try FileManager.default.removeItem(at: dest)

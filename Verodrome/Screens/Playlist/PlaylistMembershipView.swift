@@ -36,10 +36,7 @@ struct PlaylistMembershipView: View {
         }
     }
 
-    private var songArtworkToken: String? {
-        if let token = song.artworkToken, !token.isEmpty { return token }
-        return song.album?.artworkToken
-    }
+    private var songArtworkToken: String? { song.displayArtworkToken }
 
     var body: some View {
         NavigationStack {

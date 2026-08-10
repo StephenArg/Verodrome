@@ -137,7 +137,9 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             )
             if let songCount = item.songCount { album.trackCount = songCount }
             if let rating = item.rating { album.rating = rating }
-            if let artId = item.artId { album.artworkToken = artId }
+            if let artId = item.artId {
+                applyAlbumArtwork(artId, to: album)
+            }
             if let artistName = item.artistName, !artistName.isEmpty {
                 album.artistName = artistName
             }
@@ -181,8 +183,9 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                     artist: artist,
                     year: nil
                 )
-                if let artId = item.artId, album?.artworkToken == nil {
-                    album?.artworkToken = artId
+                if let artId = item.artId, let album,
+                   album.artworkToken == nil || album.artworkToken?.isEmpty == true {
+                    applyAlbumArtwork(artId, to: album)
                 }
                 if let albumName = item.albumName, !albumName.isEmpty {
                     album?.artistName = item.artistName
@@ -212,8 +215,13 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             // as new art and reload it.
             if let albumArt = album?.artworkToken, !albumArt.isEmpty {
                 song.artworkToken = albumArt
-            } else if let artId = item.artId {
+            } else if let artId = item.artId, !artId.isEmpty {
                 song.artworkToken = artId
+                // Song arrived with art before the album did — lift it so later tracks
+                // (and list fallbacks) share one identity.
+                if let album, album.artworkToken == nil || album.artworkToken?.isEmpty == true {
+                    applyAlbumArtwork(artId, to: album)
+                }
             }
             if let disc = item.discNumber { song.disc = disc }
             // Inherit album genre so genre detail can find tracks by genreName.
@@ -383,6 +391,27 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         guard genre.artworkToken == nil || genre.artworkToken?.isEmpty == true,
               let artId, !artId.isEmpty else { return }
         genre.artworkToken = artId
+    }
+
+    /// Writes the album cover and mirrors it onto tracks that still need one — or that
+    /// still hold a previous token (Ampache signed URLs rotate; leaving the old URL on
+    /// songs leaves their rows blank after expiry).
+    private func applyAlbumArtwork(_ artId: String, to album: Album) {
+        guard !artId.isEmpty else { return }
+        let previous = album.artworkToken
+        guard previous != artId else {
+            // Same token, but songs ingested earlier may still be empty.
+            for song in album.songs where song.artworkToken == nil || song.artworkToken?.isEmpty == true {
+                song.artworkToken = artId
+            }
+            return
+        }
+        album.artworkToken = artId
+        for song in album.songs {
+            if song.artworkToken == nil || song.artworkToken?.isEmpty == true || song.artworkToken == previous {
+                song.artworkToken = artId
+            }
+        }
     }
 
     /// Subsonic `getArtists` has no songCount; Ampache sometimes omits it too.

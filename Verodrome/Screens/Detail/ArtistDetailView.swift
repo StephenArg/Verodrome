@@ -67,7 +67,7 @@ struct ArtistDetailView: View {
                                 EntityRow(
                                     title: song.title,
                                     subtitle: song.displayAlbum,
-                                    artworkURL: song.artworkToken,
+                                    artworkURL: song.displayArtworkToken,
                                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
                                     trailing: formatDuration(song.displayDuration),
                                     downloadStatus: downloadCenter.status(

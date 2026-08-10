@@ -227,9 +227,13 @@ public actor DownloadManager: DownloadManaging {
                     }
                     await MainActor.run {
                         if let account = try? VerodromeKit.shared.activeAccount(),
-                           let song = try? VerodromeKit.shared.repository()?.resolveSong(remoteId: id, account: account),
-                           song.album?.artworkToken == nil || song.album?.artworkToken?.isEmpty == true {
-                            song.album?.artworkToken = artId
+                           let song = try? VerodromeKit.shared.repository()?.resolveSong(remoteId: id, account: account) {
+                            if song.artworkToken == nil || song.artworkToken?.isEmpty == true {
+                                song.artworkToken = artId
+                            }
+                            if song.album?.artworkToken == nil || song.album?.artworkToken?.isEmpty == true {
+                                song.album?.artworkToken = artId
+                            }
                             try? VerodromeKit.shared.repository()?.save()
                         }
                     }

@@ -85,7 +85,7 @@ extension ShareSubject {
             resourceIds: [song.remoteId],
             title: song.title,
             subtitle: song.displayArtist,
-            artwork: (song.artworkToken ?? song.album?.artworkToken).map { ArtworkRef(id: $0, kind: .album) }
+            artwork: song.displayArtworkToken.map { ArtworkRef(id: $0, kind: .album) }
         )
     }
 }

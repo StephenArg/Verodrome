@@ -509,6 +509,15 @@ extension Song {
     /// The user (or an auto-cache rule) asked for this song offline. True from the
     /// moment the download is queued, which is what a cancel/remove action keys off.
     public var isDownloadRequested: Bool { cacheReasonRaw != CacheReason.none.rawValue }
+
+    /// Cover for UI rows and playback. Prefer the denormalized token; fall back to the
+    /// album when song ingest ran before the album had art (or the song row never got
+    /// the later album cover written onto it).
+    public var displayArtworkToken: String? {
+        if let artworkToken, !artworkToken.isEmpty { return artworkToken }
+        if let albumToken = album?.artworkToken, !albumToken.isEmpty { return albumToken }
+        return nil
+    }
 }
 
 extension QueueItem {
@@ -521,7 +530,7 @@ extension QueueItem {
             artistName: song.artistName,
             albumName: song.albumTitle,
             duration: song.playDuration,
-            artworkId: song.artworkToken
+            artworkId: song.displayArtworkToken
         )
     }
 
