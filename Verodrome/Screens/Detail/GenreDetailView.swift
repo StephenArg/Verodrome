@@ -8,6 +8,7 @@ struct GenreDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var genreAlbums: [Album] = []
     @State private var genreSongs: [Song] = []
@@ -142,8 +143,10 @@ struct GenreDetailView: View {
             }
         }
         PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
+        guard !items.isEmpty else { return }
         PlayTrace.mark("calling player.play")
         player.play(items: items, shuffle: shuffle)
+        router.openPlayer()
     }
 
     private func playSong(_ song: Song) {

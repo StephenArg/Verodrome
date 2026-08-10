@@ -7,6 +7,7 @@ struct AlbumDetailView: View {
     @Query private var albums: [Album]
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -278,11 +279,13 @@ struct AlbumDetailView: View {
                     return
                 }
                 player.play(items: items, shuffle: shuffle)
+                router.openPlayer()
             }
             return
         }
 
         player.play(items: items, shuffle: shuffle)
+        router.openPlayer()
     }
 
     private func playSong(_ song: Song, tracks: [Song]) {

@@ -42,7 +42,6 @@ struct DetailHeader<Accessory: View>: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var router: AppRouter
     @ObservedObject private var resolver = ArtworkTintResolver.shared
     @State private var tint: ArtworkTint?
     /// Signed list offset relative to rest: negative = rubber-band pull, positive = scrolled down.
@@ -96,6 +95,9 @@ struct DetailHeader<Accessory: View>: View {
                 .zIndex(1)
 
             HStack(spacing: 16) {
+                // Play/Shuffle open the full player from the detail screens themselves,
+                // after the queue is actually handed to the player — including paths that
+                // have to sync tracks first. Opening here would race those loads.
                 Button(action: onPlay) {
                     // Explicit Image+Text: Label inside a custom style can drop the icon.
                     HStack(spacing: 8) {
@@ -111,13 +113,7 @@ struct DetailHeader<Accessory: View>: View {
                     )
                 )
 
-                // Shuffle raises the player; Play doesn't. Shuffling is a "surprise me"
-                // tap, and the answer is the track that comes up — worth showing. Play
-                // starts at the top of a tracklist the user is already looking at.
-                Button {
-                    onShuffle()
-                    router.openPlayer()
-                } label: {
+                Button(action: onShuffle) {
                     HStack(spacing: 8) {
                         Image(systemName: "shuffle")
                         Text("Shuffle")

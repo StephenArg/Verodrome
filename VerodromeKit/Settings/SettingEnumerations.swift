@@ -159,6 +159,10 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     /// Soft cap so tab labels stay readable on phone.
     public static let maxVisible = 5
 
+    /// Tabs that reach Settings. At least one must stay visible so settings
+    /// never becomes unreachable; the editor enforces the same rule.
+    public static let settingsAccessTabs: Set<RootTabItem> = [.home, .library]
+
     public static let defaultVisible: [RootTabItem] = [.search, .home, .library, .downloads]
 
     public var title: String {
@@ -201,7 +205,8 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// Deduplicate, clamp to `maxVisible`, and guarantee at least one tab.
+    /// Deduplicate, clamp to `maxVisible`, and keep Settings reachable via Home
+    /// or Library (and guarantee at least one tab).
     public static func normalized(_ tabs: [RootTabItem]) -> [RootTabItem] {
         var seen = Set<RootTabItem>()
         var result: [RootTabItem] = []
@@ -209,7 +214,19 @@ public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
             result.append(tab)
             if result.count >= maxVisible { break }
         }
-        return result.isEmpty ? defaultVisible : result
+        if result.isEmpty { return defaultVisible }
+        if Set(result).isDisjoint(with: settingsAccessTabs) {
+            if result.count >= maxVisible {
+                result.removeLast()
+            }
+            // Prefer Home, after Search when present — matches the default layout.
+            if let searchIdx = result.firstIndex(of: .search) {
+                result.insert(.home, at: searchIdx + 1)
+            } else {
+                result.insert(.home, at: 0)
+            }
+        }
+        return result
     }
 }
 

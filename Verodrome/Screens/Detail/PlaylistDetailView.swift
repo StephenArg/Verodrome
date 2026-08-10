@@ -7,6 +7,7 @@ struct PlaylistDetailView: View {
     @Query private var playlists: [Playlist]
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -460,7 +461,10 @@ struct PlaylistDetailView: View {
     }
 
     private func play(shuffle: Bool) {
-        player.play(items: songs.map(QueueItem.from), shuffle: shuffle)
+        let items = songs.map(QueueItem.from)
+        guard !items.isEmpty else { return }
+        player.play(items: items, shuffle: shuffle)
+        router.openPlayer()
     }
 
     private func playSong(_ song: Song, entryId: PlaylistRowItem.ID) {

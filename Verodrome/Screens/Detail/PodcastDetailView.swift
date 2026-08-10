@@ -7,6 +7,7 @@ struct PodcastDetailView: View {
     @Query private var podcasts: [Podcast]
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
 
     @State private var episodes: [PodcastEpisode] = []
 
@@ -67,7 +68,10 @@ struct PodcastDetailView: View {
     }
 
     private func play(from index: Int? = nil, shuffle: Bool = false) {
-        player.play(items: episodes.map(QueueItem.from), startAt: index, shuffle: shuffle)
+        let items = episodes.map(QueueItem.from)
+        guard !items.isEmpty else { return }
+        player.play(items: items, startAt: index, shuffle: shuffle)
+        router.openPlayer()
     }
 
     private func playEpisode(_ episode: PodcastEpisode) {
