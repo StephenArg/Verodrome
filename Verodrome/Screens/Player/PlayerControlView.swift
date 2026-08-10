@@ -11,11 +11,18 @@ struct PlayerControlView: View {
     /// instead of the (still advancing) playback clock.
     @State private var scrubTime: TimeInterval?
 
+    /// 0 = resting under the icon; animates 0→1 for one clockwise lap while shuffle-all is locked.
+    @State private var shuffleOrbitProgress: CGFloat = 0
+    @State private var isShuffleOrbiting = false
+
     /// Match Spotify-style control row proportions from the reference.
     private let playDiameter: CGFloat = 72
     private let skipIconSize: CGFloat = 28
     private let sideIconSize: CGFloat = 22
     private let controlSpacing: CGFloat = 36
+    private let statusDotSize: CGFloat = 4
+    private let statusDotSpacing: CGFloat = 5
+    private let shuffleOrbitDuration: TimeInterval = 0.65
 
     var body: some View {
         VStack(spacing: 12) {
@@ -131,34 +138,52 @@ struct PlayerControlView: View {
     private var shuffleButton: some View {
         // A Shuffle All queue arrives in an order the server chose and keeps growing as
         // it plays, so there is nothing to turn shuffle off and go back to. The control
-        // shows what is true — shuffled — and stays put rather than offering an undo it
-        // can't honour. Full opacity, unlike the live-stream case: this state is
+        // stays on; a tap reshuffles the whole pool (current track included) and orbits
+        // the status dot. Full opacity, unlike the live-stream case: this state is
         // accurate, not unavailable.
         let isLocked = shuffleAll.isShuffleLocked
         let isLiveStream = player.currentItem?.isLiveStream == true
         let isOn = isLocked || player.shuffleMode == .on
+        // Spinner only for the first Shuffle All kickoff — a locked reshuffle keeps the
+        // accent icon so the orbit can play over it.
+        let showSpinner = shuffleAll.isStarting && !isLocked && !isShuffleOrbiting
         return Button(action: shuffleTapped) {
-            VStack(spacing: 5) {
-                Group {
-                    if shuffleAll.isStarting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        ShuffleControlIcon()
-                            .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+            ZStack {
+                VStack(spacing: statusDotSpacing) {
+                    Group {
+                        if showSpinner {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            ShuffleControlIcon()
+                                .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                        }
                     }
+                    .frame(width: sideIconSize + 8, height: sideIconSize)
+                    // Resting accent dot. Hidden while the orbit overlay is traveling.
+                    Circle()
+                        .fill(isOn && !isShuffleOrbiting ? Color.accentColor : Color.clear)
+                        .frame(width: statusDotSize, height: statusDotSize)
                 }
-                .frame(width: sideIconSize + 8, height: sideIconSize)
-                // Active-state green dot (Spotify-style).
-                Circle()
-                    .fill(isOn ? Color.accentColor : Color.clear)
-                    .frame(width: 4, height: 4)
+
+                if isShuffleOrbiting {
+                    ShuffleOrbitingDot(
+                        progress: shuffleOrbitProgress,
+                        dotSize: statusDotSize,
+                        iconSize: sideIconSize,
+                        spacing: statusDotSpacing
+                    )
+                }
             }
             .frame(width: sideIconSize + 16, height: playDiameter)
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Shuffle")
-        .accessibilityHint(isLocked ? "On, and locked while shuffling all songs" : "")
-        .disabled(isLocked || isLiveStream || shuffleAll.isStarting)
+        .accessibilityHint(
+            isLocked
+                ? "Shuffling all songs; tap to reshuffle and replace the current track"
+                : ""
+        )
+        .disabled(isLiveStream || shuffleAll.isStarting)
         .opacity(isLiveStream ? 0.35 : 1)
     }
 
@@ -167,6 +192,11 @@ struct PlayerControlView: View {
     /// Turning shuffle on there draws a fresh batch from the whole library and swaps the
     /// queue for it — the playing track included.
     private func shuffleTapped() {
+        if shuffleAll.isShuffleLocked {
+            playShuffleLockedOrbit()
+            Task { await shuffleAll.reshuffle() }
+            return
+        }
         guard shuffleAll.shufflePlaysWholeLibrary, player.shuffleMode == .off else {
             player.toggleShuffle()
             return
@@ -176,6 +206,25 @@ struct PlayerControlView: View {
             if await shuffleAll.shuffleAll() == false {
                 player.toggleShuffle()
             }
+        }
+    }
+
+    private func playShuffleLockedOrbit() {
+        guard !isShuffleOrbiting else { return }
+        isShuffleOrbiting = true
+        Haptics.impact(.light)
+        shuffleOrbitProgress = 0
+        withAnimation(.linear(duration: shuffleOrbitDuration)) {
+            shuffleOrbitProgress = 1
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(shuffleOrbitDuration))
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                shuffleOrbitProgress = 0
+            }
+            isShuffleOrbiting = false
         }
     }
 
@@ -316,6 +365,37 @@ struct RepeatControlIcon: View {
             p.closeSubpath()
         }
         .fill()
+    }
+}
+
+// MARK: - Shuffle-all locked orbit
+
+/// Accent status dot that travels once around the shuffle glyph. `Animatable`
+/// so SwiftUI interpolates the angle (a circular path) rather than lerping the
+/// offset as a straight chord between samples.
+private struct ShuffleOrbitingDot: View, Animatable {
+    var progress: CGFloat
+    var dotSize: CGFloat
+    var iconSize: CGFloat
+    var spacing: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        let iconCenterY = -(spacing + dotSize) / 2
+        let radius = iconSize / 2 + spacing + dotSize / 2
+        // Start under the icon; increasing angle is clockwise with y-down.
+        let angle = (.pi / 2) + (progress * 2 * .pi)
+        Circle()
+            .fill(Color.accentColor)
+            .frame(width: dotSize, height: dotSize)
+            .offset(
+                x: radius * cos(angle),
+                y: iconCenterY + radius * sin(angle)
+            )
     }
 }
 

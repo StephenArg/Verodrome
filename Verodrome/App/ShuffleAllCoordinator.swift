@@ -49,6 +49,9 @@ final class ShuffleAllCoordinator: ObservableObject {
     private var contextGeneration: Int?
     /// A row known to be in the queue we started, used to recognise it when it arrives.
     private var seedEntryId: UUID?
+    /// Whether the active Shuffle All walk is limited to downloads. Used so a locked
+    /// reshuffle draws from the same pool instead of jumping to the whole library.
+    private var shuffleAllIsDownloaded = false
     private var isToppingUp = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -64,6 +67,7 @@ final class ShuffleAllCoordinator: ObservableObject {
     /// shuffle knows it can reach for the whole thing.
     func trackSongsLibrary(seededBy item: QueueItem) {
         session = nil
+        shuffleAllIsDownloaded = false
         begin(.songsLibrary, seedEntryId: item.entryId)
     }
 
@@ -79,7 +83,8 @@ final class ShuffleAllCoordinator: ObservableObject {
                     accountKey: AccountStore.shared.activeAccountKey()?.storageKey
                 ),
                 ingestor: VerodromeKit.shared.activeLibraryIngester
-            )
+            ),
+            downloadedOnly: false
         )
     }
 
@@ -88,15 +93,32 @@ final class ShuffleAllCoordinator: ObservableObject {
     /// device downloaded, and this has to work with no network at all.
     @discardableResult
     func shuffleDownloaded() async -> Bool {
-        await start(DownloadedShuffleSession())
+        await start(DownloadedShuffleSession(), downloadedOnly: true)
     }
 
-    private func start(_ session: any ShuffleBatchSession) async -> Bool {
+    /// Fresh Shuffle All batch for the locked control: same pool as the walk already
+    /// playing, replacing the queue and the current track.
+    @discardableResult
+    func reshuffle() async -> Bool {
+        guard context == .shuffleAll else { return false }
+        return shuffleAllIsDownloaded ? await shuffleDownloaded() : await shuffleAll()
+    }
+
+    private func start(_ session: any ShuffleBatchSession, downloadedOnly: Bool) async -> Bool {
         guard !isStarting, let player else { return false }
 
         isStarting = true
         defer { isStarting = false }
-        clearContext()
+
+        // Keep the locked appearance up while a replacement batch loads; only tear the
+        // old walk down enough that it stops topping up behind the fetch.
+        let refreshingLocked = context == .shuffleAll
+        if refreshingLocked {
+            self.session = nil
+            isToppingUp = false
+        } else {
+            clearContext()
+        }
 
         let items: [QueueItem]
         do {
@@ -114,6 +136,7 @@ final class ShuffleAllCoordinator: ObservableObject {
         // the queue screen the batch is still user-arrangeable.
         player.play(items: items, startAt: 0, shuffle: false, arrivedShuffled: true)
         self.session = session
+        shuffleAllIsDownloaded = downloadedOnly
         begin(.shuffleAll, seedEntryId: first.entryId)
         return true
     }
@@ -136,6 +159,7 @@ final class ShuffleAllCoordinator: ObservableObject {
         context = nil
         contextGeneration = nil
         seedEntryId = nil
+        shuffleAllIsDownloaded = false
     }
 
     /// Follows the player between contexts, and tops the queue up while it's still ours.
