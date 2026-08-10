@@ -13,6 +13,8 @@ struct QueueRowMenu: View {
     let onAddToPlaylist: (Song) -> Void
 
     @EnvironmentObject private var queueList: QueueListModel
+    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @State private var song: Song?
     @State private var showMenu = false
     /// Which edge of the popover faces the ellipsis. Flips when the row sits in the
@@ -79,6 +81,14 @@ struct QueueRowMenu: View {
 
             menuRow(title: "Add to Queue", systemImage: "text.append") {
                 queueList.addToQueueTemporarily([item])
+            }
+
+            menuRow(
+                title: "Start Radio",
+                systemImage: "dot.radiowaves.left.and.right",
+                disabled: item.kind != .song || player.isStartingRadio
+            ) {
+                Task { await ActionToast.startRadio(seed: item, player: player, router: router) }
             }
 
             menuRow(title: "Share", systemImage: "square.and.arrow.up") {

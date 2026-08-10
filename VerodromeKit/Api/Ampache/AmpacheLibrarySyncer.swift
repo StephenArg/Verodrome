@@ -343,6 +343,14 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 }
 
+extension AmpacheLibrarySyncer: SimilarSongProviding {
+    public func similarSongs(toSongId id: String, count: Int) async throws -> [IngestSong] {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+        let data = try await server.getSimilarSongs(id: id, limit: count)
+        return try AmpacheParsers.parseSongs(data: data)
+    }
+}
+
 extension AmpacheLibrarySyncer: RandomSongProviding {
     public var randomSongBatchLimit: Int { AmpacheServerApi.maxResultsPerRequest }
 

@@ -128,6 +128,15 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertEqual(lyrics, "Ampache line one\nAmpache line two")
     }
 
+    /// `get_similar` returns full song objects at the document root, same shape as `songs`.
+    func testSimilarSongsParser() throws {
+        let songs = try AmpacheParsers.parseSongs(data: try fixture("ampache_similar_songs.xml"))
+        XCTAssertEqual(songs.map(\.id), ["412", "507"])
+        XCTAssertEqual(songs[0].title, "Second Track")
+        XCTAssertEqual(songs[0].artistName, "Portico")
+        XCTAssertEqual(songs[1].albumName, "Elsewhere")
+    }
+
     private func fixture(_ name: String) throws -> Data {
         let path = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

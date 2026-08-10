@@ -107,6 +107,11 @@
 		6C6837F91586ABB523E1310A /* BackendProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29848EE7B890C25E5D7E4DEE /* BackendProxy.swift */; };
 		6C687401BE3F8E1794470951 /* AccountMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CFCA5177816C19517420BF /* AccountMenuView.swift */; };
 		6CAAB2EECFC37BC1A35989E1 /* RandomSongProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D834623AF6E9C36BABCAABF /* RandomSongProviding.swift */; };
+		A6FDFEC7B16A4240AB6A7502 /* SimilarSongProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8AE6FB97B84667AEA8F1DC /* SimilarSongProviding.swift */; };
+		BB3E3E3699B44343B69F3110 /* SongRadioQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0768361C53EE4C64A023766C /* SongRadioQueue.swift */; };
+		F1024F4FB2544E5885E6159D /* SongRadioQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4425585AFC794518BA383021 /* SongRadioQueueTests.swift */; };
+		26C1CC74B4914F4F8B21BBC1 /* subsonic_similar_songs.xml in Resources */ = {isa = PBXBuildFile; fileRef = CB6F40FB24B3452CB4BEDA07 /* subsonic_similar_songs.xml */; };
+		E382858AB9BA47EFBA16BE74 /* ampache_similar_songs.xml in Resources */ = {isa = PBXBuildFile; fileRef = 8BEE5BB8C3B548E0B744603C /* ampache_similar_songs.xml */; };
 		6D24742B3132586F0A7E1301 /* Collections in Frameworks */ = {isa = PBXBuildFile; productRef = BA85DE2CAA3FC7FF85714C1C /* Collections */; };
 		6E7D9FF261EAF17911102379 /* EventLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE86A2C710A35D85B59F3769 /* EventLogger.swift */; };
 		6EB60446E86F6A6EF398E06D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A400AC51A734F86D8636BD58 /* Assets.xcassets */; };
@@ -401,6 +406,11 @@
 		5B8F8B9F367AA22D1B5E4216 /* PodcastsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastsView.swift; sourceTree = "<group>"; };
 		5D4A29E80084D3966E333658 /* MetaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaManager.swift; sourceTree = "<group>"; };
 		5D834623AF6E9C36BABCAABF /* RandomSongProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RandomSongProviding.swift; sourceTree = "<group>"; };
+		5C8AE6FB97B84667AEA8F1DC /* SimilarSongProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarSongProviding.swift; sourceTree = "<group>"; };
+		0768361C53EE4C64A023766C /* SongRadioQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongRadioQueue.swift; sourceTree = "<group>"; };
+		4425585AFC794518BA383021 /* SongRadioQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongRadioQueueTests.swift; sourceTree = "<group>"; };
+		CB6F40FB24B3452CB4BEDA07 /* subsonic_similar_songs.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = subsonic_similar_songs.xml; sourceTree = "<group>"; };
+		8BEE5BB8C3B548E0B744603C /* ampache_similar_songs.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ampache_similar_songs.xml; sourceTree = "<group>"; };
 		5E0C9D68A8442BB052CE19E7 /* subsonic_music_directory.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = subsonic_music_directory.xml; sourceTree = "<group>"; };
 		611D7E3EF8E015ED10CDCB24 /* ScrobbleSyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrobbleSyncer.swift; sourceTree = "<group>"; };
 		629FCDE3A538EA325A8755F9 /* TabBarEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarEditorView.swift; sourceTree = "<group>"; };
@@ -696,6 +706,7 @@
 				63A7A6CF7B25D6B6095E7E22 /* PlaylistMembershipIndex.swift */,
 				F7B549107C7B7EB03543118A /* ShareActions.swift */,
 				126A45D901A00AAE486DB789 /* ShuffleAllSession.swift */,
+				0768361C53EE4C64A023766C /* SongRadioQueue.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -865,6 +876,7 @@
 				D87DE4B5C02EF543CCDDB20B /* LoginCredentials.swift */,
 				01CA414BD026E5C92FF22DFB /* Models.swift */,
 				5D834623AF6E9C36BABCAABF /* RandomSongProviding.swift */,
+				5C8AE6FB97B84667AEA8F1DC /* SimilarSongProviding.swift */,
 				0AADE734E44CCD85E86C5A5E /* Sharing.swift */,
 				3CD85A26C5C9A07EE35D4BDF /* SwiftDataLibraryIngester.swift */,
 			);
@@ -982,6 +994,7 @@
 				EB253C0F620A62C9BEF6E8DF /* ampache_playlists.xml */,
 				37854C2290E24CCAFC270436 /* ampache_shares.xml */,
 				2F4945FC7AB58124DF242D50 /* ampache_song_lyrics.xml */,
+				8BEE5BB8C3B548E0B744603C /* ampache_similar_songs.xml */,
 				4BAEC0CD7BFCE7AE244CE626 /* ampache_songs.xml */,
 				498A9360ED683DA241CD3F12 /* navidrome_songs.json */,
 				0C7778450821ACBA5275059A /* subsonic_album_detail.xml */,
@@ -993,6 +1006,7 @@
 				FC202A6292BC7EC2EFD4E037 /* subsonic_ping.xml */,
 				A77ACBA687578834EFC60DF7 /* subsonic_playlists.xml */,
 				B146894566CDBF115CF08845 /* subsonic_random_songs.xml */,
+				CB6F40FB24B3452CB4BEDA07 /* subsonic_similar_songs.xml */,
 				E557ECCB02CDB72CEA50776E /* subsonic_shares.xml */,
 				83F34F842912D91E720EE7A5 /* subsonic_song_starred.xml */,
 				EBE5CD1EC812DD1D634559B7 /* subsonic_song_unstarred.xml */,
@@ -1110,6 +1124,7 @@
 				E1B19EA4F3772DE78D4FAB1E /* LibraryMutationOutboxTests.swift */,
 				324AEB27AE028E0D2D97C069 /* PlaylistDownloadCoordinatorTests.swift */,
 				8257EA212A6D9065C58FCCC7 /* ShuffleAllSessionTests.swift */,
+				4425585AFC794518BA383021 /* SongRadioQueueTests.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -1377,6 +1392,7 @@
 				FB95CCA0A9AC7DAB57BEA490 /* ampache_playlists.xml in Resources */,
 				036C244E04AD9D3AD357DB7D /* ampache_shares.xml in Resources */,
 				178EED71C90CBEAA33967078 /* ampache_song_lyrics.xml in Resources */,
+				E382858AB9BA47EFBA16BE74 /* ampache_similar_songs.xml in Resources */,
 				7207CE4C203F6B2F6D211F87 /* ampache_songs.xml in Resources */,
 				B8079D6D7CC856FD0B911ACE /* navidrome_songs.json in Resources */,
 				18B2ED5D2E08F5F7E8B8CC8B /* subsonic_album_detail.xml in Resources */,
@@ -1388,6 +1404,7 @@
 				1ACA728F6DA515777BF200F3 /* subsonic_ping_navidrome.xml in Resources */,
 				13D65B5A193076BBF92921E5 /* subsonic_playlists.xml in Resources */,
 				AAC46B0DF55C686C40F253E6 /* subsonic_random_songs.xml in Resources */,
+				26C1CC74B4914F4F8B21BBC1 /* subsonic_similar_songs.xml in Resources */,
 				9EEC0654573061377A1E5382 /* subsonic_shares.xml in Resources */,
 				EB622939F847B7C565F4931B /* subsonic_song_starred.xml in Resources */,
 				9259CEA73FF6F265AE7B4E2F /* subsonic_song_unstarred.xml in Resources */,
@@ -1432,6 +1449,7 @@
 				FEF1DDF55A44E9A96EFC5A3F /* ShareParserTests.swift in Sources */,
 				B5BB2679EA5B685646BF045B /* ShuffleAllSessionTests.swift in Sources */,
 				AC4E93B9AC33DD14D7BB3209 /* SleepTimerSessionTests.swift in Sources */,
+				F1024F4FB2544E5885E6159D /* SongRadioQueueTests.swift in Sources */,
 				C0082494846694EA80FC9915 /* SubsonicParserTests.swift in Sources */,
 				5371EC355699B80E676DC89A /* SubsonicPlaylistMutationTests.swift in Sources */,
 			);
@@ -1512,6 +1530,8 @@
 				F97C5C1B6C11292AEFB1AA7F /* QueryController.swift in Sources */,
 				80D5822D1AA7BE3505270D78 /* QueueCachePolicyManager.swift in Sources */,
 				6CAAB2EECFC37BC1A35989E1 /* RandomSongProviding.swift in Sources */,
+				A6FDFEC7B16A4240AB6A7502 /* SimilarSongProviding.swift in Sources */,
+				BB3E3E3699B44343B69F3110 /* SongRadioQueue.swift in Sources */,
 				65C831FF3C718B047BCE5235 /* RemoteCommandCenterHandler.swift in Sources */,
 				D247FF4DAD5EC172EBA7024F /* ScrobbleSyncer.swift in Sources */,
 				647447107256DCA4D9C944DC /* SettingEnumerations.swift in Sources */,

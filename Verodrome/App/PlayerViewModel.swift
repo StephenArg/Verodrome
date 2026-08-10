@@ -121,10 +121,22 @@ final class PlayerViewModel: ObservableObject {
     /// the transport buttons so auto-advance, CarPlay and the lock screen all animate the
     /// same way as a tap on skip.
     @Published private(set) var artworkSlideDirection: ArtworkSlideDirection = .forward
+    /// True while Start Radio is waiting on the server for similar songs.
+    @Published private(set) var isStartingRadio = false
+    /// Seed track title for the active song-radio context. Nil for album / playlist / etc.
+    @Published private(set) var radioSeedTitle: String?
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
     let queueList = QueueListModel()
+
+    func beginStartingRadio() {
+        isStartingRadio = true
+    }
+
+    func endStartingRadio() {
+        isStartingRadio = false
+    }
 
     private var facade: PlayerFacadeImpl?
     private var cancellables = Set<AnyCancellable>()
@@ -193,16 +205,20 @@ final class PlayerViewModel: ObservableObject {
     ///   - arrivedShuffled: The items are already in random order (Shuffle All). Shuffle
     ///     stays off so there is no original order to restore, but the queue is still
     ///     treated as user-arrangeable.
+    ///   - radioSeedTitle: When non-nil, the queue is a song radio seeded by this title.
     func play(
         items: [QueueItem],
         startAt index: Int? = nil,
         shuffle: Bool? = nil,
-        arrivedShuffled: Bool = false
+        arrivedShuffled: Bool = false,
+        radioSeedTitle: String? = nil
     ) {
         guard !items.isEmpty else {
             PlayTrace.error("PlayerViewModel.play — empty items")
             return
         }
+        let trimmedSeed = radioSeedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.radioSeedTitle = (trimmedSeed?.isEmpty == false) ? trimmedSeed : nil
         queueArrivedShuffled = arrivedShuffled
         let mode: ShuffleMode? = shuffle.map { $0 ? .on : .off }
         let startIndex: Int
@@ -427,6 +443,7 @@ final class PlayerViewModel: ObservableObject {
         isPlaying = false
         lyrics = ""
         statusMessage = ""
+        radioSeedTitle = nil
         playbackSpeed = facade?.sessionPlaybackRate ?? 1
         isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? false
         sleepTimerDeadline = facade?.sleepTimerDeadline

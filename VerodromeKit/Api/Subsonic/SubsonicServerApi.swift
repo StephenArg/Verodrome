@@ -109,6 +109,18 @@ public final class SubsonicServerApi: @unchecked Sendable {
         )
     }
 
+    /// Similar tracks for artist / album / song radio. Prefer this over `getSimilarSongs2`,
+    /// which the spec ties to artist IDs only.
+    public func getSimilarSongs(id: String, count: Int = 50) async throws -> Data {
+        try await request(
+            method: "getSimilarSongs",
+            parameters: [
+                "id": id,
+                "count": String(max(1, count))
+            ]
+        )
+    }
+
     public func getSong(id: String) async throws -> Data {
         try await request(method: "getSong", parameters: ["id": id])
     }

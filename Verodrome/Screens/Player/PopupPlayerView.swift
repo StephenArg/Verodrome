@@ -5,6 +5,7 @@ import VerodromeKit
 
 struct PopupPlayerView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
@@ -21,106 +22,11 @@ struct PopupPlayerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                playerHeader
-                    .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
-                    .padding(.top, 36)
-                    .padding(.bottom, 4)
-                    .layoutPriority(1)
-
-                heroPanel
-                    .padding(.top, 24)
-
-                // Everything below the cover carries a layout priority so it is
-                // measured first and keeps its full height; the artwork then takes
-                // whatever is left. Without this the cover claims its ideal square
-                // and the transport controls are pushed past the bottom edge.
-                VStack(alignment: .leading, spacing: 6) {
-                    if settings.showRatingStars || settings.showSongInfo || player.holdSpeedRate != nil {
-                        HStack(alignment: .center, spacing: 12) {
-                            // Hold-speed sits just right of the stars; when stars are hidden it
-                            // keeps the leading slot so it still lands where they would be.
-                            HStack(spacing: 8) {
-                                if settings.showRatingStars, let song = currentSong {
-                                    RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
-                                        Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
-                                    }
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                                }
-
-                                if let holdRate = player.holdSpeedRate {
-                                    Text(PlaybackSpeed.label(for: holdRate))
-                                        .font(.caption.weight(.semibold).monospacedDigit())
-                                        .foregroundStyle(themeManager.accentColor)
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 1)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                .strokeBorder(themeManager.accentColor, lineWidth: 1)
-                                        )
-                                        .accessibilityLabel("Hold speed \(PlaybackSpeed.label(for: holdRate))")
-                                        .transition(.opacity)
-                                }
-                            }
-
-                            Spacer(minLength: 0)
-
-                            if settings.showSongInfo, let song = currentSong, let info = songInfoText(for: song) {
-                                HStack(spacing: 4) {
-                                    if isTranscoding(song) {
-                                        Image(systemName: "wave.3.up")
-                                            .font(.caption2.weight(.semibold))
-                                            .accessibilityLabel("Transcoding")
-                                    }
-                                    Text(info)
-                                        .lineLimit(1)
-                                }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            MarqueeText(
-                                text: player.currentItem?.title ?? "Not Playing",
-                                font: .title2.bold(),
-                                fitAlignment: .leading
-                            )
-
-                            artistCreditsRow
-                                .opacity(artistCredits.isEmpty && downloadStatus == .none ? 0 : 1)
-                        }
-
-                        favoriteButton
-                    }
-
-                    if !player.statusMessage.isEmpty {
-                        Label(player.statusMessage, systemImage: "wifi.exclamationmark")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+            ZStack {
+                playerContent
+                if player.isStartingRadio {
+                    startingRadioOverlay
                 }
-                // Match artwork / seek bar width.
-                .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
-                .clipped()
-                .animation(.easeInOut(duration: 0.2), value: settings.showRatingStars)
-                .animation(.easeInOut(duration: 0.2), value: settings.showSongInfo)
-                .layoutPriority(1)
-
-                PlayerControlView()
-                    .frame(maxWidth: .infinity)
-                    .layoutPriority(1)
-
-                bottomActionBar
-                    .padding(.horizontal)
-                    .padding(.top, 20)
-                    .padding(.bottom, 16)
-                    .layoutPriority(1)
             }
             .background(playerBackground)
             .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
@@ -176,6 +82,130 @@ struct PopupPlayerView: View {
         .presentationDragIndicator(.visible)
         .presentationDetents([.large])
         .presentationCornerRadius(24)
+    }
+
+    private var playerContent: some View {
+        VStack(spacing: 0) {
+            playerHeader
+                .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
+                .padding(.top, 36)
+                .padding(.bottom, 4)
+                .layoutPriority(1)
+
+            heroPanel
+                .padding(.top, 24)
+
+            // Everything below the cover carries a layout priority so it is
+            // measured first and keeps its full height; the artwork then takes
+            // whatever is left. Without this the cover claims its ideal square
+            // and the transport controls are pushed past the bottom edge.
+            VStack(alignment: .leading, spacing: 6) {
+                if settings.showRatingStars || settings.showSongInfo || player.holdSpeedRate != nil {
+                    HStack(alignment: .center, spacing: 12) {
+                        // Hold-speed sits just right of the stars; when stars are hidden it
+                        // keeps the leading slot so it still lands where they would be.
+                        HStack(spacing: 8) {
+                            if settings.showRatingStars, let song = currentSong {
+                                RatingStarsView(rating: song.rating, starSize: 13, spacing: 6) { newRating in
+                                    Task { try? await LibraryActions.shared.setRating(song: song, rating: newRating) }
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            if let holdRate = player.holdSpeedRate {
+                                Text(PlaybackSpeed.label(for: holdRate))
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(themeManager.accentColor)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .strokeBorder(themeManager.accentColor, lineWidth: 1)
+                                    )
+                                    .accessibilityLabel("Hold speed \(PlaybackSpeed.label(for: holdRate))")
+                                    .transition(.opacity)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if settings.showSongInfo, let song = currentSong, let info = songInfoText(for: song) {
+                            HStack(spacing: 4) {
+                                if isTranscoding(song) {
+                                    Image(systemName: "wave.3.up")
+                                        .font(.caption2.weight(.semibold))
+                                        .accessibilityLabel("Transcoding")
+                                }
+                                Text(info)
+                                    .lineLimit(1)
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        MarqueeText(
+                            text: player.currentItem?.title ?? "Not Playing",
+                            font: .title2.bold(),
+                            fitAlignment: .leading
+                        )
+
+                        artistCreditsRow
+                            .opacity(artistCredits.isEmpty && downloadStatus == .none ? 0 : 1)
+                    }
+
+                    favoriteButton
+                }
+
+                if !player.statusMessage.isEmpty {
+                    Label(player.statusMessage, systemImage: "wifi.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            // Match artwork / seek bar width.
+            .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+            .clipped()
+            .animation(.easeInOut(duration: 0.2), value: settings.showRatingStars)
+            .animation(.easeInOut(duration: 0.2), value: settings.showSongInfo)
+            .layoutPriority(1)
+
+            PlayerControlView()
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+
+            bottomActionBar
+                .padding(.horizontal)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+                .layoutPriority(1)
+        }
+    }
+
+    private var startingRadioOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Starting Radio…")
+                    .font(.headline)
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Starting Radio")
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.2), value: player.isStartingRadio)
     }
 
     // MARK: - Changing colors
@@ -252,20 +282,16 @@ struct PopupPlayerView: View {
                     }
             )
             .onTapGesture(count: 2) {
-                guard lyricsToggleEnabled else { return }
                 toggleLyrics()
             }
             .accessibilityHint(
-                lyricsToggleEnabled
-                    ? "Double tap to \(settings.showLyricsInPlayer ? "hide" : "show") lyrics"
-                    : ""
+                "Double tap to \(settings.showLyricsInPlayer ? "hide" : "show") lyrics"
             )
 
             // Only mounted while the user wants lyrics, so the playback clock isn't
             // redrawing an invisible lyric list four times a second.
             if settings.showLyricsInPlayer {
                 SyncedLyricsView(onDoubleTap: {
-                    guard lyricsToggleEnabled else { return }
                     toggleLyrics()
                 })
                 .offset(y: showingLyrics ? 0 : 28)
@@ -323,11 +349,6 @@ struct PopupPlayerView: View {
             : themeManager.accentColor
     }
 
-    /// Can open lyrics when text exists, or close the preference even when it doesn't.
-    private var lyricsToggleEnabled: Bool {
-        lyricsAvailable || settings.showLyricsInPlayer
-    }
-
     private func toggleLyrics() {
         withAnimation(.easeInOut(duration: 0.28)) {
             settings.showLyricsInPlayer.toggle()
@@ -336,7 +357,11 @@ struct PopupPlayerView: View {
         if settings.showLyricsInPlayer { player.requestLyrics() }
     }
 
-    private var albumTitle: String {
+    /// Centered header label: radio seed title when the queue is a song radio, else album.
+    private var headerTitle: String {
+        if let seed = player.radioSeedTitle, !seed.isEmpty {
+            return seed
+        }
         let name = player.currentItem?.albumName?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let name, !name.isEmpty else { return "" }
@@ -350,8 +375,9 @@ struct PopupPlayerView: View {
     /// z-centered so unequal chevron / menu widths don't shift it.
     private var playerHeader: some View {
         EquatableView(content: PlayerHeader(
-            albumTitle: albumTitle,
+            headerTitle: headerTitle,
             albumId: currentSong?.album?.compoundRemoteId,
+            isRadioContext: player.radioSeedTitle != nil,
             song: currentSong,
             downloadStatus: overflowDownloadStatus,
             showRatingStars: settings.showRatingStars,
@@ -367,6 +393,15 @@ struct PopupPlayerView: View {
             onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
             onShare: { presentShareSheet() },
             onAddToPlaylist: { bottomPanel = .addToPlaylist },
+            onStartRadio: {
+                Task {
+                    if let song = currentSong {
+                        await ActionToast.startRadio(song: song, player: player, router: router)
+                    } else if let item = player.currentItem, item.kind == .song {
+                        await ActionToast.startRadio(seed: item, player: player, router: router)
+                    }
+                }
+            },
             onOpenQueue: { bottomPanel = .queue },
             onEqualizer: { bottomPanel = .equalizer },
             onSetPlaybackSpeed: { player.setPlaybackSpeed($0) },
@@ -391,7 +426,8 @@ struct PopupPlayerView: View {
                     settings.changingColorsInPlayer.toggle()
                 }
                 settings.save()
-            }
+            },
+            isStartingRadio: player.isStartingRadio
         ))
     }
 
@@ -752,8 +788,10 @@ private struct PlayerArtistCredit: Equatable {
 /// Header containing the dismiss chevron, centered album title, and overflow
 /// menu.
 private struct PlayerHeader: View, Equatable {
-    let albumTitle: String
+    let headerTitle: String
     let albumId: String?
+    /// Header title is a radio seed, not an album name — tapping it shouldn't open an album.
+    let isRadioContext: Bool
     let song: Song?
     let downloadStatus: DownloadStatus
     let showRatingStars: Bool
@@ -769,6 +807,7 @@ private struct PlayerHeader: View, Equatable {
     let onOpenAlbum: () -> Void
     let onShare: () -> Void
     let onAddToPlaylist: () -> Void
+    let onStartRadio: () -> Void
     let onOpenQueue: () -> Void
     let onEqualizer: () -> Void
     let onSetPlaybackSpeed: (Float) -> Void
@@ -779,6 +818,7 @@ private struct PlayerHeader: View, Equatable {
     let onToggleSongInfo: () -> Void
     let onToggleLyrics: () -> Void
     let onToggleChangingColors: () -> Void
+    let isStartingRadio: Bool
 
     private let sideButtonWidth: CGFloat = 52
 
@@ -787,13 +827,22 @@ private struct PlayerHeader: View, Equatable {
             // Below the buttons in z-order, and inset past them, so a long title
             // can never swallow taps meant for the chevron / overflow menu.
             Button { onOpenAlbum() } label: {
-                Text(albumTitle)
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if isRadioContext {
+                    MarqueeText(
+                        text: "\(headerTitle) radio",
+                        font: .footnote.weight(.semibold),
+                        fitAlignment: .center,
+                        trailingSystemImage: "dot.radiowaves.left.and.right"
+                    )
+                } else {
+                    Text(headerTitle)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             .buttonStyle(.plain)
-            .disabled(albumId == nil)
+            .disabled(albumId == nil || isRadioContext)
             .padding(.horizontal, sideButtonWidth + 8)
 
             HStack(spacing: 0) {
@@ -811,6 +860,7 @@ private struct PlayerHeader: View, Equatable {
                 PlayerOverflowMenuButton(
                     menuState: PlayerOverflowMenuButton.MenuState(
                         hasSong: song != nil,
+                        hasAlbum: albumId != nil,
                         isFavorite: song?.isFavorite == true,
                         downloadStatus: downloadStatus,
                         showRatingStars: showRatingStars,
@@ -821,7 +871,8 @@ private struct PlayerHeader: View, Equatable {
                         playbackSpeed: playbackSpeed,
                         isRandomPlaybackSpeed: isRandomPlaybackSpeed,
                         speedMenuEnabled: speedMenuEnabled,
-                        sleepTimerDeadline: sleepTimerDeadline
+                        sleepTimerDeadline: sleepTimerDeadline,
+                        isStartingRadio: isStartingRadio
                     ),
                     onShare: onShare,
                     onToggleFavorite: {
@@ -833,7 +884,9 @@ private struct PlayerHeader: View, Equatable {
                         Task { await LibraryActions.shared.downloadOrCancel(song: song) }
                     },
                     onAddToPlaylist: onAddToPlaylist,
+                    onStartRadio: onStartRadio,
                     onOpenQueue: onOpenQueue,
+                    onOpenAlbum: onOpenAlbum,
                     onEqualizer: onEqualizer,
                     onSetPlaybackSpeed: onSetPlaybackSpeed,
                     onSetPlaybackSpeedRandom: onSetPlaybackSpeedRandom,
@@ -852,8 +905,9 @@ private struct PlayerHeader: View, Equatable {
     }
 
     static func == (lhs: PlayerHeader, rhs: PlayerHeader) -> Bool {
-        lhs.albumTitle == rhs.albumTitle
+        lhs.headerTitle == rhs.headerTitle
             && lhs.albumId == rhs.albumId
+            && lhs.isRadioContext == rhs.isRadioContext
             && lhs.song?.remoteId == rhs.song?.remoteId
             && lhs.song?.isFavorite == rhs.song?.isFavorite
             && lhs.downloadStatus == rhs.downloadStatus
@@ -866,6 +920,7 @@ private struct PlayerHeader: View, Equatable {
             && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
             && lhs.speedMenuEnabled == rhs.speedMenuEnabled
             && lhs.sleepTimerDeadline == rhs.sleepTimerDeadline
+            && lhs.isStartingRadio == rhs.isStartingRadio
     }
 }
 
@@ -875,6 +930,7 @@ private struct PlayerHeader: View, Equatable {
 private struct PlayerOverflowMenuButton: View {
     struct MenuState: Equatable {
         var hasSong: Bool
+        var hasAlbum: Bool
         var isFavorite: Bool
         var downloadStatus: DownloadStatus
         var showRatingStars: Bool
@@ -886,9 +942,11 @@ private struct PlayerOverflowMenuButton: View {
         var isRandomPlaybackSpeed: Bool
         var speedMenuEnabled: Bool
         var sleepTimerDeadline: Date?
+        var isStartingRadio: Bool
 
         static func == (lhs: MenuState, rhs: MenuState) -> Bool {
             lhs.hasSong == rhs.hasSong
+                && lhs.hasAlbum == rhs.hasAlbum
                 && lhs.isFavorite == rhs.isFavorite
                 && lhs.downloadStatus == rhs.downloadStatus
                 && lhs.showRatingStars == rhs.showRatingStars
@@ -900,6 +958,7 @@ private struct PlayerOverflowMenuButton: View {
                 && lhs.isRandomPlaybackSpeed == rhs.isRandomPlaybackSpeed
                 && lhs.speedMenuEnabled == rhs.speedMenuEnabled
                 && lhs.sleepTimerDeadline == rhs.sleepTimerDeadline
+                && lhs.isStartingRadio == rhs.isStartingRadio
         }
     }
 
@@ -914,7 +973,9 @@ private struct PlayerOverflowMenuButton: View {
     var onToggleFavorite: () -> Void
     var onDownload: () -> Void
     var onAddToPlaylist: () -> Void
+    var onStartRadio: () -> Void
     var onOpenQueue: () -> Void
+    var onOpenAlbum: () -> Void
     var onEqualizer: () -> Void
     var onSetPlaybackSpeed: (Float) -> Void
     var onSetPlaybackSpeedRandom: () -> Void
@@ -999,8 +1060,19 @@ private struct PlayerOverflowMenuButton: View {
                 disabled: !menuState.hasSong,
                 action: onAddToPlaylist
             )
-            menuRow(title: "Add to Queue", systemImage: "text.append", disabled: true) {}
+            menuRow(
+                title: "Start Radio",
+                systemImage: "dot.radiowaves.left.and.right",
+                disabled: !menuState.hasSong || menuState.isStartingRadio,
+                action: onStartRadio
+            )
             menuRow(title: "Open Queue", systemImage: "list.bullet", action: onOpenQueue)
+            menuRow(
+                title: "Open Album",
+                systemImage: "square.stack",
+                disabled: !menuState.hasAlbum,
+                action: onOpenAlbum
+            )
 
             Divider().padding(.vertical, 4)
 
@@ -1012,7 +1084,6 @@ private struct PlayerOverflowMenuButton: View {
             menuRow(
                 title: menuState.showLyrics ? "Show Artwork" : "Show Lyrics",
                 systemImage: menuState.showLyrics ? "photo" : "text.quote",
-                disabled: !(menuState.hasLyrics || menuState.showLyrics),
                 action: onToggleLyrics
             )
             menuRow(

@@ -78,6 +78,15 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertEqual(songs[2].rating, 3)
     }
 
+    /// `getSimilarSongs` nests songs under `similarSongs`; the same flat song parser applies.
+    func testSongListParserReadsSimilarSongs() throws {
+        let songs = try SubsonicParsers.parseSongList(data: fixture("subsonic_similar_songs.xml"))
+        XCTAssertEqual(songs.map(\.id), ["331", "412", "507"])
+        XCTAssertEqual(songs[0].title, "Blue Line")
+        XCTAssertEqual(songs[1].albumId, "56")
+        XCTAssertEqual(songs[2].artistName, "Beta")
+    }
+
     /// Songs nested in an album detail response leave off what the parent already says,
     /// so they have to inherit the album's id and cover art rather than come back bare.
     func testAlbumDetailSongsInheritTheAlbum() throws {

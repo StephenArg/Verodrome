@@ -247,6 +247,61 @@ public final class LibraryActions {
         kit.player?.enqueueEphemeral([QueueItem.from(episode)])
     }
 
+    /// Fetches similar songs and builds a radio queue. Does not start playback — the
+    /// UI should hand the items to `PlayerViewModel.play` so the on-screen queue updates.
+    public func prepareRadioQueue(song: Song) async -> PrepareRadioOutcome {
+        await prepareRadioQueue(seed: QueueItem.from(song))
+    }
+
+    /// Fetches similar songs and builds a radio queue. Does not start playback — the
+    /// UI should hand the items to `PlayerViewModel.play` so the on-screen queue updates.
+    public func prepareRadioQueue(seed: QueueItem) async -> PrepareRadioOutcome {
+        guard seed.kind == .song else {
+            await EventLogger.shared.info(
+                "radio",
+                "Start radio skipped — seed kind=\(seed.kind.rawValue) id=\(seed.playableId)"
+            )
+            return .unavailable
+        }
+        guard let provider = syncer as? (any SimilarSongProviding) else {
+            await EventLogger.shared.info(
+                "radio",
+                "Start radio unavailable — no SimilarSongProviding syncer seed=\(seed.playableId)"
+            )
+            return .unavailable
+        }
+
+        do {
+            let similar = try await provider.similarSongs(
+                toSongId: seed.playableId,
+                count: SongRadioQueue.defaultSimilarCount
+            )
+            let items = SongRadioQueue.makeItems(seed: seed, similar: similar)
+            await EventLogger.shared.info(
+                "radio",
+                "Start radio seed=\(seed.playableId) title=\(seed.title) similar=\(similar.count) queue=\(items.count)"
+            )
+
+            // Need at least one similar beyond the seed.
+            guard items.count > 1 else { return .noSimilarSongs }
+
+            if let ingestor = kit.activeLibraryIngester {
+                let songs = similar
+                Task.detached(priority: .utility) {
+                    try? await ingestor.ingest(songs: songs)
+                }
+            }
+
+            return .ready(items)
+        } catch {
+            await EventLogger.shared.warning(
+                "radio",
+                "Start radio failed seed=\(seed.playableId): \(error.localizedDescription)"
+            )
+            return .failed
+        }
+    }
+
     // MARK: - Playlists
 
     @discardableResult

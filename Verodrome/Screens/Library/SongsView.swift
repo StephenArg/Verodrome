@@ -124,6 +124,13 @@ struct SongsView: View {
             player.addToQueueTemporarily([item.queueItem])
         })
         primary.append(UIAction(
+            title: "Start Radio",
+            image: UIImage(systemName: "dot.radiowaves.left.and.right"),
+            attributes: player.isStartingRadio ? .disabled : []
+        ) { [player, router] _ in
+            Task { await ActionToast.startRadio(seed: item.queueItem, player: player, router: router) }
+        })
+        primary.append(UIAction(
             title: "Share",
             image: UIImage(systemName: "square.and.arrow.up")
         ) { _ in

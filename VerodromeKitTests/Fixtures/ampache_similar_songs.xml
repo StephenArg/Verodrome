@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <total_count>2</total_count>
+  <song id="412">
+    <name><![CDATA[Second Track]]></name>
+    <title><![CDATA[Second Track]]></title>
+    <artist id="10"><name><![CDATA[Portico]]></name></artist>
+    <album id="56"><name><![CDATA[Other Fields]]></name></album>
+    <time>180</time>
+    <format>mp3</format>
+  </song>
+  <song id="507">
+    <name><![CDATA[Third Track]]></name>
+    <title><![CDATA[Third Track]]></title>
+    <artist id="11"><name><![CDATA[Beta]]></name></artist>
+    <album id="57"><name><![CDATA[Elsewhere]]></name></album>
+    <time>95</time>
+    <format>mp3</format>
+  </song>
+</root>

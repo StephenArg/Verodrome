@@ -214,6 +214,8 @@ struct MarqueeText: View {
     var endPauseNanoseconds: UInt64 = 1_200_000_000
     /// Alignment used when the text fits without scrolling.
     var fitAlignment: Alignment = .leading
+    /// Optional SF Symbol drawn after the text and included in the scrolling content.
+    var trailingSystemImage: String? = nil
 
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
@@ -221,6 +223,11 @@ struct MarqueeText: View {
 
     private var needsScroll: Bool {
         textWidth > containerWidth + 1 && containerWidth > 0
+    }
+
+    private var accessibilityText: String {
+        guard trailingSystemImage != nil else { return text }
+        return text
     }
 
     var body: some View {
@@ -232,12 +239,18 @@ struct MarqueeText: View {
             .hidden()
             .frame(maxWidth: .infinity)
             .overlay(alignment: needsScroll ? .leading : fitAlignment) {
-                Text(text)
-                    .font(font)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .offset(x: offset)
-                    .background(widthReader(isContainer: false))
+                HStack(spacing: 4) {
+                    Text(text)
+                        .font(font)
+                        .lineLimit(1)
+                    if let trailingSystemImage {
+                        Image(systemName: trailingSystemImage)
+                            .font(font)
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .offset(x: offset)
+                .background(widthReader(isContainer: false))
             }
             .clipped()
             .background(widthReader(isContainer: true))
@@ -245,10 +258,10 @@ struct MarqueeText: View {
                 if let t = values.text { textWidth = t }
                 if let c = values.container { containerWidth = c }
             }
-            .task(id: "\(text)|\(textWidth)|\(containerWidth)") {
+            .task(id: "\(text)|\(trailingSystemImage ?? "")|\(textWidth)|\(containerWidth)") {
                 await runMarquee()
             }
-            .accessibilityLabel(text)
+            .accessibilityLabel(accessibilityText)
             .accessibilityAddTraits(.isStaticText)
     }
 

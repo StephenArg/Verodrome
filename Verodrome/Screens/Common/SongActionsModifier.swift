@@ -6,6 +6,7 @@ import VerodromeKit
 struct SongActionsModifier: ViewModifier {
     let song: Song
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject private var downloadCenter = DownloadCenter.shared
@@ -69,6 +70,13 @@ struct SongActionsModifier: ViewModifier {
         } label: {
             Label("Add to Queue", systemImage: "text.append")
         }
+
+        Button {
+            Task { await ActionToast.startRadio(song: song, player: player, router: router) }
+        } label: {
+            Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+        }
+        .disabled(player.isStartingRadio)
 
         Button {
             Task { await ActionToast.toggleFavorite(song: song) }

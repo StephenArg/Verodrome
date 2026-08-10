@@ -27,6 +27,54 @@ enum ActionToast {
         }
     }
 
+    static func startRadio(_ result: StartRadioResult) {
+        switch result {
+        case .started(let songCount):
+            show("Started Radio - \(songCount) songs")
+        case .noSimilarSongs:
+            show("No similar songs found")
+        case .unavailable, .failed:
+            show("Couldn't start radio")
+        }
+    }
+
+    /// Opens the player with a loading state, fetches similar songs, plays them, and toasts.
+    @discardableResult
+    static func startRadio(
+        song: Song,
+        player: PlayerViewModel,
+        router: AppRouter
+    ) async -> StartRadioResult {
+        await startRadio(seed: QueueItem.from(song), player: player, router: router)
+    }
+
+    /// Opens the player with a loading state, fetches similar songs, plays them, and toasts.
+    @discardableResult
+    static func startRadio(
+        seed: QueueItem,
+        player: PlayerViewModel,
+        router: AppRouter
+    ) async -> StartRadioResult {
+        guard !player.isStartingRadio else { return .unavailable }
+
+        player.beginStartingRadio()
+        router.openPlayer()
+        defer { player.endStartingRadio() }
+
+        let outcome = await LibraryActions.shared.prepareRadioQueue(seed: seed)
+        let result = StartRadioResult(outcome)
+        if case .ready(let items) = outcome {
+            player.play(
+                items: items,
+                startAt: 0,
+                shuffle: false,
+                radioSeedTitle: seed.title
+            )
+        }
+        startRadio(result)
+        return result
+    }
+
     /// Toggles favorite and confirms with Liked / Unliked.
     static func toggleFavorite(song: Song) async {
         let liking = !song.isFavorite

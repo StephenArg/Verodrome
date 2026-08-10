@@ -137,6 +137,14 @@ public final class AmpacheServerApi: @unchecked Sendable {
         return try await request(action: "stats", parameters: params)
     }
 
+    /// Similar songs for song radio (`get_similar` with `type=song`).
+    public func getSimilarSongs(id: String, limit: Int = 50, offset: Int = 0) async throws -> Data {
+        var params = pageParameters(limit: min(max(1, limit), Self.maxResultsPerRequest), offset: offset)
+        params["type"] = "song"
+        params["filter"] = id
+        return try await request(action: "get_similar", parameters: params)
+    }
+
     /// `include=songs` nests the track list under `<tracks>`, which saves the follow-up
     /// `album_songs` call the album screen would otherwise need.
     public func getAlbum(id: String) async throws -> Data {

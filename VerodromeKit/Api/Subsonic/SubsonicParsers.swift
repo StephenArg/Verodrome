@@ -161,7 +161,7 @@ enum SubsonicParsers {
     }
 
     /// Songs from any response that lists them as flat `<song>` nodes, such as
-    /// `getRandomSongs` or `getSongsByGenre`.
+    /// `getRandomSongs`, `getSimilarSongs`, or `getSongsByGenre`.
     static func parseSongList(data: Data) throws -> [IngestSong] {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
