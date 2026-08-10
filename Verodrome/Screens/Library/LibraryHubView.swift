@@ -3,6 +3,7 @@ import VerodromeKit
 
 struct LibraryHubView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var showEditor = false
 
     var body: some View {
@@ -11,8 +12,16 @@ struct LibraryHubView: View {
                 NavigationLink {
                     destination(for: category)
                 } label: {
-                    Label(category.title, systemImage: category.systemImage)
-                        .font(.body)
+                    Label {
+                        Text(category.title)
+                    } icon: {
+                        // Explicit accent rather than the inherited tint: popping back from
+                        // a screen that retints (album/playlist artwork) leaves these icons
+                        // resolving against UIKit's default blue.
+                        Image(systemName: category.systemImage)
+                            .foregroundStyle(themeManager.accentColor)
+                    }
+                    .font(.body)
                 }
             }
         }

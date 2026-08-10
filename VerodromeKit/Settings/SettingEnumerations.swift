@@ -249,13 +249,17 @@ public enum PlayerDisplayStyle: String, Codable, CaseIterable, Sendable {
 
 public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
     case grid3
+    case grid3NoText
     case grid2
+    case grid2NoText
     case list
 
     public var displayName: String {
         switch self {
         case .grid3: "Grid (3)"
+        case .grid3NoText: "Grid (3) - No text"
         case .grid2: "Grid (2)"
+        case .grid2NoText: "Grid (2) - No text"
         case .list: "List"
         }
     }
@@ -263,7 +267,9 @@ public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
     public var systemImage: String {
         switch self {
         case .grid3: "square.grid.3x3"
+        case .grid3NoText: "square.grid.3x3.fill"
         case .grid2: "square.grid.2x2"
+        case .grid2NoText: "square.grid.2x2.fill"
         case .list: "list.bullet"
         }
     }
@@ -271,9 +277,17 @@ public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
     /// Fixed column count for grid layouts; `nil` means list.
     public var gridColumnCount: Int? {
         switch self {
-        case .grid3: 3
-        case .grid2: 2
+        case .grid3, .grid3NoText: 3
+        case .grid2, .grid2NoText: 2
         case .list: nil
+        }
+    }
+
+    /// Whether album grid cells show title and artist under the artwork.
+    public var showsGridText: Bool {
+        switch self {
+        case .grid3, .grid2: true
+        case .grid3NoText, .grid2NoText, .list: false
         }
     }
 
@@ -281,7 +295,9 @@ public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
         let raw = try decoder.singleValueContainer().decode(String.self)
         switch raw {
         case Self.grid3.rawValue, "grid": self = .grid3
+        case Self.grid3NoText.rawValue: self = .grid3NoText
         case Self.grid2.rawValue: self = .grid2
+        case Self.grid2NoText.rawValue: self = .grid2NoText
         case Self.list.rawValue, "table": self = .list
         default: self = .list
         }
@@ -423,6 +439,10 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     case playsMost
     /// Smart playlists A–Z#, then regular playlists A–Z#.
     case smartPlaylistsFirst
+    /// Albums ranked by the server's newest list (`Album.newestIndex`, 1 = newest).
+    case recentlyAdded
+    /// Stable pseudo-random order for the current shuffle seed.
+    case random
 
     public var id: String { rawValue }
 
@@ -436,6 +456,8 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
         case .ratingHighest: "Rating (high to low)"
         case .playsMost: "Plays (high to low)"
         case .smartPlaylistsFirst: "Smart Playlists"
+        case .recentlyAdded: "Recently Added"
+        case .random: "Random"
         }
     }
 
@@ -444,10 +466,15 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     public var isAlphabetical: Bool {
         switch self {
         case .titleAZ, .titleZA, .titleSymbolsFirst: true
-        case .durationLongest, .durationShortest, .ratingHighest, .playsMost, .smartPlaylistsFirst:
+        case .durationLongest, .durationShortest, .ratingHighest, .playsMost,
+             .smartPlaylistsFirst, .recentlyAdded, .random:
             false
         }
     }
+
+    /// Whether a limited head fetch is a true prefix of the final display order.
+    /// Random shuffles the full set in memory, so a capped fetch would be wrong.
+    public var supportsHeadPage: Bool { self != .random }
 
     public var sortsTitleDescending: Bool { self == .titleZA }
 
@@ -457,7 +484,8 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     /// The orderings every library screen offers.
     public static let titleOptions: [LibrarySortOption] = [.titleAZ, .titleZA, .titleSymbolsFirst]
 
-    public static let albumOptions: [LibrarySortOption] = titleOptions + [.ratingHighest]
+    public static let albumOptions: [LibrarySortOption] =
+        titleOptions + [.ratingHighest, .recentlyAdded, .random]
 
     public static let songOptions: [LibrarySortOption] =
         titleOptions + [.durationLongest, .durationShortest, .ratingHighest, .playsMost]

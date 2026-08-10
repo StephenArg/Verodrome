@@ -270,7 +270,7 @@ struct SongsView: View {
     /// instead of coming back in whatever order the store happens to produce.
     private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Song>] {
         switch sort {
-        case .titleAZ, .titleZA, .titleSymbolsFirst, .smartPlaylistsFirst:
+        case .titleAZ, .titleZA, .titleSymbolsFirst, .smartPlaylistsFirst, .recentlyAdded, .random:
             [SortDescriptor(\Song.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
         case .durationLongest:
             [SortDescriptor(\Song.playDuration, order: .reverse), SortDescriptor(\Song.sortTitle)]

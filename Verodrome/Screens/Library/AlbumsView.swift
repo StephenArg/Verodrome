@@ -16,6 +16,8 @@ struct AlbumsView: View {
     @State private var selectedId: String?
     @State private var playlistSongs: [Song] = []
     @State private var showPlaylistSelector = false
+    /// Reshuffles when Random is chosen or the list is pull-to-refreshed.
+    @State private var randomSeed = Int.random(in: Int.min...Int.max)
     @State private var model = LibraryListModel<LibraryRowSnapshot>(cacheKey: "albums") { request in
         await AlbumsView.fetchPage(request)
     }
@@ -30,12 +32,22 @@ struct AlbumsView: View {
             &+ downloadCenter.deferredIds.count
     }
 
+    private var reloadKey: LibraryReloadKey {
+        LibraryReloadKey(
+            search: debouncedSearch,
+            sort: sort,
+            isSyncing: librarySync.isSyncing,
+            randomSeed: sort == .random ? randomSeed : 0
+        )
+    }
+
     var body: some View {
         Group {
             if let columns = settings.libraryDisplayType.gridColumnCount {
                 AlbumsGridView(
                     albums: gridAlbums,
                     columnCount: columns,
+                    showsText: settings.libraryDisplayType.showsGridText,
                     contextMenu: albumSwiftUIContextMenu(for:)
                 )
             } else {
@@ -78,11 +90,14 @@ struct AlbumsView: View {
             }
         }
         .perfAppear("Albums", details: "rows=\(model.rowCount) display=\(settings.libraryDisplayType.rawValue)")
-        .task(id: LibraryReloadKey(search: debouncedSearch, sort: sort, isSyncing: librarySync.isSyncing)) {
-            await model.load(search: debouncedSearch, sort: sort)
+        .task(id: reloadKey) {
+            await model.load(search: debouncedSearch, sort: sort, randomSeed: randomSeed)
         }
         .refreshable {
-            await model.load(search: debouncedSearch, sort: sort)
+            if sort == .random {
+                randomSeed = Int.random(in: Int.min...Int.max)
+            }
+            await model.load(search: debouncedSearch, sort: sort, randomSeed: randomSeed)
         }
     }
 
@@ -301,10 +316,10 @@ struct AlbumsView: View {
                 let albums = try LibraryFetch.rows(
                     context,
                     sortBy: sortDescriptors(for: request.sort),
-                    limit: request.limit,
+                    limit: request.sort == .random ? nil : request.limit,
                     matching: predicate(for: request)
                 )
-                let snapshots = albums.map { album -> LibraryRowSnapshot in
+                var snapshots = albums.map { album -> LibraryRowSnapshot in
                     let songs = album.songs
                     let songIds = songs.map(\.remoteId)
                     let downloadedIds = Set(songs.compactMap { song -> String? in
@@ -327,6 +342,12 @@ struct AlbumsView: View {
                         trackTotal: max(album.trackCount, songs.count)
                     )
                 }
+                if request.sort == .random {
+                    let seed = request.randomSeed
+                    snapshots.sort {
+                        stableHash($0.id, seed: seed) < stableHash($1.id, seed: seed)
+                    }
+                }
                 return LibraryListPage(
                     sections: AlphabetSectioning.sections(snapshots, sort: request.sort),
                     count: snapshots.count
@@ -337,12 +358,24 @@ struct AlbumsView: View {
         }
     }
 
+    /// Same seed+id hash Home uses for its Random Albums carousel.
+    private static func stableHash(_ value: String, seed: Int) -> Int {
+        var hasher = Hasher()
+        hasher.combine(seed)
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
     private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Album>] {
         switch sort {
         case .ratingHighest:
             [SortDescriptor(\Album.rating, order: .reverse), SortDescriptor(\Album.sortTitle)]
-        case .titleAZ, .titleZA, .titleSymbolsFirst, .durationLongest, .durationShortest,
+        case .recentlyAdded:
+            // 1-based server newest rank; lower index = newer. Secondary title for ties.
+            [SortDescriptor(\Album.newestIndex), SortDescriptor(\Album.sortTitle)]
+        case .random, .titleAZ, .titleZA, .titleSymbolsFirst, .durationLongest, .durationShortest,
              .playsMost, .smartPlaylistsFirst:
+            // Random reorders in memory after the fetch; any stable store order is fine.
             [SortDescriptor(\Album.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
         }
     }
@@ -352,16 +385,32 @@ struct AlbumsView: View {
     ///
     /// The letter range is bounded to ASCII because `sortTitle` is case-folded, and
     /// anything folding above "z" sections as "?" and renders with the symbols.
+    ///
+    /// Recently Added only includes albums the server ranked into `newestIndex` (> 0).
     private static func predicate(for request: LibraryFetchRequest) -> Predicate<Album>? {
+        let recentlyAddedOnly = request.sort == .recentlyAdded
+        let search = request.search
+
         if request.isHeadPass {
-            guard request.sort.isAlphabetical else { return nil }
+            guard request.sort.isAlphabetical else {
+                return recentlyAddedOnly ? #Predicate<Album> { $0.newestIndex > 0 } : nil
+            }
             if request.sort.showsSymbolsFirst {
                 return #Predicate<Album> { $0.sortTitle < "a" }
             }
             return #Predicate<Album> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
         }
-        let search = request.search
-        guard !search.isEmpty else { return nil }
+
+        if search.isEmpty {
+            return recentlyAddedOnly ? #Predicate<Album> { $0.newestIndex > 0 } : nil
+        }
+        if recentlyAddedOnly {
+            return #Predicate<Album> { album in
+                album.newestIndex > 0
+                    && (album.title.localizedStandardContains(search)
+                        || album.artistName?.localizedStandardContains(search) == true)
+            }
+        }
         return #Predicate<Album> { album in
             album.title.localizedStandardContains(search)
                 || album.artistName?.localizedStandardContains(search) == true

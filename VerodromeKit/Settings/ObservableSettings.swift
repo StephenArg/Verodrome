@@ -54,7 +54,10 @@ public final class ObservableSettings {
 
     public func updateAccount(_ transform: (inout AccountSettings) -> Void) {
         guard let activeAccountKey else { return }
-        var copy = account
+        // Re-read before mutating: fields written straight to the store by other code
+        // (the accent color, for one) are absent from this cached copy, and writing the
+        // cache back would erase them.
+        var copy = store.loadAccountSettings(for: activeAccountKey)
         transform(&copy)
         account = copy
         store.saveAccountSettings(copy, for: activeAccountKey)

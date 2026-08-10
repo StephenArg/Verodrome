@@ -13,9 +13,13 @@ struct DownloadStatusIcon: View {
     /// Shows a hollow arrow when nothing is downloaded, for controls that must stay
     /// tappable. The player leaves this off so the row is empty until it has news.
     var showsIdleAffordance: Bool = false
-    /// Explicit color so row glyphs keep the app accent when a parent view rebinds
-    /// `.tint` to an artwork fill (album / playlist navigation chrome).
-    var tint: Color = Color.accentColor
+    /// Optional override. Defaults to the account theme accent so glyphs stay correct
+    /// when a parent view rebinds `.tint` to an artwork fill (album / playlist chrome).
+    var tint: Color? = nil
+
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    private var resolvedTint: Color { tint ?? themeManager.accentColor }
 
     /// Cached (prefetch) glyphs use the same accent hue at reduced intensity so they
     /// stay visible without matching a keep-forever download.
@@ -31,29 +35,29 @@ struct DownloadStatusIcon: View {
         Group {
             switch status {
             case .pending:
-                IndeterminateRing(lineWidth: lineWidth, tint: tint)
+                IndeterminateRing(lineWidth: lineWidth, tint: resolvedTint)
             case .waiting:
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: size))
                     .foregroundStyle(waitingTint)
                     .transition(.opacity.combined(with: .scale))
             case .downloading(let progress):
-                ProgressRing(progress: progress, lineWidth: lineWidth, tint: tint)
+                ProgressRing(progress: progress, lineWidth: lineWidth, tint: resolvedTint)
             case .partial:
                 // Outline marks "some tracks", filled marks "all tracks".
                 Image(systemName: "arrow.down.circle")
                     .font(.system(size: size))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(resolvedTint)
                     .transition(.opacity.combined(with: .scale))
             case .cached:
                 Image(systemName: "music.note.square.stack")
                     .font(.system(size: size))
-                    .foregroundStyle(tint.opacity(Self.cachedAccentOpacity))
+                    .foregroundStyle(resolvedTint.opacity(Self.cachedAccentOpacity))
                     .transition(.opacity.combined(with: .scale))
             case .downloaded:
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: size))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(resolvedTint)
                     .transition(.opacity.combined(with: .scale))
             case .failed:
                 Image(systemName: "exclamationmark.circle")

@@ -5,10 +5,13 @@ struct PlayIndicator: View {
     let isPlaying: Bool
     var size: CGFloat = 14
 
+    @EnvironmentObject private var themeManager: ThemeManager
+
     var body: some View {
         Image(systemName: isPlaying ? "waveform" : "play.fill")
             .font(.system(size: size, weight: .semibold))
-            .foregroundStyle(.tint)
+            // Theme accent — not `.tint`, which album/playlist screens rebind to artwork.
+            .foregroundStyle(themeManager.accentColor)
             .symbolEffect(.variableColor.iterative, isActive: isPlaying)
             .accessibilityLabel("Now playing")
     }

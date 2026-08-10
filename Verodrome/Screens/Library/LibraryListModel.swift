@@ -22,6 +22,8 @@ struct LibraryReloadKey: Equatable {
     var downloadedOnly: Bool = false
     /// Bumped by screens that pull from the server before their rows are final.
     var version: Int = 0
+    /// Shuffle seed for `.random` sorts; ignored for other orderings.
+    var randomSeed: Int = 0
 }
 
 /// One fetch pass for a library list.
@@ -32,6 +34,8 @@ struct LibraryFetchRequest: Sendable {
     let headLimit: Int?
     /// Songs list: only rows with a local file.
     var downloadedOnly: Bool = false
+    /// Stable seed for `.random` — head and full passes must share it.
+    var randomSeed: Int = 0
 
     var limit: Int? { headLimit }
 
@@ -118,6 +122,8 @@ final class LibraryListModel<Item: LibraryRow> {
     private(set) var appliedSort: LibrarySortOption = .titleAZ
     /// Matches the download filter of the rows currently on screen (or being fetched).
     private var appliedDownloadedOnly = false
+    /// Shuffle seed for the rows currently on screen (0 unless sort is `.random`).
+    private var appliedRandomSeed = 0
 
     var isSectioned: Bool { appliedSort.isAlphabetical }
 
@@ -139,30 +145,42 @@ final class LibraryListModel<Item: LibraryRow> {
         self.fetch = fetch
     }
 
-    func load(search: String, sort: LibrarySortOption, downloadedOnly: Bool = false) async {
+    func load(
+        search: String,
+        sort: LibrarySortOption,
+        downloadedOnly: Bool = false,
+        randomSeed: Int = 0
+    ) async {
         generation += 1
         let generation = self.generation
+        let seed = sort == .random ? randomSeed : 0
 
-        if !hasRows(for: sort, downloadedOnly: downloadedOnly),
+        if !hasRows(for: sort, downloadedOnly: downloadedOnly, randomSeed: seed),
            let cached: LibraryListPage<Item> = LibrarySectionCache.shared.page(
-            for: cacheKey(for: sort, downloadedOnly: downloadedOnly)
+            for: cacheKey(for: sort, downloadedOnly: downloadedOnly, randomSeed: seed)
            ) {
             sections = cached.sections
             rowCount = cached.count
             appliedSort = sort
             appliedDownloadedOnly = downloadedOnly
+            appliedRandomSeed = seed
             isPartial = false
         }
 
         // Draw the top of the list before reading the whole table. Restricted to an
         // empty search so the head fetch only needs its section-bucket predicate; a
         // filtered list is small enough that the full pass is already quick.
-        if !hasRows(for: sort, downloadedOnly: downloadedOnly), supportsHeadPage, search.isEmpty {
+        // Random skips the head: a capped fetch isn't a prefix of a shuffled list.
+        if !hasRows(for: sort, downloadedOnly: downloadedOnly, randomSeed: seed),
+           supportsHeadPage,
+           sort.supportsHeadPage,
+           search.isEmpty {
             let request = LibraryFetchRequest(
                 search: search,
                 sort: sort,
                 headLimit: Self.headLimit,
-                downloadedOnly: downloadedOnly
+                downloadedOnly: downloadedOnly,
+                randomSeed: seed
             )
             let head = await PerfTrace.measureAsync("LibraryList.head", details: baseCacheKey) {
                 await fetch(request)
@@ -173,6 +191,7 @@ final class LibraryListModel<Item: LibraryRow> {
                 rowCount = head.count
                 appliedSort = sort
                 appliedDownloadedOnly = downloadedOnly
+                appliedRandomSeed = seed
                 isPartial = true
             }
         }
@@ -181,7 +200,8 @@ final class LibraryListModel<Item: LibraryRow> {
             search: search,
             sort: sort,
             headLimit: nil,
-            downloadedOnly: downloadedOnly
+            downloadedOnly: downloadedOnly,
+            randomSeed: seed
         )
         let full = await PerfTrace.measureAsync("LibraryList.full", details: baseCacheKey) {
             await fetch(request)
@@ -191,18 +211,24 @@ final class LibraryListModel<Item: LibraryRow> {
         rowCount = full.count
         appliedSort = sort
         appliedDownloadedOnly = downloadedOnly
+        appliedRandomSeed = seed
         isPartial = false
-        LibrarySectionCache.shared.store(full, for: cacheKey(for: sort, downloadedOnly: downloadedOnly))
+        LibrarySectionCache.shared.store(
+            full,
+            for: cacheKey(for: sort, downloadedOnly: downloadedOnly, randomSeed: seed)
+        )
     }
 
-    private func hasRows(for sort: LibrarySortOption, downloadedOnly: Bool) -> Bool {
-        !sections.isEmpty && appliedSort == sort && appliedDownloadedOnly == downloadedOnly
+    private func hasRows(for sort: LibrarySortOption, downloadedOnly: Bool, randomSeed: Int) -> Bool {
+        !sections.isEmpty
+            && appliedSort == sort
+            && appliedDownloadedOnly == downloadedOnly
+            && appliedRandomSeed == randomSeed
     }
 
-    /// Cached per ordering and download filter, so flipping either never paints the
-    /// previous filter's rows.
-    private func cacheKey(for sort: LibrarySortOption, downloadedOnly: Bool) -> String {
-        "\(baseCacheKey).\(sort.rawValue).dl=\(downloadedOnly)"
+    /// Cached per ordering, download filter, and (for random) shuffle seed.
+    private func cacheKey(for sort: LibrarySortOption, downloadedOnly: Bool, randomSeed: Int) -> String {
+        "\(baseCacheKey).\(sort.rawValue).dl=\(downloadedOnly).seed=\(randomSeed)"
     }
 }
 

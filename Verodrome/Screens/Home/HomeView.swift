@@ -111,7 +111,18 @@ struct HomeView: View {
             ),
             onSelectTile: select,
             onPlayAlbum: playAlbum,
-            onSeeAll: { selectedSectionList = $0 },
+            onSeeAll: { section in
+                // Land on Albums already sorted the same way as this Home carousel.
+                switch section {
+                case .recentlyAdded:
+                    settings.librarySort.albums = .recentlyAdded
+                case .randomAlbums:
+                    settings.librarySort.albums = .random
+                default:
+                    break
+                }
+                selectedSectionList = section
+            },
             onShuffle: shuffleAllSongs,
             onRefresh: {
                 await refreshHomeLists()

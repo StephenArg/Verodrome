@@ -4,6 +4,7 @@ import VerodromeKit
 struct AlbumsGridView<MenuContent: View>: View {
     let albums: [AlbumGridSnapshot]
     var columnCount: Int = 3
+    var showsText: Bool = true
     var contextMenu: ((AlbumGridSnapshot) -> MenuContent)?
 
     private var columns: [GridItem] {
@@ -32,7 +33,8 @@ struct AlbumsGridView<MenuContent: View>: View {
             AlbumGridCell(
                 title: album.title,
                 subtitle: album.subtitle,
-                artworkURL: album.artworkToken
+                artworkURL: album.artworkToken,
+                showsText: showsText
             )
         }
         .buttonStyle(.plain)
@@ -46,9 +48,10 @@ struct AlbumsGridView<MenuContent: View>: View {
 }
 
 extension AlbumsGridView where MenuContent == EmptyView {
-    init(albums: [AlbumGridSnapshot], columnCount: Int = 3) {
+    init(albums: [AlbumGridSnapshot], columnCount: Int = 3, showsText: Bool = true) {
         self.albums = albums
         self.columnCount = columnCount
+        self.showsText = showsText
         self.contextMenu = nil
     }
 }

@@ -93,6 +93,8 @@ struct LibraryRowSnapshot: LibraryRow {
 /// Rows cannot host `NavigationLink`; use `onSelect` and drive navigation from SwiftUI
 /// via `navigationDestination(item:)`.
 struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
+    @EnvironmentObject private var themeManager: ThemeManager
+
     let sections: [LibraryRowSection<Item>]
     var playingId: String?
     /// Set while `sections` holds only the first screenful of a two-phase load.
@@ -146,6 +148,11 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         controller.makeContextMenu = makeContextMenu
         controller.onScroll = onScroll
         controller.downloadRevision = downloadRevision
+        // Concrete UIColor + generation from ThemeManager — never derive accent from
+        // `Color.hexString` (unstable for dynamic colors) or `ThemeManager.shared?`
+        // falling back to system blue mid-update.
+        controller.accentUIColor = themeManager.accentUIColor
+        controller.accentRevision = themeManager.accentGeneration
         controller.setHeader(header)
         controller.apply(
             sections: sections,
@@ -162,6 +169,10 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     var makeContextMenu: ((Item) -> UIMenu?)?
     var onScroll: ((CGFloat) -> Void)?
     var downloadRevision = 0
+    /// Bumps when `ThemeManager.accentGeneration` changes.
+    var accentRevision = 0
+    /// Concrete sRGB accent pushed from SwiftUI — cells must not re-resolve tint themselves.
+    var accentUIColor: UIColor = ThemeManager.shared?.accentUIColor ?? UIColor(red: 0.25, green: 0.42, blue: 0.98, alpha: 1)
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var sections: [LibraryRowSection<Item>] = []
@@ -171,6 +182,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private var flatItems: [Item] = []
     private var appliedFingerprint = ""
     private var appliedDownloadRevision = 0
+    private var appliedAccentRevision = 0
     private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
     private var headerHost: UIHostingController<AnyView>?
     private var headerWidth: CGFloat = 0
@@ -186,6 +198,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         tableView.register(EntityTableCell.self, forCellReuseIdentifier: EntityTableCell.reuseID)
         tableView.sectionIndexColor = .secondaryLabel
         tableView.sectionIndexBackgroundColor = .clear
+        tableView.tintColor = accentUIColor
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -294,11 +307,13 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         if fingerprint != appliedFingerprint {
             appliedFingerprint = fingerprint
             appliedDownloadRevision = downloadRevision
+            appliedAccentRevision = accentRevision
             self.sections = sections
             flatItems = sections.flatMap(\.items)
             // Padding is reserved per section even where the header itself is empty, so
             // it has to come off with the headers or short lists get unexplained gaps.
             tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
+            tableView.tintColor = accentUIColor
             cancelAllPrefetchTasks()
             tableView.reloadData()
             return
@@ -308,7 +323,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         // (single-letter head that turns out to be the whole library).
         if partialChanged {
             appliedDownloadRevision = downloadRevision
+            appliedAccentRevision = accentRevision
             tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
+            tableView.tintColor = accentUIColor
             tableView.reloadData()
             return
         }
@@ -316,7 +333,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             for case let cell as EntityTableCell in tableView.visibleCells {
                 guard let indexPath = tableView.indexPath(for: cell),
                       let item = item(at: indexPath) else { continue }
-                cell.setPlaying(isPlaying(item))
+                cell.setPlaying(isPlaying(item), accent: accentUIColor)
             }
         }
         if appliedDownloadRevision != downloadRevision {
@@ -324,7 +341,28 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             for case let cell as EntityTableCell in tableView.visibleCells {
                 guard let indexPath = tableView.indexPath(for: cell),
                       let item = item(at: indexPath) else { continue }
-                cell.setDownloadStatus(Self.downloadStatus(for: item))
+                cell.setDownloadStatus(Self.downloadStatus(for: item), accent: accentUIColor)
+            }
+        }
+        if appliedAccentRevision != accentRevision {
+            appliedAccentRevision = accentRevision
+            tableView.tintColor = accentUIColor
+            // Stars bake accent into attributed text; download / playing glyphs keep
+            // their own tint — reconfigure so a ColorPicker change updates on-screen rows.
+            for case let cell as EntityTableCell in tableView.visibleCells {
+                guard let indexPath = tableView.indexPath(for: cell),
+                      let item = item(at: indexPath) else { continue }
+                cell.configure(
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    trailingText: item.trailingText,
+                    trailingRating: item.trailingRating,
+                    artworkToken: item.artworkToken,
+                    symbol: item.symbol,
+                    isPlaying: isPlaying(item),
+                    downloadStatus: Self.downloadStatus(for: item),
+                    accent: accentUIColor
+                )
             }
         }
     }
@@ -422,7 +460,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             artworkToken: item.artworkToken,
             symbol: item.symbol,
             isPlaying: isPlaying(item),
-            downloadStatus: Self.downloadStatus(for: item)
+            downloadStatus: Self.downloadStatus(for: item),
+            accent: accentUIColor
         )
         return cell
     }
@@ -540,7 +579,6 @@ final class EntityTableCell: UITableViewCell {
         trailingLabel.textColor = .secondaryLabel
         trailingLabel.setContentHuggingPriority(.required, for: .horizontal)
         trailingLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        playingView.tintColor = .tintColor
         playingView.isHidden = true
         playingView.contentMode = .scaleAspectFit
         playingView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
@@ -635,10 +673,9 @@ final class EntityTableCell: UITableViewCell {
 
     /// Filled stars use the theme accent so they stay consistent even when a parent
     /// screen rebinds the navigation tint to artwork colors.
-    private func ratingStars(_ rating: Int) -> NSAttributedString {
+    private func ratingStars(_ rating: Int, accent: UIColor) -> NSAttributedString {
         let filled = max(0, min(5, rating))
         let font = trailingLabel.font ?? .preferredFont(forTextStyle: .subheadline)
-        let accent = ThemeManager.shared?.accentUIColor ?? .tintColor
         let stars = NSMutableAttributedString(
             string: String(repeating: "★", count: filled),
             attributes: [.font: font, .foregroundColor: accent]
@@ -655,8 +692,8 @@ final class EntityTableCell: UITableViewCell {
         cancelArtworkLoad()
         artworkToken = nil
         artworkView.image = nil
-        setPlaying(false)
-        setDownloadStatus(.none)
+        setPlaying(false, accent: playingView.tintColor ?? .label)
+        setDownloadStatus(.none, accent: .clear)
         trailingLabel.attributedText = nil
         trailingLabel.isHidden = false
     }
@@ -669,12 +706,13 @@ final class EntityTableCell: UITableViewCell {
         artworkToken: String?,
         symbol: String,
         isPlaying: Bool,
-        downloadStatus: DownloadStatus = .none
+        downloadStatus: DownloadStatus = .none,
+        accent: UIColor
     ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
         if let trailingRating {
-            trailingLabel.attributedText = ratingStars(trailingRating)
+            trailingLabel.attributedText = ratingStars(trailingRating, accent: accent)
             trailingLabel.isHidden = false
         } else {
             // Assigning `text` after `attributedText` leaves the old attributes behind on
@@ -683,8 +721,8 @@ final class EntityTableCell: UITableViewCell {
             trailingLabel.text = trailingText
             trailingLabel.isHidden = trailingText == nil
         }
-        setPlaying(isPlaying)
-        setDownloadStatus(downloadStatus)
+        setPlaying(isPlaying, accent: accent)
+        setDownloadStatus(downloadStatus, accent: accent)
         let tokenChanged = self.artworkToken != artworkToken
         if tokenChanged {
             cancelArtworkLoad()
@@ -708,7 +746,7 @@ final class EntityTableCell: UITableViewCell {
         }
     }
 
-    func setDownloadStatus(_ status: DownloadStatus) {
+    func setDownloadStatus(_ status: DownloadStatus, accent: UIColor) {
         // Hide the whole accessory when idle so UIStackView collapses it — matching
         // EntityRow / the player, where the subtitle sits flush under the title.
         if status == .none {
@@ -726,6 +764,7 @@ final class EntityTableCell: UITableViewCell {
         case .pending, .downloading:
             downloadView.isHidden = true
             downloadView.image = nil
+            downloadSpinner.color = accent
             downloadSpinner.startAnimating()
         case .waiting:
             downloadSpinner.stopAnimating()
@@ -736,20 +775,20 @@ final class EntityTableCell: UITableViewCell {
         case .partial:
             downloadSpinner.stopAnimating()
             downloadView.isHidden = false
-            downloadView.tintColor = .tintColor
+            downloadView.tintColor = accent
             downloadView.image = UIImage(systemName: "arrow.down.circle")
             downloadView.accessibilityLabel = "Partially downloaded"
         case .cached:
             downloadSpinner.stopAnimating()
             downloadView.isHidden = false
             // Same accent hue as downloaded, dialed back so prefetch reads softer.
-            downloadView.tintColor = .tintColor.withAlphaComponent(0.6)
+            downloadView.tintColor = accent.withAlphaComponent(0.6)
             downloadView.image = UIImage(systemName: "music.note.square.stack")
             downloadView.accessibilityLabel = "Cached"
         case .downloaded:
             downloadSpinner.stopAnimating()
             downloadView.isHidden = false
-            downloadView.tintColor = .tintColor
+            downloadView.tintColor = accent
             downloadView.image = UIImage(systemName: "arrow.down.circle.fill")
             downloadView.accessibilityLabel = "Downloaded"
         case .failed:
@@ -761,7 +800,8 @@ final class EntityTableCell: UITableViewCell {
         }
     }
 
-    func setPlaying(_ isPlaying: Bool) {
+    func setPlaying(_ isPlaying: Bool, accent: UIColor) {
+        playingView.tintColor = accent
         // Re-adding the effect on every reconfigure restarts the animation, so
         // only touch it when the state actually flips.
         guard playingView.isHidden == isPlaying else { return }

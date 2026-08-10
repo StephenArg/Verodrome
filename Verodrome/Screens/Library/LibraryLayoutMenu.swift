@@ -10,12 +10,10 @@ struct LibraryLayoutMenu: View {
     var body: some View {
         Menu {
             Picker("Layout", selection: $selection) {
-                Label(LibraryDisplayType.grid3.displayName, systemImage: LibraryDisplayType.grid3.systemImage)
-                    .tag(LibraryDisplayType.grid3)
-                Label(LibraryDisplayType.grid2.displayName, systemImage: LibraryDisplayType.grid2.systemImage)
-                    .tag(LibraryDisplayType.grid2)
-                Label(LibraryDisplayType.list.displayName, systemImage: LibraryDisplayType.list.systemImage)
-                    .tag(LibraryDisplayType.list)
+                ForEach(LibraryDisplayType.allCases, id: \.self) { type in
+                    Label(type.displayName, systemImage: type.systemImage)
+                        .tag(type)
+                }
             }
         } label: {
             Label("Layout", systemImage: "square.grid.2x2")
