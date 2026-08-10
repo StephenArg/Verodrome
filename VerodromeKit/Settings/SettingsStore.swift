@@ -27,7 +27,6 @@ public final class SettingsStore: ObservableObject {
     @Published public var librarySort: LibrarySortSelection = .default
     /// Songs list only: when on, the list shows tracks that have a local file.
     @Published public var songsDownloadedOnly: Bool = false
-    @Published public var playerDisplayStyle: PlayerDisplayStyle = .standard
     @Published public var showMiniLyrics: Bool = true
     /// Whether the full-screen player shows lyrics in place of the artwork.
     @Published public var showLyricsInPlayer: Bool = false
@@ -41,12 +40,18 @@ public final class SettingsStore: ObservableObject {
     @Published public var smartQueuePrefetchEnabled: Bool = true
     @Published public var smartQueueStaleHours: Int = 18
     @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
+    @Published public var gaplessPlaybackEnabled: Bool = true
+    @Published public var crossfadeEnabled: Bool = false
+    @Published public var crossfadeDurationSeconds: Double = 3
+    @Published public var replayGainEnabled: Bool = false
+    @Published public var scrobbleTiming: ScrobbleTiming = .default
     @Published public var offlineModeEnabled: Bool = false
     @Published public var artworkDownloadSetting: ArtworkDownloadSetting = .always
     /// When pinned downloads may transfer. Queue prefetch is never held by this.
     @Published public var automaticDownloadNetwork: AutomaticDownloadNetwork = .wifiOnly
     @Published public var swipeLeftAction: String = "queue"
     @Published public var swipeRightAction: String = "download"
+    @Published public var hapticsEnabled: Bool = true
     @Published public var developerWindowSizes: Bool = false
     @Published public var enabledHomeSections: [HomeSection] = HomeSection.allCases
     @Published public var enabledRootTabs: [RootTabItem] = RootTabItem.defaultVisible
@@ -58,7 +63,6 @@ public final class SettingsStore: ObservableObject {
         var libraryDisplayType: LibraryDisplayType
         var librarySort: LibrarySortSelection
         var songsDownloadedOnly: Bool
-        var playerDisplayStyle: PlayerDisplayStyle
         var showMiniLyrics: Bool
         var showLyricsInPlayer: Bool
         var changingColorsInPlayer: Bool
@@ -70,11 +74,17 @@ public final class SettingsStore: ObservableObject {
         var smartQueuePrefetchEnabled: Bool
         var smartQueueStaleHours: Int
         var cacheLimitBytes: Int64
+        var gaplessPlaybackEnabled: Bool
+        var crossfadeEnabled: Bool
+        var crossfadeDurationSeconds: Double
+        var replayGainEnabled: Bool
+        var scrobbleTiming: ScrobbleTiming
         var offlineModeEnabled: Bool
         var artworkDownloadSetting: ArtworkDownloadSetting
         var automaticDownloadNetwork: AutomaticDownloadNetwork
         var swipeLeftAction: String
         var swipeRightAction: String
+        var hapticsEnabled: Bool
         var developerWindowSizes: Bool
         var enabledHomeSections: [HomeSection]
         var enabledRootTabs: [RootTabItem]
@@ -86,7 +96,6 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType: LibraryDisplayType,
             librarySort: LibrarySortSelection,
             songsDownloadedOnly: Bool,
-            playerDisplayStyle: PlayerDisplayStyle,
             showMiniLyrics: Bool,
             showLyricsInPlayer: Bool,
             changingColorsInPlayer: Bool,
@@ -98,11 +107,17 @@ public final class SettingsStore: ObservableObject {
             smartQueuePrefetchEnabled: Bool,
             smartQueueStaleHours: Int,
             cacheLimitBytes: Int64,
+            gaplessPlaybackEnabled: Bool,
+            crossfadeEnabled: Bool,
+            crossfadeDurationSeconds: Double,
+            replayGainEnabled: Bool,
+            scrobbleTiming: ScrobbleTiming,
             offlineModeEnabled: Bool,
             artworkDownloadSetting: ArtworkDownloadSetting,
             automaticDownloadNetwork: AutomaticDownloadNetwork,
             swipeLeftAction: String,
             swipeRightAction: String,
+            hapticsEnabled: Bool,
             developerWindowSizes: Bool,
             enabledHomeSections: [HomeSection],
             enabledRootTabs: [RootTabItem],
@@ -113,7 +128,6 @@ public final class SettingsStore: ObservableObject {
             self.libraryDisplayType = libraryDisplayType
             self.librarySort = librarySort
             self.songsDownloadedOnly = songsDownloadedOnly
-            self.playerDisplayStyle = playerDisplayStyle
             self.showMiniLyrics = showMiniLyrics
             self.showLyricsInPlayer = showLyricsInPlayer
             self.changingColorsInPlayer = changingColorsInPlayer
@@ -125,11 +139,17 @@ public final class SettingsStore: ObservableObject {
             self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
             self.smartQueueStaleHours = smartQueueStaleHours
             self.cacheLimitBytes = cacheLimitBytes
+            self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+            self.crossfadeEnabled = crossfadeEnabled
+            self.crossfadeDurationSeconds = crossfadeDurationSeconds
+            self.replayGainEnabled = replayGainEnabled
+            self.scrobbleTiming = scrobbleTiming
             self.offlineModeEnabled = offlineModeEnabled
             self.artworkDownloadSetting = artworkDownloadSetting
             self.automaticDownloadNetwork = automaticDownloadNetwork
             self.swipeLeftAction = swipeLeftAction
             self.swipeRightAction = swipeRightAction
+            self.hapticsEnabled = hapticsEnabled
             self.developerWindowSizes = developerWindowSizes
             self.enabledHomeSections = enabledHomeSections
             self.enabledRootTabs = enabledRootTabs
@@ -142,7 +162,6 @@ public final class SettingsStore: ObservableObject {
             case libraryDisplayType
             case librarySort
             case songsDownloadedOnly
-            case playerDisplayStyle
             case showMiniLyrics
             case showLyricsInPlayer
             case changingColorsInPlayer
@@ -154,11 +173,17 @@ public final class SettingsStore: ObservableObject {
             case smartQueuePrefetchEnabled
             case smartQueueStaleHours
             case cacheLimitBytes
+            case gaplessPlaybackEnabled
+            case crossfadeEnabled
+            case crossfadeDurationSeconds
+            case replayGainEnabled
+            case scrobbleTiming
             case offlineModeEnabled
             case artworkDownloadSetting
             case automaticDownloadNetwork
             case swipeLeftAction
             case swipeRightAction
+            case hapticsEnabled
             case developerWindowSizes
             case enabledHomeSections
             case enabledRootTabs
@@ -173,7 +198,6 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType = try c.decode(LibraryDisplayType.self, forKey: .libraryDisplayType)
             librarySort = try c.decodeIfPresent(LibrarySortSelection.self, forKey: .librarySort) ?? .default
             songsDownloadedOnly = try c.decodeIfPresent(Bool.self, forKey: .songsDownloadedOnly) ?? false
-            playerDisplayStyle = try c.decode(PlayerDisplayStyle.self, forKey: .playerDisplayStyle)
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
             showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
             changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
@@ -187,6 +211,11 @@ public final class SettingsStore: ObservableObject {
             smartQueuePrefetchEnabled = try c.decode(Bool.self, forKey: .smartQueuePrefetchEnabled)
             smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
             cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
+            gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
+            crossfadeEnabled = try c.decodeIfPresent(Bool.self, forKey: .crossfadeEnabled) ?? false
+            crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
+            replayGainEnabled = try c.decodeIfPresent(Bool.self, forKey: .replayGainEnabled) ?? false
+            scrobbleTiming = try c.decodeIfPresent(ScrobbleTiming.self, forKey: .scrobbleTiming) ?? .default
             offlineModeEnabled = try c.decode(Bool.self, forKey: .offlineModeEnabled)
             artworkDownloadSetting = try c.decode(ArtworkDownloadSetting.self, forKey: .artworkDownloadSetting)
             automaticDownloadNetwork = try c.decodeIfPresent(
@@ -195,6 +224,7 @@ public final class SettingsStore: ObservableObject {
             ) ?? .wifiOnly
             swipeLeftAction = try c.decode(String.self, forKey: .swipeLeftAction)
             swipeRightAction = try c.decode(String.self, forKey: .swipeRightAction)
+            hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
             developerWindowSizes = try c.decode(Bool.self, forKey: .developerWindowSizes)
             enabledHomeSections = try c.decode([HomeSection].self, forKey: .enabledHomeSections)
             enabledRootTabs = RootTabItem.normalized(
@@ -213,7 +243,6 @@ public final class SettingsStore: ObservableObject {
             try c.encode(libraryDisplayType, forKey: .libraryDisplayType)
             try c.encode(librarySort, forKey: .librarySort)
             try c.encode(songsDownloadedOnly, forKey: .songsDownloadedOnly)
-            try c.encode(playerDisplayStyle, forKey: .playerDisplayStyle)
             try c.encode(showMiniLyrics, forKey: .showMiniLyrics)
             try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
             try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
@@ -225,11 +254,17 @@ public final class SettingsStore: ObservableObject {
             try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
             try c.encode(smartQueueStaleHours, forKey: .smartQueueStaleHours)
             try c.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
+            try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
+            try c.encode(crossfadeEnabled, forKey: .crossfadeEnabled)
+            try c.encode(crossfadeDurationSeconds, forKey: .crossfadeDurationSeconds)
+            try c.encode(replayGainEnabled, forKey: .replayGainEnabled)
+            try c.encode(scrobbleTiming, forKey: .scrobbleTiming)
             try c.encode(offlineModeEnabled, forKey: .offlineModeEnabled)
             try c.encode(artworkDownloadSetting, forKey: .artworkDownloadSetting)
             try c.encode(automaticDownloadNetwork, forKey: .automaticDownloadNetwork)
             try c.encode(swipeLeftAction, forKey: .swipeLeftAction)
             try c.encode(swipeRightAction, forKey: .swipeRightAction)
+            try c.encode(hapticsEnabled, forKey: .hapticsEnabled)
             try c.encode(developerWindowSizes, forKey: .developerWindowSizes)
             try c.encode(enabledHomeSections, forKey: .enabledHomeSections)
             try c.encode(enabledRootTabs, forKey: .enabledRootTabs)
@@ -263,7 +298,6 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType: libraryDisplayType,
             librarySort: librarySort,
             songsDownloadedOnly: songsDownloadedOnly,
-            playerDisplayStyle: playerDisplayStyle,
             showMiniLyrics: showMiniLyrics,
             showLyricsInPlayer: showLyricsInPlayer,
             changingColorsInPlayer: changingColorsInPlayer,
@@ -275,11 +309,17 @@ public final class SettingsStore: ObservableObject {
             smartQueuePrefetchEnabled: smartQueuePrefetchEnabled,
             smartQueueStaleHours: smartQueueStaleHours,
             cacheLimitBytes: cacheLimitBytes,
+            gaplessPlaybackEnabled: gaplessPlaybackEnabled,
+            crossfadeEnabled: crossfadeEnabled,
+            crossfadeDurationSeconds: crossfadeDurationSeconds,
+            replayGainEnabled: replayGainEnabled,
+            scrobbleTiming: scrobbleTiming,
             offlineModeEnabled: offlineModeEnabled,
             artworkDownloadSetting: artworkDownloadSetting,
             automaticDownloadNetwork: automaticDownloadNetwork,
             swipeLeftAction: swipeLeftAction,
             swipeRightAction: swipeRightAction,
+            hapticsEnabled: hapticsEnabled,
             developerWindowSizes: developerWindowSizes,
             enabledHomeSections: enabledHomeSections,
             enabledRootTabs: RootTabItem.normalized(enabledRootTabs),
@@ -314,13 +354,17 @@ public final class SettingsStore: ObservableObject {
         user.streamingQualityWifi = streamingQualityWifi
         user.streamingQualityCellular = streamingQualityCellular
         user.downloadTranscodeQuality = downloadTranscodeQuality
-        user.playerDisplayStyle = playerDisplayStyle
+        user.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+        user.crossfadeEnabled = crossfadeEnabled
+        user.crossfadeDurationSeconds = crossfadeDurationSeconds
+        user.replayGainEnabled = replayGainEnabled
+        user.scrobbleTiming = scrobbleTiming
+        user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
-        user.appearanceMode = appearanceMode(from: themePreference)
         return user
     }
 
@@ -333,13 +377,17 @@ public final class SettingsStore: ObservableObject {
         streamingQualityWifi = settings.streamingQualityWifi
         streamingQualityCellular = settings.streamingQualityCellular
         downloadTranscodeQuality = settings.downloadTranscodeQuality
-        playerDisplayStyle = settings.playerDisplayStyle
+        gaplessPlaybackEnabled = settings.gaplessPlaybackEnabled
+        crossfadeEnabled = settings.crossfadeEnabled
+        crossfadeDurationSeconds = settings.crossfadeDurationSeconds
+        replayGainEnabled = settings.replayGainEnabled
+        scrobbleTiming = settings.scrobbleTiming
+        hapticsEnabled = settings.hapticsEnabled
         showMiniLyrics = settings.showLyricsWhenAvailable
         showLyricsInPlayer = settings.showLyricsInPlayer
         changingColorsInPlayer = settings.changingColorsInPlayer
         showRatingStars = settings.showRatingStars
         showSongInfo = settings.showSongInfo
-        themePreference = themePreference(from: settings.appearanceMode)
         save()
     }
 
@@ -351,9 +399,6 @@ public final class SettingsStore: ObservableObject {
         save(key: accountSettingsKey(for: accountKey), value: settings)
         artworkDownloadSetting = settings.artworkDownloadSetting
         enabledHomeSections = settings.homeSections
-        if let first = settings.libraryDisplayTypesInUse.first {
-            libraryDisplayType = first
-        }
     }
 
     public func removeAccountSettings(for accountKey: AccountInfo.Key) {
@@ -373,7 +418,6 @@ public final class SettingsStore: ObservableObject {
             libraryDisplayType = snapshot.libraryDisplayType
             librarySort = snapshot.librarySort
             songsDownloadedOnly = snapshot.songsDownloadedOnly
-            playerDisplayStyle = snapshot.playerDisplayStyle
             showMiniLyrics = snapshot.showMiniLyrics
             showLyricsInPlayer = snapshot.showLyricsInPlayer
             changingColorsInPlayer = snapshot.changingColorsInPlayer
@@ -385,11 +429,17 @@ public final class SettingsStore: ObservableObject {
             smartQueuePrefetchEnabled = snapshot.smartQueuePrefetchEnabled
             smartQueueStaleHours = snapshot.smartQueueStaleHours
             cacheLimitBytes = snapshot.cacheLimitBytes
+            gaplessPlaybackEnabled = snapshot.gaplessPlaybackEnabled
+            crossfadeEnabled = snapshot.crossfadeEnabled
+            crossfadeDurationSeconds = snapshot.crossfadeDurationSeconds
+            replayGainEnabled = snapshot.replayGainEnabled
+            scrobbleTiming = snapshot.scrobbleTiming
             offlineModeEnabled = snapshot.offlineModeEnabled
             artworkDownloadSetting = snapshot.artworkDownloadSetting
             automaticDownloadNetwork = snapshot.automaticDownloadNetwork
             swipeLeftAction = snapshot.swipeLeftAction
             swipeRightAction = snapshot.swipeRightAction
+            hapticsEnabled = snapshot.hapticsEnabled
             developerWindowSizes = snapshot.developerWindowSizes
             enabledHomeSections = snapshot.enabledHomeSections
             enabledRootTabs = RootTabItem.normalized(snapshot.enabledRootTabs)
@@ -406,13 +456,17 @@ public final class SettingsStore: ObservableObject {
         streamingQualityWifi = user.streamingQualityWifi
         streamingQualityCellular = user.streamingQualityCellular
         downloadTranscodeQuality = user.downloadTranscodeQuality
-        playerDisplayStyle = user.playerDisplayStyle
+        gaplessPlaybackEnabled = user.gaplessPlaybackEnabled
+        crossfadeEnabled = user.crossfadeEnabled
+        crossfadeDurationSeconds = user.crossfadeDurationSeconds
+        replayGainEnabled = user.replayGainEnabled
+        scrobbleTiming = user.scrobbleTiming
+        hapticsEnabled = user.hapticsEnabled
         showMiniLyrics = user.showLyricsWhenAvailable
         showLyricsInPlayer = user.showLyricsInPlayer
         changingColorsInPlayer = user.changingColorsInPlayer
         showRatingStars = user.showRatingStars
         showSongInfo = user.showSongInfo
-        themePreference = themePreference(from: user.appearanceMode)
     }
 
     private func syncTypedStoresFromPublished() {
@@ -428,30 +482,18 @@ public final class SettingsStore: ObservableObject {
         user.streamingQualityWifi = streamingQualityWifi
         user.streamingQualityCellular = streamingQualityCellular
         user.downloadTranscodeQuality = downloadTranscodeQuality
-        user.playerDisplayStyle = playerDisplayStyle
+        user.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+        user.crossfadeEnabled = crossfadeEnabled
+        user.crossfadeDurationSeconds = crossfadeDurationSeconds
+        user.replayGainEnabled = replayGainEnabled
+        user.scrobbleTiming = scrobbleTiming
+        user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
-        user.appearanceMode = appearanceMode(from: themePreference)
         save(key: Keys.userSettings, value: user)
-    }
-
-    private func appearanceMode(from theme: ThemePreference) -> AppearanceMode {
-        switch theme {
-        case .system: .system
-        case .light: .light
-        case .dark: .dark
-        }
-    }
-
-    private func themePreference(from appearance: AppearanceMode) -> ThemePreference {
-        switch appearance {
-        case .system: .system
-        case .light: .light
-        case .dark: .dark
-        }
     }
 
     private func load<T: Codable>(key: String, default defaultValue: T) -> T {

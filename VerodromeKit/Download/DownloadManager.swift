@@ -4,6 +4,8 @@ public actor DownloadManager: DownloadManaging {
     private let urlProvider: any StreamURLProviding
     private let cache: any PlayableFileCaching
     private let maxConcurrent: Int
+    /// Optional override for tests; production looks up the song's `contentType` in the library.
+    private let contentTypeProvider: (@Sendable (String, PlayableRef.Kind) async -> String?)?
     private var isOffline: Bool
     private var pending: [(String, PlayableRef.Kind, CacheReason)] = []
     /// Downloads held back until the network policy allows them. Kept apart from
@@ -26,12 +28,14 @@ public actor DownloadManager: DownloadManaging {
         urlProvider: any StreamURLProviding,
         cache: any PlayableFileCaching,
         maxConcurrent: Int = 4,
-        isOffline: Bool = false
+        isOffline: Bool = false,
+        contentTypeProvider: (@Sendable (String, PlayableRef.Kind) async -> String?)? = nil
     ) {
         self.urlProvider = urlProvider
         self.cache = cache
         self.maxConcurrent = maxConcurrent
         self.isOffline = isOffline
+        self.contentTypeProvider = contentTypeProvider
     }
 
     public func setOffline(_ offline: Bool) async {
@@ -69,7 +73,11 @@ public actor DownloadManager: DownloadManaging {
         force: Bool = false
     ) async {
         if isOffline { return }
-        if cache.fileURL(forPlayableId: playableId, kind: kind) != nil {
+        // Must match `downloadOne`'s storage key: lossy tracks requested as MP3 still
+        // land under `.original`. Checking the setting quality alone re-downloads the
+        // whole keep window on every queue advance.
+        let storedQuality = await storageQuality(for: playableId, kind: kind, reason: reason)
+        if cache.fileURL(forPlayableId: playableId, kind: kind, quality: storedQuality) != nil {
             cache.touchPlayable(id: playableId, kind: kind, reason: reason)
             // The file is already here but the library may not know it — a queue
             // prefetch that later gets pinned, or a cache written before this ran.
@@ -177,9 +185,7 @@ public actor DownloadManager: DownloadManaging {
             await MainActor.run { DownloadCenter.shared.begin(playableId: id) }
         }
         do {
-            let quality = await MainActor.run {
-                SettingsStore.shared.loadUserSettings().downloadTranscodeQuality
-            }
+            let quality = await downloadQuality(for: requestedReason)
             let contentType = await songContentType(for: id, kind: kind)
             let resolved = AudioTranscodeResolver.resolve(quality: quality, contentType: contentType)
             let remote = try await urlProvider.downloadURL(
@@ -199,8 +205,20 @@ public actor DownloadManager: DownloadManaging {
             // Re-read the reason: the user may have asked for this track while the
             // prefetch that started it was still transferring.
             let reason = inFlight[id] ?? requestedReason
-            _ = try cache.storePlayable(id: id, kind: kind, from: tempURL, reason: reason)
-            if let localURL = cache.fileURL(forPlayableId: id, kind: kind) {
+            // Store under the quality that was actually fetched so playback can seek
+            // the matching local file without hitting the live stream again.
+            let storedQuality = AudioTranscodeResolver.storageQuality(
+                requested: quality,
+                contentType: contentType
+            )
+            _ = try cache.storePlayable(
+                id: id,
+                kind: kind,
+                from: tempURL,
+                reason: reason,
+                quality: storedQuality
+            )
+            if let localURL = cache.fileURL(forPlayableId: id, kind: kind, quality: storedQuality) {
                 let extracted = EmbeddedTagExtractor.extract(from: localURL)
                 if let artData = extracted.artworkData {
                     let artId = "embedded-\(id)"
@@ -230,7 +248,33 @@ public actor DownloadManager: DownloadManaging {
         }
     }
 
+    private func downloadQuality(for reason: CacheReason) async -> AudioTranscodeQuality {
+        await MainActor.run {
+            let store = SettingsStore.shared
+            // Queue prefetch should match what playback will ask for, so seeks hit disk.
+            if reason == .queuePrefetch {
+                return NetworkMonitor.shared.isExpensive
+                    ? store.streamingQualityCellular
+                    : store.streamingQualityWifi
+            }
+            return store.downloadTranscodeQuality
+        }
+    }
+
+    private func storageQuality(
+        for id: String,
+        kind: PlayableRef.Kind,
+        reason: CacheReason
+    ) async -> AudioTranscodeQuality {
+        let quality = await downloadQuality(for: reason)
+        let contentType = await songContentType(for: id, kind: kind)
+        return AudioTranscodeResolver.storageQuality(requested: quality, contentType: contentType)
+    }
+
     private func songContentType(for id: String, kind: PlayableRef.Kind) async -> String? {
+        if let contentTypeProvider {
+            return await contentTypeProvider(id, kind)
+        }
         guard kind == .song else { return nil }
         return await MainActor.run {
             guard let repository = VerodromeKit.shared.repository(),
@@ -252,7 +296,11 @@ public actor DownloadManager: DownloadManaging {
     /// prune loops read.
     private func recordCompletion(id: String, kind: PlayableRef.Kind, reason: CacheReason) async {
         guard reason.isUserPinnedReason else { return }
-        guard kind == .song, let fileURL = cache.fileURL(forPlayableId: id, kind: kind) else { return }
+        guard kind == .song else { return }
+        let fileURL = AudioTranscodeQuality.allCases.lazy
+            .compactMap { self.cache.fileURL(forPlayableId: id, kind: kind, quality: $0) }
+            .first
+        guard let fileURL else { return }
         let relPath = "\(kind.rawValue)/\(id)"
         let size = Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         await MainActor.run {

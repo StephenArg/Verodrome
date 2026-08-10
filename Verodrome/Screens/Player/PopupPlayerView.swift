@@ -437,10 +437,8 @@ struct PopupPlayerView: View {
         let quality = networkMonitor.isExpensive
             ? settings.streamingQualityCellular
             : settings.streamingQualityWifi
-        guard AudioTranscodeResolver.resolve(quality: quality, contentType: song.contentType).format != nil else {
-            return nil
-        }
-        return quality
+        let resolved = AudioTranscodeResolver.resolve(quality: quality, contentType: song.contentType)
+        return resolved.format != nil ? quality : nil
     }
 
     /// Library bitrates are stored in kbps (Subsonic/Navidrome). Ampache historically

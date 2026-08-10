@@ -33,6 +33,7 @@ struct HomeEditorView: View {
                     }
                 }
             }
+            .verodromePlainList()
             .navigationTitle("Customize Home")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

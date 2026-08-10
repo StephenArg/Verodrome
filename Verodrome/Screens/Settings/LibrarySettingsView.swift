@@ -28,6 +28,9 @@ struct LibrarySettingsView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+            }
+
+            Section {
                 Button("Resolve Duplicates") {
                     let count = (try? VerodromeKit.shared.resolveDuplicates()) ?? 0
                     duplicateMessage = count == 0 ? "No duplicates found." : "Merged \(count) duplicates."
@@ -35,44 +38,13 @@ struct LibrarySettingsView: View {
                 if let duplicateMessage {
                     Text(duplicateMessage).font(.caption).foregroundStyle(.secondary)
                 }
-            }
-
-            Section {
-                Picker("Download Over", selection: $settings.automaticDownloadNetwork) {
-                    ForEach(AutomaticDownloadNetwork.allCases, id: \.self) { option in
-                        Text(option.label).tag(option)
-                    }
-                }
-                .onChange(of: settings.automaticDownloadNetwork) { _, _ in
-                    settings.save()
-                    Task { await VerodromeKit.shared.downloadNetworkPolicy?.apply() }
-                }
-
-                Picker("Transcode Lossless", selection: $settings.downloadTranscodeQuality) {
-                    ForEach(AudioTranscodeQuality.allCases) { quality in
-                        Text(quality.displayName).tag(quality)
-                    }
-                }
-                .pickerStyle(.navigationLink)
-                .onChange(of: settings.downloadTranscodeQuality) { _, _ in settings.save() }
             } header: {
-                Text("Downloads")
+                Text("Maintenance")
             } footer: {
-                Text("Albums, playlists, and songs wait for Wi-Fi when Only on Wi-Fi is selected. Tap Download Now on a waiting track to start it over cellular. Transcode Lossless applies to new downloads and queue prefetch; existing offline files are not re-fetched.")
-            }
-
-            Section("Library") {
-                NavigationLink { LibraryEditorView() } label: {
-                    Text("Customize Library Categories")
-                }
-            }
-
-            Section("Home") {
-                NavigationLink { HomeEditorView() } label: {
-                    Text("Customize Home Sections")
-                }
+                Text("Merges songs, albums, and artists the server returned more than once.")
             }
         }
+        .verodromePlainList()
         .navigationTitle("Library")
     }
 

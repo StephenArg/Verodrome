@@ -498,7 +498,10 @@ public final class VerodromeKit: ObservableObject {
         let syncer = backendProxy.createLibrarySyncer(ingestor: ingester)
         activeLibrarySyncer = syncer
         activeLibraryIngester = ingester
-        let scrobble = ScrobbleSyncer(uploader: LibrarySyncerScrobbleUploader(syncer: syncer))
+        let scrobble = ScrobbleSyncer(
+            uploader: LibrarySyncerScrobbleUploader(syncer: syncer),
+            timing: { [weak self] in self?.settings.scrobbleTiming ?? .default }
+        )
         scrobble.onScrobble = { playableId in
             LibraryActions.shared.recordPlay(playableId: playableId)
         }

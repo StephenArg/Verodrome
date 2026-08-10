@@ -52,6 +52,7 @@ struct EventLogView: View {
                 }
             }
         }
+        .verodromePlainList()
         .navigationTitle("Event Log")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

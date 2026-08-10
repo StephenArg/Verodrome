@@ -105,11 +105,16 @@ public final class QueueCachePolicyManager {
         Task { await downloader.cancelPending(reason: .queuePrefetch, except: keepPlayableIds) }
 
         for item in keepItems {
-            // Don't download the track that is already streaming — that races the
-            // first buffer and makes play-start feel stuck.
-            if item.id == currentId { continue }
+            // Refresh generation for the whole window (including current). Skipping the
+            // playing track left its generation stale so a later bump (shuffle / replace)
+            // treated it as obsolete and deleted the file under the playhead.
             cache.touchPlayable(id: item.playableId, kind: item.kind, reason: .queuePrefetch)
             cache.setQueueGeneration(id: item.playableId, kind: item.kind, generation: generation)
+            // Don't download the track that is already streaming — that races the
+            // first buffer and makes play-start feel stuck. Enqueue is also a no-op when
+            // the matching quality is already on disk, so advance only fetches IDs that
+            // newly entered the window.
+            if item.id == currentId { continue }
             Task { await downloader.enqueue(playableId: item.playableId, kind: item.kind, reason: .queuePrefetch) }
         }
 

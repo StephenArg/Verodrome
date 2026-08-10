@@ -6,12 +6,6 @@ public enum ThemePreference: String, Codable, CaseIterable, Sendable {
     case dark
 }
 
-public enum AppearanceMode: String, Codable, CaseIterable, Sendable {
-    case system
-    case light
-    case dark
-}
-
 public enum ArtworkDownloadSetting: String, Codable, CaseIterable, Sendable {
     case never
     case wifiOnly
@@ -28,6 +22,49 @@ public enum AutomaticDownloadNetwork: String, Codable, CaseIterable, Sendable {
         switch self {
         case .wifiOnly: "Only on Wi-Fi"
         case .always: "Always"
+        }
+    }
+}
+
+/// How far into a track a play has to get before it is reported to the server.
+///
+/// The threshold is also what marks the play locally, so `never` leaves both the server
+/// and this device's play counts untouched.
+public enum ScrobbleTiming: String, Codable, CaseIterable, Sendable, Identifiable {
+    case never
+    case onStart
+    case quarter
+    /// Half the track or four minutes, whichever comes first (the Last.fm rule).
+    case standard
+    case threeQuarters
+    case onFinish
+
+    public var id: String { rawValue }
+
+    public static let `default`: ScrobbleTiming = .standard
+
+    public var displayName: String {
+        switch self {
+        case .never: "Never"
+        case .onStart: "When Playback Starts"
+        case .quarter: "At 25%"
+        case .standard: "Halfway or 4 Minutes"
+        case .threeQuarters: "At 75%"
+        case .onFinish: "When the Track Ends"
+        }
+    }
+
+    /// Elapsed time at which a play of `duration` qualifies, or `nil` to never report.
+    public func threshold(forDuration duration: TimeInterval) -> TimeInterval? {
+        switch self {
+        case .never: nil
+        case .onStart: 0
+        case .quarter: duration * 0.25
+        // Playback usually advances to the next track before the clock reaches the full
+        // duration, so "the end" has to be a shade early or it would never be reached.
+        case .onFinish: max(0, duration - 1)
+        case .standard: min(duration * 0.5, 4 * 60)
+        case .threeQuarters: duration * 0.75
         }
     }
 }
@@ -241,12 +278,6 @@ public enum LibraryCategory: String, Codable, CaseIterable, Sendable, Identifiab
     }
 }
 
-public enum PlayerDisplayStyle: String, Codable, CaseIterable, Sendable {
-    case compact
-    case standard
-    case expanded
-}
-
 public enum LibraryDisplayType: String, Codable, CaseIterable, Sendable {
     case grid3
     case grid3NoText
@@ -385,6 +416,39 @@ public enum AudioTranscodeQuality: String, Codable, CaseIterable, Sendable, Iden
         case .mp3_320, .mp3_256, .mp3_192: .mp3
         }
     }
+
+    /// On-disk name suffix so original and MP3 variants can coexist in the playable cache.
+    public var cacheFileName: String? {
+        switch self {
+        case .original: nil
+        case .mp3_320: "mp3.320"
+        case .mp3_256: "mp3.256"
+        case .mp3_192: "mp3.192"
+        }
+    }
+
+    public static func from(format: StreamFormat, maxBitrate: Int?) -> AudioTranscodeQuality {
+        guard format == .mp3, let maxBitrate else { return .original }
+        switch maxBitrate {
+        case 320: return .mp3_320
+        case 256: return .mp3_256
+        case 192: return .mp3_192
+        default:
+            if maxBitrate >= 288 { return .mp3_320 }
+            if maxBitrate >= 224 { return .mp3_256 }
+            return .mp3_192
+        }
+    }
+
+    /// Strips a known quality suffix from a cache file name, returning the playable id.
+    public static func playableId(fromCacheFileName name: String) -> String {
+        for quality in allCases where quality != .original {
+            if let suffix = quality.cacheFileName, name.hasSuffix(".\(suffix)") {
+                return String(name.dropLast(suffix.count + 1))
+            }
+        }
+        return name
+    }
 }
 
 /// Decides whether a play/download request should ask the server to transcode.
@@ -396,30 +460,57 @@ public enum AudioTranscodeResolver {
         "audio/x-ape", "audio/x-wavpack",
     ]
 
+    private static let lossyTokens: Set<String> = [
+        "mp3", "mpeg", "mpga", "aac", "mp4", "m4a", "x-m4a", "opus", "x-opus",
+        "ogg", "vorbis", "x-vorbis", "wma", "x-ms-wma",
+        "audio/mpeg", "audio/mp3", "audio/aac", "audio/mp4", "audio/x-m4a",
+        "audio/ogg", "audio/opus", "audio/vorbis",
+    ]
+
     public static func isLossless(contentType: String?) -> Bool {
-        guard let raw = contentType?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return false }
-        let lowered = raw.lowercased()
-        if losslessTokens.contains(lowered) { return true }
-        if let mimeSubtype = lowered.split(separator: "/").last,
-           losslessTokens.contains(String(mimeSubtype)) || losslessTokens.contains("audio/\(mimeSubtype)") {
-            return true
-        }
-        if let ext = lowered.split(separator: ".").last, losslessTokens.contains(String(ext)) {
-            return true
-        }
-        return false
+        matches(contentType, tokens: losslessTokens)
     }
 
-    /// Returns API params only when quality asks for MP3 and the source is lossless.
+    public static func isKnownLossy(contentType: String?) -> Bool {
+        matches(contentType, tokens: lossyTokens)
+    }
+
+    /// Returns API params when the user chose an MP3 quality.
+    ///
+    /// Known lossy sources are left alone so we do not re-encode MP3/AAC/Opus.
+    /// Lossless *and* unknown formats (missing library metadata) request a transcode —
+    /// the server knows the real codec and must not be blocked by a nil local `contentType`.
     public static func resolve(
         quality: AudioTranscodeQuality,
         contentType: String?
     ) -> (maxBitRate: Int?, format: StreamFormat?) {
-        guard quality != .original, isLossless(contentType: contentType) else {
-            return (nil, nil)
-        }
+        guard quality != .original else { return (nil, nil) }
+        if isKnownLossy(contentType: contentType) { return (nil, nil) }
         return (quality.maxBitRate, quality.streamFormat)
+    }
+
+    /// On-disk quality key for a completed transfer. Lossy sources (and `.original`)
+    /// land under `.original`; only an actual MP3 request uses the bitrate suffix.
+    public static func storageQuality(
+        requested: AudioTranscodeQuality,
+        contentType: String?
+    ) -> AudioTranscodeQuality {
+        resolve(quality: requested, contentType: contentType).format == nil ? .original : requested
+    }
+
+    private static func matches(_ contentType: String?, tokens: Set<String>) -> Bool {
+        guard let raw = contentType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return false }
+        let lowered = raw.lowercased()
+        if tokens.contains(lowered) { return true }
+        if let mimeSubtype = lowered.split(separator: "/").last {
+            let subtype = String(mimeSubtype)
+            if tokens.contains(subtype) || tokens.contains("audio/\(subtype)") { return true }
+        }
+        if let ext = lowered.split(separator: ".").last, tokens.contains(String(ext)) {
+            return true
+        }
+        return false
     }
 }
 
@@ -518,42 +609,6 @@ public struct LibrarySortSelection: Codable, Sendable, Equatable {
     }
 
     public static let `default` = LibrarySortSelection()
-}
-
-public enum SortDirection: String, Codable, CaseIterable, Sendable {
-    case ascending
-    case descending
-}
-
-public enum ArtistSortField: String, Codable, CaseIterable, Sendable {
-    case name
-    case recentlyAdded
-    case playCount
-}
-
-public enum AlbumSortField: String, Codable, CaseIterable, Sendable {
-    case title
-    case artist
-    case year
-    case recentlyAdded
-    case playCount
-}
-
-public enum SongSortField: String, Codable, CaseIterable, Sendable {
-    case title
-    case artist
-    case album
-    case track
-    case duration
-    case recentlyAdded
-    case playCount
-    case rating
-}
-
-public enum PlaylistSortField: String, Codable, CaseIterable, Sendable {
-    case name
-    case recentlyModified
-    case songCount
 }
 
 public enum RemoteItemStatus: Int, Codable, CaseIterable, Sendable {

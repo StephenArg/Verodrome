@@ -104,7 +104,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     }
 
     public func isCached(item: QueueItem) -> Bool {
-        item.directStreamURL != nil || cache.fileURL(forPlayableId: item.playableId, kind: item.kind) != nil
+        item.directStreamURL != nil || cache.hasPlayableFile(id: item.playableId, kind: item.kind)
     }
 
     public func configure(
@@ -196,6 +196,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         startPaused: Bool = false
     ) async throws {
         PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
+        let quality = AudioTranscodeQuality.from(format: format, maxBitrate: maxBitrate)
         let url: URL
         var source = "stream"
         var cachedPlayable: (id: String, kind: PlayableRef.Kind)?
@@ -203,16 +204,19 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             url = direct
             source = "direct"
             PlayTrace.mark("URL resolved (direct)", details: url.absoluteString)
-        } else if let local = cache.fileURL(forPlayableId: item.playableId, kind: item.kind) {
-            url = local
-            source = "cache"
-            cachedPlayable = (item.playableId, item.kind)
-            PlayTrace.mark("URL resolved (cache)", details: url.lastPathComponent)
         } else {
-            if isOfflineMode { throw BackendError.network("Offline and track not cached") }
-            PlayTrace.mark("resolving stream URL…")
-            url = try await urlProvider.streamURL(forPlayableId: item.playableId, maxBitrate: maxBitrate, format: format)
-            PlayTrace.mark("URL resolved (stream)", details: url.host ?? url.absoluteString)
+            let local = try await localPlaybackURL(
+                for: item,
+                quality: quality,
+                maxBitrate: maxBitrate,
+                format: format
+            )
+            url = local.url
+            source = local.source
+            if local.fromCache {
+                cachedPlayable = (item.playableId, item.kind)
+            }
+            PlayTrace.mark("URL resolved (\(source))", details: url.lastPathComponent)
         }
         // A queued next URL from the previous track would auto-advance after this one
         // ends (gapless / crossfade). Jumping mid-queue must drop it; otherwise the
@@ -255,14 +259,14 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func preloadNext(item: QueueItem, maxBitrate: Int?, format: StreamFormat) async {
         guard gaplessEnabled || crossfadeSeconds > 0 else { return }
         do {
-            let url: URL
-            if let local = cache.fileURL(forPlayableId: item.playableId, kind: item.kind) {
-                url = local
-            } else if !isOfflineMode {
-                url = try await urlProvider.streamURL(forPlayableId: item.playableId, maxBitrate: maxBitrate, format: format)
-            } else {
-                return
-            }
+            let quality = AudioTranscodeQuality.from(format: format, maxBitrate: maxBitrate)
+            let local = try await localPlaybackURL(
+                for: item,
+                quality: quality,
+                maxBitrate: maxBitrate,
+                format: format
+            )
+            let url = local.url
             guard url != pendingNextURL else { return }
             // Drop whatever was queued before, otherwise a second preload stacks another
             // entry behind the current track and the engine plays the stale one.
@@ -272,6 +276,52 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
                 streamingPlayer.queue(url: url)
             }
         } catch {}
+    }
+
+    /// Prefer a local file (original or matching MP3 variant). When transcoding is on and
+    /// the variant is missing, download it into the cache first so seeks stay local.
+    private func localPlaybackURL(
+        for item: QueueItem,
+        quality: AudioTranscodeQuality,
+        maxBitrate: Int?,
+        format: StreamFormat
+    ) async throws -> (url: URL, source: String, fromCache: Bool) {
+        if let cached = cache.fileURL(forPlayableId: item.playableId, kind: item.kind, quality: quality) {
+            return (cached, "cache", true)
+        }
+        // Offline: fall back to any available original if the requested variant is missing.
+        if isOfflineMode {
+            if quality != .original,
+               let original = cache.fileURL(forPlayableId: item.playableId, kind: item.kind, quality: .original) {
+                return (original, "cache", true)
+            }
+            throw BackendError.network("Offline and track not cached")
+        }
+        if quality == .original {
+            let remote = try await urlProvider.streamURL(
+                forPlayableId: item.playableId,
+                maxBitrate: maxBitrate,
+                format: format
+            )
+            return (remote, "stream", false)
+        }
+        // Transcoded: fetch once into the playable cache, then play the file.
+        PlayTrace.mark("caching transcoded playable…", details: "quality=\(quality.rawValue)")
+        let remote = try await urlProvider.downloadURL(
+            forPlayableId: item.playableId,
+            maxBitrate: maxBitrate,
+            format: format
+        )
+        let tempURL = try await ProgressDownloadSession().download(from: remote) { _ in }
+        let stored = try cache.storePlayable(
+            id: item.playableId,
+            kind: item.kind,
+            from: tempURL,
+            reason: .queuePrefetch,
+            quality: quality
+        )
+        PlayTrace.mark("transcoded playable cached", details: stored.lastPathComponent)
+        return (stored, "cache-transcode", true)
     }
 
     public func pause() {

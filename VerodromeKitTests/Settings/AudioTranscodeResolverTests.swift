@@ -16,7 +16,7 @@ final class AudioTranscodeResolverTests: XCTestCase {
         XCTAssertFalse(AudioTranscodeResolver.isLossless(contentType: ""))
     }
 
-    func testResolveSkipsTranscodeForOriginalOrLossy() {
+    func testResolveSkipsTranscodeForOriginalOrKnownLossy() {
         let original = AudioTranscodeResolver.resolve(quality: .original, contentType: "flac")
         XCTAssertNil(original.maxBitRate)
         XCTAssertNil(original.format)
@@ -25,19 +25,39 @@ final class AudioTranscodeResolverTests: XCTestCase {
         XCTAssertNil(lossy.maxBitRate)
         XCTAssertNil(lossy.format)
 
-        let unknown = AudioTranscodeResolver.resolve(quality: .mp3_256, contentType: nil)
-        XCTAssertNil(unknown.maxBitRate)
-        XCTAssertNil(unknown.format)
+        let mpeg = AudioTranscodeResolver.resolve(quality: .mp3_192, contentType: "audio/mpeg")
+        XCTAssertNil(mpeg.maxBitRate)
+        XCTAssertNil(mpeg.format)
     }
 
-    func testResolveRequestsMp3ForLossless() {
-        let resolved = AudioTranscodeResolver.resolve(quality: .mp3_192, contentType: "flac")
-        XCTAssertEqual(resolved.maxBitRate, 192)
-        XCTAssertEqual(resolved.format, .mp3)
+    func testResolveRequestsMp3ForLosslessOrUnknown() {
+        let flac = AudioTranscodeResolver.resolve(quality: .mp3_192, contentType: "flac")
+        XCTAssertEqual(flac.maxBitRate, 192)
+        XCTAssertEqual(flac.format, .mp3)
 
-        let high = AudioTranscodeResolver.resolve(quality: .mp3_320, contentType: "audio/wav")
-        XCTAssertEqual(high.maxBitRate, 320)
-        XCTAssertEqual(high.format, .mp3)
+        let wav = AudioTranscodeResolver.resolve(quality: .mp3_320, contentType: "audio/wav")
+        XCTAssertEqual(wav.maxBitRate, 320)
+        XCTAssertEqual(wav.format, .mp3)
+
+        let unknown = AudioTranscodeResolver.resolve(quality: .mp3_256, contentType: nil)
+        XCTAssertEqual(unknown.maxBitRate, 256)
+        XCTAssertEqual(unknown.format, .mp3)
+    }
+
+    func testStorageQualityMatchesWhatDownloadManagerWrites() {
+        XCTAssertEqual(
+            AudioTranscodeResolver.storageQuality(requested: .mp3_320, contentType: "mp3"),
+            .original,
+            "known lossy must not look for an .mp3.320 suffix that was never written"
+        )
+        XCTAssertEqual(
+            AudioTranscodeResolver.storageQuality(requested: .mp3_320, contentType: "flac"),
+            .mp3_320
+        )
+        XCTAssertEqual(
+            AudioTranscodeResolver.storageQuality(requested: .original, contentType: "flac"),
+            .original
+        )
     }
 
     func testLegacyStreamFormatPreferenceMigration() {

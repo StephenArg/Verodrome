@@ -42,7 +42,9 @@ public final class ObservableSettings {
     }
 
     public func updateUser(_ transform: (inout UserSettings) -> Void) {
-        var copy = user
+        // Re-read before mutating so values written via SettingsStore published props
+        // (transcode quality, etc.) are not wiped by a stale cached copy.
+        var copy = store.loadUserSettings()
         let previousOfflineMode = copy.isOfflineMode
         transform(&copy)
         user = copy

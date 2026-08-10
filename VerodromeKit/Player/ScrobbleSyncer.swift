@@ -7,6 +7,7 @@ public protocol ScrobbleUploading: AnyObject, Sendable {
 @MainActor
 public final class ScrobbleSyncer {
     private let uploader: any ScrobbleUploading
+    private let timing: @MainActor () -> ScrobbleTiming
     private var pending: [(String, Date, TimeInterval?)] = []
     private var armedItemId: String?
     private var hasScrobbledCurrent = false
@@ -15,7 +16,13 @@ public final class ScrobbleSyncer {
     /// offline listen still counts locally.
     public var onScrobble: (@MainActor (String) -> Void)?
 
-    public init(uploader: any ScrobbleUploading) { self.uploader = uploader }
+    public init(
+        uploader: any ScrobbleUploading,
+        timing: @MainActor @escaping () -> ScrobbleTiming = { .default }
+    ) {
+        self.uploader = uploader
+        self.timing = timing
+    }
 
     public func trackProgress(item: QueueItem?, elapsed: TimeInterval, duration: TimeInterval) {
         guard let item, duration > 0 else { return }
@@ -24,12 +31,13 @@ public final class ScrobbleSyncer {
             hasScrobbledCurrent = false
         }
         guard !hasScrobbledCurrent else { return }
-        if elapsed >= duration * 0.5 || elapsed >= 4 * 60 {
-            hasScrobbledCurrent = true
-            pending.append((item.playableId, Date(), duration))
-            onScrobble?(item.playableId)
-            Task { await flush() }
-        }
+        // Read per-tick rather than per-track: a change mid-track should apply to the
+        // track in progress, and a play already reported stays reported either way.
+        guard let threshold = timing().threshold(forDuration: duration), elapsed >= threshold else { return }
+        hasScrobbledCurrent = true
+        pending.append((item.playableId, Date(), duration))
+        onScrobble?(item.playableId)
+        Task { await flush() }
     }
 
     public func flush() async {

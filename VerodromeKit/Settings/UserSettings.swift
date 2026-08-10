@@ -8,11 +8,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var downloadTranscodeQuality: AudioTranscodeQuality
     public var smartQueuePrefetchEnabled: Bool
     public var queuePrefetchStaleHours: Int
-    public var appearanceMode: AppearanceMode
+    public var scrobbleTiming: ScrobbleTiming
     public var hapticsEnabled: Bool
     public var replayGainEnabled: Bool
     public var equalizerEnabled: Bool
-    public var playerDisplayStyle: PlayerDisplayStyle
     public var crossfadeEnabled: Bool
     public var crossfadeDurationSeconds: Double
     public var gaplessPlaybackEnabled: Bool
@@ -23,8 +22,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var changingColorsInPlayer: Bool
     public var showRatingStars: Bool
     public var showSongInfo: Bool
-    public var allowCellularDownloads: Bool
-    public var confirmBeforeDeletingDownloads: Bool
     public var equalizerBands: [Float]
 
     public init(
@@ -35,11 +32,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
         downloadTranscodeQuality: AudioTranscodeQuality = .original,
         smartQueuePrefetchEnabled: Bool = true,
         queuePrefetchStaleHours: Int = 18,
-        appearanceMode: AppearanceMode = .system,
+        scrobbleTiming: ScrobbleTiming = .default,
         hapticsEnabled: Bool = true,
         replayGainEnabled: Bool = false,
         equalizerEnabled: Bool = false,
-        playerDisplayStyle: PlayerDisplayStyle = .standard,
         crossfadeEnabled: Bool = false,
         crossfadeDurationSeconds: Double = 3,
         gaplessPlaybackEnabled: Bool = true,
@@ -48,8 +44,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         changingColorsInPlayer: Bool = true,
         showRatingStars: Bool = true,
         showSongInfo: Bool = false,
-        allowCellularDownloads: Bool = false,
-        confirmBeforeDeletingDownloads: Bool = true,
         equalizerBands: [Float] = Array(repeating: 0, count: 10)
     ) {
         self.isOfflineMode = isOfflineMode
@@ -59,11 +53,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.downloadTranscodeQuality = downloadTranscodeQuality
         self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         self.queuePrefetchStaleHours = queuePrefetchStaleHours
-        self.appearanceMode = appearanceMode
+        self.scrobbleTiming = scrobbleTiming
         self.hapticsEnabled = hapticsEnabled
         self.replayGainEnabled = replayGainEnabled
         self.equalizerEnabled = equalizerEnabled
-        self.playerDisplayStyle = playerDisplayStyle
         self.crossfadeEnabled = crossfadeEnabled
         self.crossfadeDurationSeconds = crossfadeDurationSeconds
         self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
@@ -72,8 +65,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.changingColorsInPlayer = changingColorsInPlayer
         self.showRatingStars = showRatingStars
         self.showSongInfo = showSongInfo
-        self.allowCellularDownloads = allowCellularDownloads
-        self.confirmBeforeDeletingDownloads = confirmBeforeDeletingDownloads
         self.equalizerBands = equalizerBands
     }
 
@@ -87,11 +78,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case downloadTranscodeQuality
         case smartQueuePrefetchEnabled
         case queuePrefetchStaleHours
-        case appearanceMode
+        case scrobbleTiming
         case hapticsEnabled
         case replayGainEnabled
         case equalizerEnabled
-        case playerDisplayStyle
         case crossfadeEnabled
         case crossfadeDurationSeconds
         case gaplessPlaybackEnabled
@@ -100,8 +90,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case changingColorsInPlayer
         case showRatingStars
         case showSongInfo
-        case allowCellularDownloads
-        case confirmBeforeDeletingDownloads
         case equalizerBands
         // Legacy keys (decode-only)
         case streamingBitrateWifi
@@ -125,11 +113,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
         smartQueuePrefetchEnabled = try c.decodeIfPresent(Bool.self, forKey: .smartQueuePrefetchEnabled) ?? true
         queuePrefetchStaleHours = try c.decodeIfPresent(Int.self, forKey: .queuePrefetchStaleHours) ?? 18
-        appearanceMode = try c.decodeIfPresent(AppearanceMode.self, forKey: .appearanceMode) ?? .system
+        scrobbleTiming = try c.decodeIfPresent(ScrobbleTiming.self, forKey: .scrobbleTiming) ?? .default
         hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         replayGainEnabled = try c.decodeIfPresent(Bool.self, forKey: .replayGainEnabled) ?? false
         equalizerEnabled = try c.decodeIfPresent(Bool.self, forKey: .equalizerEnabled) ?? false
-        playerDisplayStyle = try c.decodeIfPresent(PlayerDisplayStyle.self, forKey: .playerDisplayStyle) ?? .standard
         crossfadeEnabled = try c.decodeIfPresent(Bool.self, forKey: .crossfadeEnabled) ?? false
         crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
         gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
@@ -138,8 +125,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
         showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
         showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
-        allowCellularDownloads = try c.decodeIfPresent(Bool.self, forKey: .allowCellularDownloads) ?? false
-        confirmBeforeDeletingDownloads = try c.decodeIfPresent(Bool.self, forKey: .confirmBeforeDeletingDownloads) ?? true
         equalizerBands = try c.decodeIfPresent([Float].self, forKey: .equalizerBands) ?? Array(repeating: 0, count: 10)
     }
 
@@ -152,11 +137,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
         try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
         try c.encode(queuePrefetchStaleHours, forKey: .queuePrefetchStaleHours)
-        try c.encode(appearanceMode, forKey: .appearanceMode)
+        try c.encode(scrobbleTiming, forKey: .scrobbleTiming)
         try c.encode(hapticsEnabled, forKey: .hapticsEnabled)
         try c.encode(replayGainEnabled, forKey: .replayGainEnabled)
         try c.encode(equalizerEnabled, forKey: .equalizerEnabled)
-        try c.encode(playerDisplayStyle, forKey: .playerDisplayStyle)
         try c.encode(crossfadeEnabled, forKey: .crossfadeEnabled)
         try c.encode(crossfadeDurationSeconds, forKey: .crossfadeDurationSeconds)
         try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
@@ -165,8 +149,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
         try c.encode(showRatingStars, forKey: .showRatingStars)
         try c.encode(showSongInfo, forKey: .showSongInfo)
-        try c.encode(allowCellularDownloads, forKey: .allowCellularDownloads)
-        try c.encode(confirmBeforeDeletingDownloads, forKey: .confirmBeforeDeletingDownloads)
         try c.encode(equalizerBands, forKey: .equalizerBands)
     }
 }

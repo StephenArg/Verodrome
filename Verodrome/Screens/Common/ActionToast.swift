@@ -7,6 +7,7 @@ import VerodromeKit
 @MainActor
 enum ActionToast {
     static func show(_ message: String) {
+        Haptics.impact()
         ActionToastCenter.shared.show(message)
     }
 

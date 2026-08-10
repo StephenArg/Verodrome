@@ -36,6 +36,7 @@ struct LibraryEditorView: View {
                 }
             }
         }
+        .verodromePlainList()
         .environment(\.editMode, .constant(.active))
         .navigationTitle("Customize Library")
         .navigationBarTitleDisplayMode(.inline)

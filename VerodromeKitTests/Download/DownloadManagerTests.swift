@@ -231,4 +231,40 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(provider.started, [], "a cancelled download should not come back on Wi-Fi")
         XCTAssertFalse(DownloadCenter.shared.deferredIds.contains("a"))
     }
+
+    /// Prefetch skip must use the same on-disk key as `downloadOne`. With streaming
+    /// quality set to MP3, known-lossy tracks are stored as `.original` — looking for
+    /// `.mp3.320` would re-download the whole keep window on every advance.
+    func testEnqueueSkipsWhenLossyTrackIsAlreadyCachedAsOriginal() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dl-skip-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let cache = FilePlayableCache(root: root)
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try "mp3bytes".write(to: temp, atomically: true, encoding: .utf8)
+        _ = try cache.storePlayable(
+            id: "lossy",
+            kind: .song,
+            from: temp,
+            reason: .queuePrefetch,
+            quality: .original
+        )
+
+        let previousWifi = SettingsStore.shared.streamingQualityWifi
+        SettingsStore.shared.streamingQualityWifi = .mp3_320
+        defer { SettingsStore.shared.streamingQualityWifi = previousWifi }
+
+        let provider = HeldURLProvider()
+        let manager = DownloadManager(
+            urlProvider: provider,
+            cache: cache,
+            contentTypeProvider: { id, _ in id == "lossy" ? "audio/mpeg" : nil }
+        )
+
+        await manager.enqueue(playableId: "lossy", kind: .song, reason: .queuePrefetch)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(provider.started, [], "already-cached lossy original must not start a transfer")
+    }
 }

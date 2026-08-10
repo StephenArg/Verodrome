@@ -39,6 +39,7 @@ struct TabBarEditorView: View {
                 }
             }
         }
+        .verodromePlainList()
         .environment(\.editMode, .constant(.active))
         .navigationTitle("Tab Bar")
         .navigationBarTitleDisplayMode(.inline)

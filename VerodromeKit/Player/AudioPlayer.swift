@@ -542,14 +542,19 @@ public final class AudioPlayer: ObservableObject {
         await backend.preloadNext(item: next, maxBitrate: bitrate, format: format)
     }
 
-    /// Stream URL params for a queue item: MP3 + bitrate only for lossless when opted in.
+    /// Stream URL params for a queue item from the active network quality setting.
     private func resolvedStreamParams(for item: QueueItem) -> (maxBitRate: Int?, format: StreamFormat) {
-        let user = settings()
+        // Read published settings directly — same source the Settings UI binds to.
+        let store = SettingsStore.shared
         let quality = NetworkMonitor.shared.isExpensive
-            ? user.streamingQualityCellular
-            : user.streamingQualityWifi
+            ? store.streamingQualityCellular
+            : store.streamingQualityWifi
         let contentType = contentType(for: item)
         let resolved = AudioTranscodeResolver.resolve(quality: quality, contentType: contentType)
+        PlayTrace.mark(
+            "transcode resolve",
+            details: "quality=\(quality.rawValue) contentType=\(contentType ?? "nil") → bitrate=\(resolved.maxBitRate.map(String.init) ?? "nil") format=\(resolved.format?.rawValue ?? "original")"
+        )
         return (resolved.maxBitRate, resolved.format ?? .original)
     }
 

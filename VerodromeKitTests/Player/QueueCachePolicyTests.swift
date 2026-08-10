@@ -450,4 +450,49 @@ final class QueueCachePolicyTests: XCTestCase {
         XCTAssertNotNil(secondCancelled)
         XCTAssertEqual(secondCancelled, ["0", "1", "2", "3", "4", "5", "6"])
     }
+
+    /// Advancing must prune only what left the window. The playing track's generation is
+    /// stamped with the rest of the keep set so a later shuffle/replace bump cannot
+    /// treat it as obsolete and delete the file under the playhead.
+    func testAdvancePrunesOnlyOutsideWindowAndStampsCurrentGeneration() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+        for item in items {
+            // Stale generation mimics a file written before the current queue context.
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), 0, false)
+        }
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: { UserSettings(smartQueuePrefetchEnabled: true, queuePrefetchStaleHours: 18) }
+        )
+        policy.reevaluate()
+
+        // Window at 5: keep 3…9; 0…2 outside (0 was never pinned here).
+        for kept in ["3", "4", "5", "6", "7", "8", "9"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"])
+            XCTAssertEqual(
+                cache.files["song::\(kept)"]?.generation,
+                queue.queueGeneration,
+                "\(kept) should carry the current queue generation"
+            )
+        }
+        XCTAssertNil(cache.files["song::1"])
+        XCTAssertNil(cache.files["song::2"])
+
+        _ = queue.advance()
+        XCTAssertEqual(queue.currentItem?.playableId, "6")
+        policy.reevaluate()
+
+        // Window at 6: keep 4…9 (and nothing past 9). Track 3 fell out.
+        XCTAssertNil(cache.files["song::3"])
+        for kept in ["4", "5", "6", "7", "8", "9"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) is still in the keep window")
+        }
+    }
 }

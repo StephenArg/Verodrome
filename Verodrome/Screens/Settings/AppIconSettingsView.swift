@@ -84,6 +84,7 @@ struct AppIconSettingsView: View {
             }
             .padding()
         }
+        .background(Color(.systemBackground))
         .navigationTitle("App Icon")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: syncSelectionFromSystem)

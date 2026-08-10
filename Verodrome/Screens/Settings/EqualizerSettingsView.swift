@@ -12,6 +12,7 @@ struct EqualizerSettingsView: View {
                 }
             }
         }
+        .verodromePlainList()
         .navigationTitle("Equalizer")
     }
 }

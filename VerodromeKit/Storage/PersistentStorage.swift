@@ -30,9 +30,12 @@ public final class PersistentStorage: @unchecked Sendable {
 
     public let container: ModelContainer
     public let backgroundActor: BackgroundModelActor
+    /// On-disk store URL when the library is persisted; `nil` for in-memory test containers.
+    private let storeURL: URL?
 
     public init(inMemory: Bool = false) {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        storeURL = inMemory ? nil : configuration.url
         do {
             container = try Self.makeContainer(configuration: configuration)
         } catch {
@@ -62,18 +65,39 @@ public final class PersistentStorage: @unchecked Sendable {
     /// Removes the SQLite store and related sidecar files so a fresh container can load.
     private static func destroyStoreFiles(at url: URL) {
         let fm = FileManager.default
-        let candidates = [
+        for file in storeFileURLs(for: url) {
+            try? fm.removeItem(at: file)
+        }
+    }
+
+    private static func storeFileURLs(for url: URL) -> [URL] {
+        [
             url,
             url.appendingPathExtension("wal"),
             url.appendingPathExtension("shm"),
             // SwiftData may use "default.store-wal" style names already covered above,
             // plus older Core Data naming.
             URL(fileURLWithPath: url.path + "-wal"),
-            URL(fileURLWithPath: url.path + "-shm")
+            URL(fileURLWithPath: url.path + "-shm"),
         ]
-        for file in candidates {
-            try? fm.removeItem(at: file)
+    }
+
+    /// Bytes used by the local library database (songs, albums, artists, playlists, …).
+    ///
+    /// Includes SQLite sidecars. Returns 0 for in-memory containers.
+    public func libraryStoreByteSize() -> Int64 {
+        guard let storeURL else { return 0 }
+        let fm = FileManager.default
+        var total: Int64 = 0
+        var seen = Set<String>()
+        for file in Self.storeFileURLs(for: storeURL) {
+            let path = file.path
+            guard seen.insert(path).inserted else { continue }
+            guard fm.fileExists(atPath: path) else { continue }
+            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            total += Int64(size)
         }
+        return total
     }
 
     @MainActor

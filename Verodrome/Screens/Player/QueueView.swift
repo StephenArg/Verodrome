@@ -347,7 +347,7 @@ struct QueueView: View {
     private func downloadStatus(for item: QueueItem) -> DownloadStatus? {
         guard item.kind == .song else { return nil }
         let cache = VerodromeKit.shared.playableCache
-        let hasFile = cache?.fileURL(forPlayableId: item.playableId, kind: item.kind) != nil
+        let hasFile = cache?.hasPlayableFile(id: item.playableId, kind: item.kind) == true
         let status = downloadCenter.status(for: item.playableId, isDownloaded: hasFile)
         switch status {
         case .downloaded:

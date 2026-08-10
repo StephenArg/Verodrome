@@ -5,14 +5,14 @@ public final class BackendURLProvider: StreamURLProviding, @unchecked Sendable {
     public init(backend: any BackendApi) { self.backend = backend }
 
     public func streamURL(forPlayableId id: String, maxBitrate: Int?, format: StreamFormat) async throws -> URL {
-        PlayTrace.mark("BackendURLProvider.streamURL", details: "id=\(id) bitrate=\(maxBitrate.map(String.init) ?? "nil")")
+        PlayTrace.mark("BackendURLProvider.streamURL", details: "id=\(id) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format)")
         let ref = PlayableRef(id: id, title: id)
         let resolved: StreamFormat? = format == .original ? nil : format
         guard let url = backend.generateStreamURL(for: ref, maxBitrate: maxBitrate, format: resolved) else {
             PlayTrace.error("generateStreamURL returned nil", details: id)
             throw BackendError.invalidURL
         }
-        PlayTrace.mark("generateStreamURL OK", details: url.host ?? "?")
+        PlayTrace.mark("generateStreamURL OK", details: url.query ?? url.absoluteString)
         return url
     }
 
@@ -82,23 +82,48 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
         lock.withLock { loadMetaLocked() }
     }
 
-    private func key(_ id: String, _ kind: PlayableRef.Kind) -> String { "\(kind.rawValue)::\(id)" }
+    private func key(_ id: String, _ kind: PlayableRef.Kind, quality: AudioTranscodeQuality = .original) -> String {
+        "\(kind.rawValue)::\(fileName(id: id, quality: quality))"
+    }
+
+    private func fileName(id: String, quality: AudioTranscodeQuality) -> String {
+        if let suffix = quality.cacheFileName {
+            return "\(id).\(suffix)"
+        }
+        return id
+    }
 
     public func fileURL(forPlayableId id: String, kind: PlayableRef.Kind) -> URL? {
-        let url = root.appendingPathComponent(kind.rawValue).appendingPathComponent(id)
+        fileURL(forPlayableId: id, kind: kind, quality: .original)
+    }
+
+    public func fileURL(forPlayableId id: String, kind: PlayableRef.Kind, quality: AudioTranscodeQuality) -> URL? {
+        let url = root
+            .appendingPathComponent(kind.rawValue)
+            .appendingPathComponent(fileName(id: id, quality: quality))
         return fm.fileExists(atPath: url.path) ? url : nil
     }
 
     public func storePlayable(id: String, kind: PlayableRef.Kind, from temporaryURL: URL, reason: CacheReason) throws -> URL {
+        try storePlayable(id: id, kind: kind, from: temporaryURL, reason: reason, quality: .original)
+    }
+
+    public func storePlayable(
+        id: String,
+        kind: PlayableRef.Kind,
+        from temporaryURL: URL,
+        reason: CacheReason,
+        quality: AudioTranscodeQuality
+    ) throws -> URL {
         let dir = root.appendingPathComponent(kind.rawValue, isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let dest = dir.appendingPathComponent(id)
+        let dest = dir.appendingPathComponent(fileName(id: id, quality: quality))
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
         try fm.moveItem(at: temporaryURL, to: dest)
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         var destVar = dest; try? destVar.setResourceValues(values)
         lock.withLock {
-            let k = key(id, kind)
+            let k = key(id, kind, quality: quality)
             meta[k] = Meta(
                 reason: reason,
                 kind: kind,
@@ -112,10 +137,14 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
     }
 
     public func deletePlayable(id: String, kind: PlayableRef.Kind) throws {
-        if let url = fileURL(forPlayableId: id, kind: kind) { try fm.removeItem(at: url) }
-        lock.withLock {
-            meta.removeValue(forKey: key(id, kind))
-            saveMetaLocked()
+        for quality in AudioTranscodeQuality.allCases {
+            if let url = fileURL(forPlayableId: id, kind: kind, quality: quality) {
+                try fm.removeItem(at: url)
+            }
+            lock.withLock {
+                meta.removeValue(forKey: key(id, kind, quality: quality))
+                saveMetaLocked()
+            }
         }
     }
 
@@ -128,53 +157,96 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
         return total
     }
 
+    public func playableByteSize(id: String, kind: PlayableRef.Kind) -> Int64 {
+        var total: Int64 = 0
+        for quality in AudioTranscodeQuality.allCases {
+            guard let url = fileURL(forPlayableId: id, kind: kind, quality: quality) else { continue }
+            total += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return total
+    }
+
     public func touchPlayable(id: String, kind: PlayableRef.Kind, reason: CacheReason?) {
-        let hasFile = fileURL(forPlayableId: id, kind: kind) != nil
-        lock.withLock {
-            let k = key(id, kind)
-            if var existing = meta[k] {
-                existing.touched = Date()
-                if let reason {
-                    if reason.isUserPinnedReason || existing.reason == .none || existing.reason == .queuePrefetch {
-                        existing.reason = reason
-                        existing.pinned = reason.isUserPinnedReason || existing.pinned
+        for quality in AudioTranscodeQuality.allCases {
+            let hasFile = fileURL(forPlayableId: id, kind: kind, quality: quality) != nil
+            lock.withLock {
+                let k = key(id, kind, quality: quality)
+                if var existing = meta[k] {
+                    existing.touched = Date()
+                    if let reason {
+                        if reason.isUserPinnedReason || existing.reason == .none || existing.reason == .queuePrefetch {
+                            existing.reason = reason
+                            existing.pinned = reason.isUserPinnedReason || existing.pinned
+                        }
                     }
+                    meta[k] = existing
+                    saveMetaLocked()
+                } else if hasFile {
+                    meta[k] = Meta(
+                        reason: reason ?? .queuePrefetch,
+                        kind: kind,
+                        touched: Date(),
+                        generation: 0,
+                        pinned: reason?.isUserPinnedReason ?? false
+                    )
+                    saveMetaLocked()
                 }
-                meta[k] = existing
-            } else if hasFile {
-                meta[k] = Meta(reason: reason ?? .queuePrefetch, kind: kind, touched: Date(), generation: 0, pinned: reason?.isUserPinnedReason ?? false)
             }
-            saveMetaLocked()
         }
     }
 
     public func cacheReason(forPlayableId id: String, kind: PlayableRef.Kind) -> CacheReason {
-        lock.withLock { meta[key(id, kind)]?.reason ?? .none }
+        lock.withLock {
+            for quality in AudioTranscodeQuality.allCases {
+                if let reason = meta[key(id, kind, quality: quality)]?.reason, reason != .none {
+                    return reason
+                }
+            }
+            return .none
+        }
     }
 
     public func isUserPinned(id: String, kind: PlayableRef.Kind) -> Bool {
         lock.withLock {
-            let m = meta[key(id, kind)]
-            return m?.pinned == true || (m?.reason.isUserPinnedReason ?? false)
+            for quality in AudioTranscodeQuality.allCases {
+                let m = meta[key(id, kind, quality: quality)]
+                if m?.pinned == true || (m?.reason.isUserPinnedReason ?? false) {
+                    return true
+                }
+            }
+            return false
         }
     }
 
     public func cachedPlayableIds(reason: CacheReason?) -> [(id: String, kind: PlayableRef.Kind, touched: Date, generation: Int)] {
         lock.withLock {
-            meta.compactMap { key, value in
-                if let reason, value.reason != reason { return nil }
-                let cleanId = key.components(separatedBy: "::").last ?? key
-                return (cleanId, value.kind, value.touched, value.generation)
+            var best: [String: (id: String, kind: PlayableRef.Kind, touched: Date, generation: Int)] = [:]
+            for (key, value) in meta {
+                if let reason, value.reason != reason { continue }
+                let fileName = key.components(separatedBy: "::").last ?? key
+                let playableId = AudioTranscodeQuality.playableId(fromCacheFileName: fileName)
+                let entry = (playableId, value.kind, value.touched, value.generation)
+                if let existing = best[playableId] {
+                    // Keep the newest touch so prune logic sees one row per song.
+                    if value.touched > existing.touched {
+                        best[playableId] = entry
+                    }
+                } else {
+                    best[playableId] = entry
+                }
             }
+            return Array(best.values)
         }
     }
 
     public func setQueueGeneration(id: String, kind: PlayableRef.Kind, generation: Int) {
         lock.withLock {
-            let k = key(id, kind)
-            guard var existing = meta[k] else { return }
-            existing.generation = generation
-            meta[k] = existing
+            for quality in AudioTranscodeQuality.allCases {
+                let k = key(id, kind, quality: quality)
+                guard var existing = meta[k] else { continue }
+                existing.generation = generation
+                meta[k] = existing
+            }
             saveMetaLocked()
         }
     }
@@ -192,7 +264,7 @@ public final class FilePlayableCache: PlayableFileCaching, @unchecked Sendable {
                 let url = dir.appendingPathComponent(name)
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 guard modified < cutoff else { continue }
-                orphans.append((name, kind))
+                orphans.append((AudioTranscodeQuality.playableId(fromCacheFileName: name), kind))
             }
         }
         return orphans
