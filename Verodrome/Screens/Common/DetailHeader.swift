@@ -4,6 +4,11 @@ import UIKit
 struct DetailHeader<Accessory: View>: View {
     let title: String
     let subtitle: String
+    /// Appended after the subtitle (e.g. `" · 2020"`).
+    let subtitleSuffix: String?
+    /// When set, tapping the subtitle (artist name) runs this — used instead of a
+    /// `NavigationLink` so List chrome does not add a chevron or trailing inset.
+    let onArtistTap: (() -> Void)?
     /// Artwork the buttons take their color from. Defaults to the hero art, but
     /// screens whose background falls back to another cover (an artist with no
     /// image, say) should pass the same token they tint the background with.
@@ -22,6 +27,8 @@ struct DetailHeader<Accessory: View>: View {
     init(
         title: String,
         subtitle: String,
+        subtitleSuffix: String? = nil,
+        onArtistTap: (() -> Void)? = nil,
         artworkURL: String? = nil,
         tintToken: String? = nil,
         tintKey: ArtworkTintKey? = nil,
@@ -32,6 +39,8 @@ struct DetailHeader<Accessory: View>: View {
     ) {
         self.title = title
         self.subtitle = subtitle
+        self.subtitleSuffix = subtitleSuffix
+        self.onArtistTap = onArtistTap
         self.artworkURL = artworkURL
         self.tintToken = tintToken
         self.tintKey = tintKey
@@ -49,6 +58,32 @@ struct DetailHeader<Accessory: View>: View {
 
     private var resolvedTint: ArtworkTint {
         tint ?? ArtworkTint(hue: 0, saturation: 0)
+    }
+
+    @ViewBuilder
+    private var subtitleLine: some View {
+        HStack(spacing: 0) {
+            if let onArtistTap {
+                Button(action: onArtistTap) {
+                    Text(subtitle)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(subtitle)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            if let subtitleSuffix, !subtitleSuffix.isEmpty {
+                Text(subtitleSuffix)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
     }
 
     private var pullDistance: CGFloat { max(0, -scrollY) }
@@ -84,10 +119,7 @@ struct DetailHeader<Accessory: View>: View {
                 Text(title)
                     .font(.title.bold())
                     .multilineTextAlignment(.center)
-                Text(subtitle)
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                subtitleLine
             }
             .zIndex(1)
 
@@ -394,6 +426,8 @@ extension DetailHeader where Accessory == EmptyView {
     init(
         title: String,
         subtitle: String,
+        subtitleSuffix: String? = nil,
+        onArtistTap: (() -> Void)? = nil,
         artworkURL: String? = nil,
         tintToken: String? = nil,
         tintKey: ArtworkTintKey? = nil,
@@ -404,6 +438,8 @@ extension DetailHeader where Accessory == EmptyView {
         self.init(
             title: title,
             subtitle: subtitle,
+            subtitleSuffix: subtitleSuffix,
+            onArtistTap: onArtistTap,
             artworkURL: artworkURL,
             tintToken: tintToken,
             tintKey: tintKey,

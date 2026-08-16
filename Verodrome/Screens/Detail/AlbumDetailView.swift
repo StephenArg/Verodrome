@@ -16,6 +16,7 @@ struct AlbumDetailView: View {
     @State private var tracks: [Song] = []
     @State private var showPlaylistSelector = false
     @State private var artworkTint: ArtworkTint?
+    @State private var selectedArtistID: String?
 
     init(albumID: String) {
         self.albumID = albumID
@@ -38,7 +39,12 @@ struct AlbumDetailView: View {
                 Section {
                     DetailHeader(
                         title: album.title,
-                        subtitle: "\(album.displayArtist) · \(album.year ?? 0)",
+                        subtitle: album.displayArtist,
+                        subtitleSuffix: " · \(album.year ?? 0)",
+                        onArtistTap: album.artist.flatMap { artist in
+                            let artistID = artist.compoundRemoteId
+                            return { selectedArtistID = artistID }
+                        },
                         artworkURL: album.artworkToken,
                         tintKey: tintKey,
                         onPlay: { play(shuffle: false) },
@@ -78,6 +84,9 @@ struct AlbumDetailView: View {
         .detailCollapsingNavTitle(albums.first?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .tint(navigationTint)
+        .navigationDestination(item: $selectedArtistID) { artistID in
+            ArtistDetailView(artistID: artistID)
+        }
         .toolbar {
             if let album = albums.first {
                 ToolbarItem(placement: .topBarTrailing) {

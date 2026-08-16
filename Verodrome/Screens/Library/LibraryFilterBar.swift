@@ -32,7 +32,7 @@ struct LibraryFilterBar: View {
             if !text.isEmpty {
                 Button {
                     text = ""
-                    isFocused = true
+                    isFocused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -52,5 +52,12 @@ struct LibraryFilterBar: View {
         .padding(.horizontal, showsOuterPadding ? 16 : 0)
         .padding(.vertical, showsOuterPadding ? 8 : 0)
         .animation(.easeOut(duration: 0.15), value: text.isEmpty)
+        // Backspace (and any other path) that empties a non-empty filter should
+        // put the keyboard away — clearing is usually "I'm done looking."
+        .onChange(of: text) { oldValue, newValue in
+            if !oldValue.isEmpty && newValue.isEmpty {
+                isFocused = false
+            }
+        }
     }
 }
