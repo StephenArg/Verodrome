@@ -22,13 +22,7 @@ struct MainContainerView: View {
                     .padding(.horizontal, horizontalSizeClass == .regular ? 16 : 0)
             }
         }
-        .sheet(isPresented: $router.showFullPlayer) {
-            PopupPlayerView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(24)
-                .presentationBackgroundInteraction(.disabled)
-        }
+        .background(PopupPlayerPresentation())
         .task {
             // Settled here rather than in the menus that need it: a context menu's
             // contents are built synchronously, so they can't wait on a round trip to

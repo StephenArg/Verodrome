@@ -352,27 +352,55 @@ public final class LibraryActions {
     }
 
     /// Fetches similar songs for 1–3 seeds and builds a zipper-merged radio-continuation
-    /// batch to append to the end of the current queue.
+    /// batch to append to the end of the current queue. When similar songs produce
+    /// nothing, falls back to a zipper of local songs from each seed's genre.
     public func prepareRadioContinuation(
         seeds: [QueueItem],
         excluding alreadyQueued: Set<String>
     ) async -> PrepareRadioOutcome {
         let songSeeds = seeds.filter { $0.kind == .song && !$0.playableId.isEmpty }
         guard !songSeeds.isEmpty else { return .unavailable }
-        guard let provider = syncer as? (any SimilarSongProviding) else {
-            return .unavailable
+
+        if let similarItems = await similarContinuationItems(
+            seeds: songSeeds,
+            excluding: alreadyQueued
+        ), !similarItems.isEmpty {
+            return .ready(similarItems)
         }
 
-        let count = songSeeds.count == 1
+        if let genreItems = genreContinuationItems(
+            seeds: songSeeds,
+            excluding: alreadyQueued
+        ), !genreItems.isEmpty {
+            await EventLogger.shared.info(
+                "radio",
+                "Radio continuation genre fallback queue=\(genreItems.count) seeds=\(songSeeds.count)"
+            )
+            return .ready(genreItems)
+        }
+
+        return .noSimilarSongs
+    }
+
+    /// Similar-song path. Nil when the API is unavailable or every request fails;
+    /// empty array when requests succeed but nothing survives dedupe.
+    private func similarContinuationItems(
+        seeds: [QueueItem],
+        excluding alreadyQueued: Set<String>
+    ) async -> [QueueItem]? {
+        guard let provider = syncer as? (any SimilarSongProviding) else {
+            return nil
+        }
+
+        let count = seeds.count == 1
             ? SongRadioQueue.defaultSimilarCount
             : SongRadioQueue.continuationSimilarCount
 
         var seedResults: [(seed: QueueItem, similar: [IngestSong])] = []
-        seedResults.reserveCapacity(songSeeds.count)
+        seedResults.reserveCapacity(seeds.count)
 
-        // Fetch in parallel while staying on the MainActor — each call is independently awaitable.
         await withTaskGroup(of: (Int, QueueItem, [IngestSong]?).self) { group in
-            for (offset, seed) in songSeeds.enumerated() {
+            for (offset, seed) in seeds.enumerated() {
                 group.addTask { @MainActor in
                     do {
                         let similar = try await provider.similarSongs(
@@ -395,7 +423,7 @@ public final class LibraryActions {
             seedResults = collected.map { ($0.1, $0.2) }
         }
 
-        guard !seedResults.isEmpty else { return .failed }
+        guard !seedResults.isEmpty else { return nil }
 
         let items = SongRadioQueue.buildContinuation(
             seedResults: seedResults,
@@ -403,18 +431,75 @@ public final class LibraryActions {
         )
         await EventLogger.shared.info(
             "radio",
-            "Radio continuation seeds=\(seedResults.count) queue=\(items.count)"
+            "Radio continuation similar seeds=\(seedResults.count) queue=\(items.count)"
         )
-        guard !items.isEmpty else { return .noSimilarSongs }
 
-        if let ingestor = kit.activeLibraryIngester {
+        if !items.isEmpty, let ingestor = kit.activeLibraryIngester {
             let songs = seedResults.flatMap(\.similar)
             Task.detached(priority: .utility) {
                 try? await ingestor.ingest(songs: songs)
             }
         }
 
-        return .ready(items)
+        return items
+    }
+
+    /// Local genre backup: unique genres from the seed tracks, one shuffled song list
+    /// each, zipper-merged. Uses the same local genreName matching as GenreDetailView.
+    private func genreContinuationItems(
+        seeds: [QueueItem],
+        excluding alreadyQueued: Set<String>
+    ) -> [QueueItem]? {
+        guard let repository, let account = try? kit.activeAccount() else { return nil }
+
+        var genreNames: [String] = []
+        var seenGenres = Set<String>()
+        for seed in seeds {
+            guard let song = try? repository.resolveSong(remoteId: seed.playableId, account: account)
+            else { continue }
+            let raw = song.genreName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? song.album?.genreName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let name = raw, !name.isEmpty, seenGenres.insert(name).inserted else { continue }
+            genreNames.append(name)
+        }
+        guard !genreNames.isEmpty else { return nil }
+
+        let perGenreLimit = genreNames.count == 1
+            ? SongRadioQueue.defaultSimilarCount
+            : SongRadioQueue.continuationSimilarCount
+
+        let lists: [[QueueItem]] = genreNames.compactMap { name in
+            let songs = songsInGenre(name, repository: repository)
+            guard !songs.isEmpty else { return nil }
+            return Array(songs.shuffled().prefix(perGenreLimit)).map(QueueItem.from)
+        }
+        guard !lists.isEmpty else { return nil }
+
+        let items = SongRadioQueue.buildGenreContinuation(
+            genreLists: lists,
+            excluding: alreadyQueued
+        )
+        return items.isEmpty ? nil : items
+    }
+
+    /// Songs tagged with `genreName`, plus tracks on albums stamped with that genre.
+    private func songsInGenre(_ name: String, repository: LibraryRepository) -> [Song] {
+        let songDescriptor = FetchDescriptor<Song>(
+            predicate: #Predicate<Song> { song in song.genreName == name }
+        )
+        let albumDescriptor = FetchDescriptor<Album>(
+            predicate: #Predicate<Album> { album in album.genreName == name }
+        )
+        var byId: [String: Song] = [:]
+        for song in (try? repository.context.fetch(songDescriptor)) ?? [] {
+            byId[song.compoundRemoteId] = song
+        }
+        for album in (try? repository.context.fetch(albumDescriptor)) ?? [] {
+            for song in album.songs {
+                byId[song.compoundRemoteId] = song
+            }
+        }
+        return Array(byId.values)
     }
 
     // MARK: - Playlists

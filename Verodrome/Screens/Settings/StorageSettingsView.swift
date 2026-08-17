@@ -17,6 +17,8 @@ struct StorageSettingsView: View {
     @State private var statusMessage: String?
 
     private let staleOptions = [12, 18, 24]
+    private let aheadOptions = Array(0...UserSettings.maxSongsAhead)
+    private let behindOptions = Array(0...UserSettings.maxSongsBehind)
 
     private var musicCacheBytes: Int64 { temporaryBytes + libraryBytes }
 
@@ -73,6 +75,28 @@ struct StorageSettingsView: View {
                         NotificationCenter.default.post(name: .queueCacheReevaluate, object: nil)
                     }
 
+                Picker("Songs Ahead", selection: $settings.queuePrefetchSongsAhead) {
+                    ForEach(aheadOptions, id: \.self) { count in
+                        Text(count == 1 ? "1 song" : "\(count) songs").tag(count)
+                    }
+                }
+                .disabled(!settings.smartQueuePrefetchEnabled)
+                .onChange(of: settings.queuePrefetchSongsAhead) { _, _ in
+                    settings.save()
+                    NotificationCenter.default.post(name: .queueCacheReevaluate, object: nil)
+                }
+
+                Picker("Songs Behind", selection: $settings.queuePrefetchSongsBehind) {
+                    ForEach(behindOptions, id: \.self) { count in
+                        Text(count == 1 ? "1 song" : "\(count) songs").tag(count)
+                    }
+                }
+                .disabled(!settings.smartQueuePrefetchEnabled)
+                .onChange(of: settings.queuePrefetchSongsBehind) { _, _ in
+                    settings.save()
+                    NotificationCenter.default.post(name: .queueCacheReevaluate, object: nil)
+                }
+
                 Picker("Stale Threshold", selection: $settings.smartQueueStaleHours) {
                     ForEach(staleOptions, id: \.self) { hours in
                         Text("\(hours) hours").tag(hours)
@@ -83,7 +107,7 @@ struct StorageSettingsView: View {
             } header: {
                 Text("Prefetch")
             } footer: {
-                Text("Caches the tracks just ahead of the one playing so skips start instantly.")
+                Text("Caches tracks ahead of and behind the one playing so skips start instantly. The cache limit spends that space on the current track, then upcoming tracks, then previous ones.")
             }
 
             Section {

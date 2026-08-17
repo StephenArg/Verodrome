@@ -310,6 +310,7 @@ public final class AudioPlayer: ObservableObject {
         Self.nextCachedIndex(
             in: queueHandler.activeQueue,
             after: queueHandler.currentIndex,
+            lookAhead: UserSettings.clampedAhead(settings().queuePrefetchSongsAhead),
             isCached: { backend.isCached(item: $0) }
         )
     }
@@ -574,10 +575,7 @@ public final class AudioPlayer: ObservableObject {
 
     /// The track that would play after the current one, as the queue stands right now.
     private var upcomingItem: QueueItem? {
-        let window = queueHandler.windowItems(
-            previous: 0,
-            next: QueueCachePolicyManager.nextKeepCount
-        )
+        let window = queueHandler.windowItems(previous: 0, next: 1)
         guard window.count > 1 else { return nil }
         return window[1]
     }

@@ -1,11 +1,15 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import VerodromeKit
 
 struct ArtistsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var nowPlaying: NowPlayingModel
+    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @Environment(\.modelContext) private var modelContext
 
     @State private var searchText = ""
     @State private var debouncedSearch = ""
@@ -22,7 +26,8 @@ struct ArtistsView: View {
             playingId: nowPlaying.currentItem?.playableId,
             isPartial: model.isPartial,
             isSectioned: model.isSectioned,
-            onSelect: { item, _ in selectedId = item.id }
+            onSelect: { item, _ in selectedId = item.id },
+            makeContextMenu: artistContextMenu(for:)
         )
         .navigationTitle("Artists")
         .searchable(text: $searchText, prompt: "Filter artists")
@@ -49,6 +54,90 @@ struct ArtistsView: View {
         }
         .refreshable {
             await model.load(search: debouncedSearch, sort: sort)
+        }
+    }
+
+    // MARK: - Context menu
+
+    private func artistContextMenu(for item: LibraryRowSnapshot) -> UIMenu? {
+        let artist = resolveArtist(compoundRemoteId: item.id)
+
+        var actions: [UIMenuElement] = [
+            UIAction(
+                title: "Play",
+                image: UIImage(systemName: "play.fill"),
+                attributes: artist == nil ? .disabled : []
+            ) { _ in
+                playArtist(compoundRemoteId: item.id, shuffle: false)
+            },
+            UIAction(
+                title: "Shuffle",
+                image: UIImage(systemName: "shuffle"),
+                attributes: artist == nil ? .disabled : []
+            ) { _ in
+                playArtist(compoundRemoteId: item.id, shuffle: true)
+            },
+        ]
+
+        if let artist {
+            let subtitle = item.subtitle.isEmpty
+                ? "\(max(artist.albumCount, artist.albums.count)) albums · \(max(artist.songCount, artist.songs.count)) songs"
+                : item.subtitle
+            let artwork = artist.artworkToken ?? artist.albums.first?.artworkToken
+            actions.append(UIAction(
+                title: "Share",
+                image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in
+                ShareComposer.present(
+                    ShareSubject(
+                        resourceType: .artist,
+                        resourceIds: [artist.remoteId],
+                        title: artist.name,
+                        subtitle: subtitle,
+                        artwork: artwork.map { ArtworkRef(id: $0, kind: .artist) }
+                    )
+                )
+            })
+        }
+
+        return UIMenu(children: actions)
+    }
+
+    private func resolveArtist(compoundRemoteId: String) -> Artist? {
+        let id = compoundRemoteId
+        var descriptor = FetchDescriptor<Artist>(
+            predicate: #Predicate<Artist> { $0.compoundRemoteId == id }
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func playArtist(compoundRemoteId: String, shuffle: Bool) {
+        guard let artist = resolveArtist(compoundRemoteId: compoundRemoteId) else { return }
+        Task {
+            var songs = sortedArtistSongs(artist)
+            if songs.isEmpty {
+                if let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() {
+                    try? await syncer.sync(artistId: artist.remoteId)
+                    let albums = resolveArtist(compoundRemoteId: compoundRemoteId)?.albums ?? artist.albums
+                    for album in albums {
+                        guard !Task.isCancelled else { return }
+                        try? await syncer.sync(albumId: album.remoteId)
+                    }
+                }
+                songs = resolveArtist(compoundRemoteId: compoundRemoteId).map(sortedArtistSongs) ?? []
+            }
+            let items = songs.map(QueueItem.from)
+            guard !items.isEmpty else { return }
+            player.play(items: items, shuffle: shuffle, origin: .artist(artist.name))
+            router.openPlayer()
+        }
+    }
+
+    private func sortedArtistSongs(_ artist: Artist) -> [Song] {
+        artist.songs.sorted {
+            ($0.albumTitle ?? "", $0.disc ?? 0, $0.track ?? 0)
+                < ($1.albumTitle ?? "", $1.disc ?? 0, $1.track ?? 0)
         }
     }
 

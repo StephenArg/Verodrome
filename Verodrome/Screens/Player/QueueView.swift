@@ -189,10 +189,13 @@ struct QueueView: View {
         if let origin = queueList.queueOrigin {
             return origin.radioSectionTitle
         }
+        // Origin can be missing for older sessions / CarPlay — prefer the artist name so
+        // artist and genre queues still read as "{Artist} radio" rather than an album title.
         let current = queueList.queue.indices.contains(queueList.currentIndex)
             ? queueList.queue[queueList.currentIndex]
             : nil
-        let fallback = current?.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = current?.artistName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? current?.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? current?.title.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? ""
         if fallback.isEmpty { return "Radio" }

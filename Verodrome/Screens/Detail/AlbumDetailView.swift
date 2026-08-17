@@ -43,7 +43,13 @@ struct AlbumDetailView: View {
                         subtitleSuffix: " · \(album.year ?? 0)",
                         onArtistTap: album.artist.flatMap { artist in
                             let artistID = artist.compoundRemoteId
-                            return { selectedArtistID = artistID }
+                            return {
+                                if router.showFullPlayer {
+                                    router.pushPlayer(.artist(artistID))
+                                } else {
+                                    selectedArtistID = artistID
+                                }
+                            }
                         },
                         artworkURL: album.artworkToken,
                         tintKey: tintKey,

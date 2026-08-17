@@ -30,7 +30,8 @@ final class QueueCachePolicyTests: XCTestCase {
         }
         func touchPlayable(id: String, kind: PlayableRef.Kind, reason: CacheReason?) {
             let key = "\(kind.rawValue)::\(id)"
-            var existing = files[key] ?? (kind, reason ?? .queuePrefetch, Date(), 0, false)
+            // Match FilePlayableCache: touching does not invent a file that is not on disk.
+            guard var existing = files[key] else { return }
             existing.touched = Date()
             if let reason { existing.reason = reason; existing.pinned = reason.isUserPinnedReason || existing.pinned }
             files[key] = existing
@@ -254,8 +255,9 @@ final class QueueCachePolicyTests: XCTestCase {
         XCTAssertEqual(DownloadCenter.shared.status(for: "stale", isDownloaded: false), DownloadStatus.none)
     }
 
-    /// Oldest unpinned files go first; explicit downloads are never sacrificed for a size cap.
-    func testEnforceCacheLimitEvictsOldestPrefetchFirst() {
+    /// Outside-window prefetch shares a rank, so the older file is the tie-break. Explicit
+    /// downloads are never sacrificed for a size cap.
+    func testEnforceCacheLimitEvictsLowestPriorityPrefetchFirst() {
         let cache = MockCache()
         let downloader = SpyDownloader()
         let queue = PlayQueueHandler()
@@ -278,7 +280,7 @@ final class QueueCachePolicyTests: XCTestCase {
         )
         policy.enforceCacheLimit()
 
-        XCTAssertNil(cache.files["song::old"], "oldest prefetch should be freed first")
+        XCTAssertNil(cache.files["song::old"], "oldest same-rank prefetch should be freed first")
         XCTAssertNotNil(cache.files["song::new"])
         XCTAssertNotNil(cache.files["song::owned"], "user downloads are outside the size budget")
         XCTAssertEqual(cache.totalPlayableCacheSize(), 80)
@@ -314,6 +316,15 @@ final class QueueCachePolicyTests: XCTestCase {
         XCTAssertEqual(PlayableCacheLimit.allCases.map(\.label), [
             "250 MB", "500 MB", "1 GB", "2 GB", "3 GB", "5 GB", "7 GB", "10 GB", "12 GB", "20 GB", "Unlimited"
         ])
+    }
+
+    func testDefaultPrefetchWindowMatchesLegacyConstants() {
+        XCTAssertEqual(UserSettings.default.queuePrefetchSongsAhead, 5)
+        XCTAssertEqual(UserSettings.default.queuePrefetchSongsBehind, 2)
+        XCTAssertEqual(QueueCachePolicyManager.nextKeepCount, 5)
+        XCTAssertEqual(QueueCachePolicyManager.previousKeepCount, 2)
+        XCTAssertEqual(UserSettings.clampedAhead(99), 10)
+        XCTAssertEqual(UserSettings.clampedBehind(-1), 0)
     }
 
     /// Both prune loops iterate the cache's own metadata, so a file missing from it is
@@ -494,5 +505,202 @@ final class QueueCachePolicyTests: XCTestCase {
         for kept in ["4", "5", "6", "7", "8", "9"] {
             XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) is still in the keep window")
         }
+    }
+
+    /// A narrower window setting must shrink the keep set immediately.
+    func testCustomWindowChangesKeepSet() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<10).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+        for item in items {
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        }
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18,
+                    queuePrefetchSongsAhead: 3,
+                    queuePrefetchSongsBehind: 1
+                )
+            }
+        )
+        policy.reevaluate()
+
+        // prev1=4, current=5, next3=6,7,8
+        for kept in ["4", "5", "6", "7", "8"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) should still be cached")
+        }
+        for pruned in ["0", "1", "2", "3", "9"] {
+            XCTAssertNil(cache.files["song::\(pruned)"], "\(pruned) fell outside the custom window")
+        }
+    }
+
+    /// Over budget, furthest previous tracks go before any upcoming track. Current and
+    /// the immediate next song stay even when that leaves the cache slightly over the cap.
+    func testEnforceCacheLimitEvictsFurthestPrevBeforeNext() {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<5).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 2)
+        for item in items {
+            cache.files["song::\(item.playableId)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+            cache.sizes["song::\(item.playableId)"] = 30
+        }
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    cacheLimitBytes: 90,
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18,
+                    queuePrefetchSongsAhead: 2,
+                    queuePrefetchSongsBehind: 2
+                )
+            }
+        )
+        policy.enforceCacheLimit()
+
+        XCTAssertNil(cache.files["song::0"], "furthest prev should be evicted first")
+        XCTAssertNil(cache.files["song::1"], "nearer prev goes before any next")
+        XCTAssertNotNil(cache.files["song::2"], "current is never evicted for the size cap")
+        XCTAssertNotNil(cache.files["song::3"], "next1 is never evicted for the size cap")
+        XCTAssertNotNil(cache.files["song::4"])
+        XCTAssertEqual(cache.totalPlayableCacheSize(), 90)
+    }
+
+    /// A far-next that will not fit — even after dropping previous tracks — is not fetched.
+    func testSkipsOversizedFarNextWhenBudgetIsFull() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<8).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 2)
+        // Current + next1 already fill the cap.
+        for id in ["2", "3"] {
+            cache.files["song::\(id)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+            cache.sizes["song::\(id)"] = 40
+        }
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    cacheLimitBytes: 80,
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18,
+                    queuePrefetchSongsAhead: 3,
+                    queuePrefetchSongsBehind: 1
+                )
+            }
+        )
+        policy.estimatedByteSize = { item in
+            item.playableId == "4" || item.playableId == "5" ? 50 : 10
+        }
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertFalse(downloader.enqueued.contains("4"), "next2 should not start when it cannot fit")
+        XCTAssertFalse(downloader.enqueued.contains("5"), "next3 should not start when it cannot fit")
+        XCTAssertNotNil(cache.files["song::2"])
+        XCTAssertNotNil(cache.files["song::3"])
+    }
+
+    /// Advancing drops the furthest prev. The newly entered far-next is fetched only when
+    /// the remaining budget can hold it.
+    func testAdvanceDropsFurthestPrevAndSkipsOversizedNewNext() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<12).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 5)
+        for id in ["3", "4", "5", "6", "7", "8", "9", "10"] {
+            cache.files["song::\(id)"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+            cache.sizes["song::\(id)"] = 10
+        }
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    cacheLimitBytes: 80,
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18
+                )
+            }
+        )
+        policy.estimatedByteSize = { item in
+            item.playableId == "11" ? 100 : 10
+        }
+
+        _ = queue.advance()
+        XCTAssertEqual(queue.currentItem?.playableId, "6")
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertNil(cache.files["song::3"], "furthest prev left the window")
+        XCTAssertFalse(downloader.enqueued.contains("11"), "new far-next is too big for the remaining budget")
+        for kept in ["4", "5", "6", "7", "8", "9", "10"] {
+            XCTAssertNotNil(cache.files["song::\(kept)"], "\(kept) is still in the keep window")
+        }
+    }
+
+    /// A track that never fits the cap is still fetched once it is the immediate next song,
+    /// and the size cap will not delete it afterwards.
+    func testNext1OverrideCachesOversizedTrack() async {
+        let cache = MockCache()
+        let downloader = SpyDownloader()
+        let queue = PlayQueueHandler()
+        let items = (0..<4).map { QueueItem(playableId: "\($0)", title: "S\($0)") }
+        queue.replaceContext(with: items, startAt: 1)
+        cache.files["song::1"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        cache.sizes["song::1"] = 20
+
+        let policy = QueueCachePolicyManager(
+            queue: queue,
+            cache: cache,
+            downloader: downloader,
+            settings: {
+                UserSettings(
+                    cacheLimitBytes: 30,
+                    smartQueuePrefetchEnabled: true,
+                    queuePrefetchStaleHours: 18,
+                    queuePrefetchSongsAhead: 2,
+                    queuePrefetchSongsBehind: 1
+                )
+            }
+        )
+        policy.estimatedByteSize = { item in
+            switch item.playableId {
+            case "2": 100
+            case "3": 20
+            default: 10
+            }
+        }
+        policy.reevaluate()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertTrue(downloader.enqueued.contains("2"), "next1 is fetched even when it exceeds the cap")
+        XCTAssertFalse(downloader.enqueued.contains("3"), "next2 still has to fit")
+
+        cache.files["song::2"] = (.song, .queuePrefetch, Date(), queue.queueGeneration, false)
+        cache.sizes["song::2"] = 100
+        policy.enforceCacheLimit()
+        XCTAssertNotNil(cache.files["song::2"], "next1 is not evicted for the size cap")
+        XCTAssertNotNil(cache.files["song::1"], "current is not evicted for the size cap")
     }
 }

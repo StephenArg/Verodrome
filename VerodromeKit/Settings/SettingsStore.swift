@@ -41,6 +41,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var downloadTranscodeQuality: AudioTranscodeQuality = .original
     @Published public var smartQueuePrefetchEnabled: Bool = true
     @Published public var smartQueueStaleHours: Int = 18
+    @Published public var queuePrefetchSongsAhead: Int = UserSettings.defaultSongsAhead
+    @Published public var queuePrefetchSongsBehind: Int = UserSettings.defaultSongsBehind
     @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
     @Published public var gaplessPlaybackEnabled: Bool = true
     /// When the queue runs low, append similar-song radio so listening can continue.
@@ -78,6 +80,8 @@ public final class SettingsStore: ObservableObject {
         var downloadTranscodeQuality: AudioTranscodeQuality
         var smartQueuePrefetchEnabled: Bool
         var smartQueueStaleHours: Int
+        var queuePrefetchSongsAhead: Int
+        var queuePrefetchSongsBehind: Int
         var cacheLimitBytes: Int64
         var gaplessPlaybackEnabled: Bool
         var radioContinuationEnabled: Bool
@@ -113,6 +117,8 @@ public final class SettingsStore: ObservableObject {
             downloadTranscodeQuality: AudioTranscodeQuality,
             smartQueuePrefetchEnabled: Bool,
             smartQueueStaleHours: Int,
+            queuePrefetchSongsAhead: Int,
+            queuePrefetchSongsBehind: Int,
             cacheLimitBytes: Int64,
             gaplessPlaybackEnabled: Bool,
             radioContinuationEnabled: Bool,
@@ -147,6 +153,8 @@ public final class SettingsStore: ObservableObject {
             self.downloadTranscodeQuality = downloadTranscodeQuality
             self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
             self.smartQueueStaleHours = smartQueueStaleHours
+            self.queuePrefetchSongsAhead = queuePrefetchSongsAhead
+            self.queuePrefetchSongsBehind = queuePrefetchSongsBehind
             self.cacheLimitBytes = cacheLimitBytes
             self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
             self.radioContinuationEnabled = radioContinuationEnabled
@@ -183,6 +191,8 @@ public final class SettingsStore: ObservableObject {
             case downloadTranscodeQuality
             case smartQueuePrefetchEnabled
             case smartQueueStaleHours
+            case queuePrefetchSongsAhead
+            case queuePrefetchSongsBehind
             case cacheLimitBytes
             case gaplessPlaybackEnabled
             case radioContinuationEnabled
@@ -223,6 +233,12 @@ public final class SettingsStore: ObservableObject {
             downloadTranscodeQuality = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .downloadTranscodeQuality) ?? .original
             smartQueuePrefetchEnabled = try c.decode(Bool.self, forKey: .smartQueuePrefetchEnabled)
             smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
+            queuePrefetchSongsAhead = UserSettings.clampedAhead(
+                try c.decodeIfPresent(Int.self, forKey: .queuePrefetchSongsAhead) ?? UserSettings.defaultSongsAhead
+            )
+            queuePrefetchSongsBehind = UserSettings.clampedBehind(
+                try c.decodeIfPresent(Int.self, forKey: .queuePrefetchSongsBehind) ?? UserSettings.defaultSongsBehind
+            )
             cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
             gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
             radioContinuationEnabled = try c.decodeIfPresent(Bool.self, forKey: .radioContinuationEnabled) ?? true
@@ -268,6 +284,8 @@ public final class SettingsStore: ObservableObject {
             try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
             try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
             try c.encode(smartQueueStaleHours, forKey: .smartQueueStaleHours)
+            try c.encode(queuePrefetchSongsAhead, forKey: .queuePrefetchSongsAhead)
+            try c.encode(queuePrefetchSongsBehind, forKey: .queuePrefetchSongsBehind)
             try c.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
             try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
             try c.encode(radioContinuationEnabled, forKey: .radioContinuationEnabled)
@@ -325,6 +343,8 @@ public final class SettingsStore: ObservableObject {
             downloadTranscodeQuality: downloadTranscodeQuality,
             smartQueuePrefetchEnabled: smartQueuePrefetchEnabled,
             smartQueueStaleHours: smartQueueStaleHours,
+            queuePrefetchSongsAhead: UserSettings.clampedAhead(queuePrefetchSongsAhead),
+            queuePrefetchSongsBehind: UserSettings.clampedBehind(queuePrefetchSongsBehind),
             cacheLimitBytes: cacheLimitBytes,
             gaplessPlaybackEnabled: gaplessPlaybackEnabled,
             radioContinuationEnabled: radioContinuationEnabled,
@@ -368,6 +388,8 @@ public final class SettingsStore: ObservableObject {
         user.isOfflineMode = offlineModeEnabled
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
+        user.queuePrefetchSongsAhead = UserSettings.clampedAhead(queuePrefetchSongsAhead)
+        user.queuePrefetchSongsBehind = UserSettings.clampedBehind(queuePrefetchSongsBehind)
         user.cacheLimitBytes = cacheLimitBytes
         user.streamingQualityWifi = streamingQualityWifi
         user.streamingQualityCellular = streamingQualityCellular
@@ -393,6 +415,8 @@ public final class SettingsStore: ObservableObject {
         offlineModeEnabled = settings.isOfflineMode
         smartQueuePrefetchEnabled = settings.smartQueuePrefetchEnabled
         smartQueueStaleHours = settings.queuePrefetchStaleHours
+        queuePrefetchSongsAhead = settings.queuePrefetchSongsAhead
+        queuePrefetchSongsBehind = settings.queuePrefetchSongsBehind
         cacheLimitBytes = settings.cacheLimitBytes
         streamingQualityWifi = settings.streamingQualityWifi
         streamingQualityCellular = settings.streamingQualityCellular
@@ -451,6 +475,8 @@ public final class SettingsStore: ObservableObject {
             downloadTranscodeQuality = snapshot.downloadTranscodeQuality
             smartQueuePrefetchEnabled = snapshot.smartQueuePrefetchEnabled
             smartQueueStaleHours = snapshot.smartQueueStaleHours
+            queuePrefetchSongsAhead = snapshot.queuePrefetchSongsAhead
+            queuePrefetchSongsBehind = snapshot.queuePrefetchSongsBehind
             cacheLimitBytes = snapshot.cacheLimitBytes
             gaplessPlaybackEnabled = snapshot.gaplessPlaybackEnabled
             radioContinuationEnabled = snapshot.radioContinuationEnabled
@@ -476,6 +502,8 @@ public final class SettingsStore: ObservableObject {
         offlineModeEnabled = user.isOfflineMode
         smartQueuePrefetchEnabled = user.smartQueuePrefetchEnabled
         smartQueueStaleHours = user.queuePrefetchStaleHours
+        queuePrefetchSongsAhead = user.queuePrefetchSongsAhead
+        queuePrefetchSongsBehind = user.queuePrefetchSongsBehind
         cacheLimitBytes = user.cacheLimitBytes
         streamingQualityWifi = user.streamingQualityWifi
         streamingQualityCellular = user.streamingQualityCellular
@@ -504,6 +532,8 @@ public final class SettingsStore: ObservableObject {
         user.isOfflineMode = offlineModeEnabled
         user.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         user.queuePrefetchStaleHours = smartQueueStaleHours
+        user.queuePrefetchSongsAhead = UserSettings.clampedAhead(queuePrefetchSongsAhead)
+        user.queuePrefetchSongsBehind = UserSettings.clampedBehind(queuePrefetchSongsBehind)
         user.cacheLimitBytes = cacheLimitBytes
         user.streamingQualityWifi = streamingQualityWifi
         user.streamingQualityCellular = streamingQualityCellular

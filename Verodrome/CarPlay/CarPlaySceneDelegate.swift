@@ -162,7 +162,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private func playAlbum(compoundRemoteId: String) {
         guard let album = try? VerodromeKit.shared.repository()?.fetchAlbum(compoundRemoteId: compoundRemoteId) else { return }
         let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-        play(songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) })
+        play(
+            songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) },
+            origin: .album(album.title)
+        )
     }
 
     @MainActor
@@ -173,21 +176,32 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             $0.artist?.compoundRemoteId == compoundRemoteId
                 || $0.album?.artist?.compoundRemoteId == compoundRemoteId
         }
-        play(artistSongs.map(QueueItem.from))
+        let name = artistSongs.first?.artistName
+            ?? artistSongs.first?.album?.artist?.name
+        play(
+            artistSongs.map(QueueItem.from),
+            origin: name.map { .artist($0) }
+        )
     }
 
     @MainActor
     private func playSong(compoundRemoteId: String, among songs: [Song]) {
         let items = songs.map(QueueItem.from)
         let index = songs.firstIndex(where: { $0.compoundRemoteId == compoundRemoteId }) ?? 0
-        play(items, startAt: index)
+        let seed = items.indices.contains(index) ? items[index] : items.first
+        play(items, startAt: index, origin: seed.map { .song($0.title) })
     }
 
     @MainActor
-    private func play(_ items: [QueueItem], startAt index: Int = 0) {
+    private func play(_ items: [QueueItem], startAt index: Int = 0, origin: QueueOrigin? = nil) {
         guard !items.isEmpty else { return }
         Task {
-            await VerodromeKit.shared.player?.play(items: items, startAt: index)
+            await VerodromeKit.shared.player?.play(
+                items: items,
+                startAt: index,
+                shuffle: nil,
+                origin: origin
+            )
         }
     }
 

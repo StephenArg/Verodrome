@@ -105,9 +105,62 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertEqual(items.map(\.playableId), ["a1", "b1", "a2", "b2"])
     }
 
+    func testContinuationExclusionAllowsAlreadyPlayedForArtistAndGenreOnly() {
+        var queue = (0..<5).map { QueueItem(playableId: "\($0)", title: "Song \($0)") }
+        queue.append(QueueItem(playableId: "r0", title: "Radio", isRadioContinuation: true))
+
+        let artistExcluded = SongRadioQueue.continuationExclusionIDs(
+            queue: queue,
+            currentIndex: 3,
+            origin: .artist("Radiohead")
+        )
+        XCTAssertEqual(artistExcluded, Set(["3", "4", "r0"]))
+
+        let genreExcluded = SongRadioQueue.continuationExclusionIDs(
+            queue: queue,
+            currentIndex: 3,
+            origin: .genre("Rock")
+        )
+        XCTAssertEqual(genreExcluded, Set(["3", "4", "r0"]))
+
+        let albumExcluded = SongRadioQueue.continuationExclusionIDs(
+            queue: queue,
+            currentIndex: 3,
+            origin: .album("OK Computer")
+        )
+        XCTAssertEqual(albumExcluded, Set(["0", "1", "2", "3", "4", "r0"]))
+
+        let playlistExcluded = SongRadioQueue.continuationExclusionIDs(
+            queue: queue,
+            currentIndex: 3,
+            origin: .playlist("Favorites")
+        )
+        XCTAssertEqual(playlistExcluded, Set(["0", "1", "2", "3", "4", "r0"]))
+    }
+
+    func testBuildGenreContinuationZippersAndDedupes() {
+        let rock = [
+            QueueItem(playableId: "r1", title: "Rock 1"),
+            QueueItem(playableId: "shared", title: "Shared"),
+            QueueItem(playableId: "r2", title: "Rock 2")
+        ]
+        let jazz = [
+            QueueItem(playableId: "j1", title: "Jazz 1"),
+            QueueItem(playableId: "shared", title: "Shared Again"),
+            QueueItem(playableId: "j2", title: "Jazz 2")
+        ]
+        let items = SongRadioQueue.buildGenreContinuation(
+            genreLists: [rock, jazz],
+            excluding: ["r1"]
+        )
+        XCTAssertEqual(items.map(\.playableId), ["shared", "j1", "r2", "j2"])
+        XCTAssertTrue(items.allSatisfy(\.isRadioContinuation))
+    }
+
     func testQueueOriginRadioSectionTitle() {
         XCTAssertEqual(QueueOrigin.album("Abbey Road").radioSectionTitle, "Abbey Road radio")
         XCTAssertEqual(QueueOrigin.playlist("Favorites").radioSectionTitle, "Favorites radio")
+        XCTAssertEqual(QueueOrigin.artist("Radiohead").radioSectionTitle, "Radiohead radio")
         XCTAssertEqual(QueueOrigin.song("").radioSectionTitle, "Radio")
     }
 }

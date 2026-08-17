@@ -255,6 +255,12 @@ public actor DownloadManager: DownloadManaging {
             await recordCompletion(id: id, kind: kind, reason: reason)
             if reason.isUserPinnedReason {
                 await MainActor.run { DownloadCenter.shared.complete(playableId: id) }
+            } else if reason == .queuePrefetch {
+                // A just-landed prefetch can push the cache over the byte cap; reevaluate
+                // immediately so priority eviction runs without waiting for the next skip.
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .queueCacheReevaluate, object: nil)
+                }
             }
         } catch is CancellationError {
             // Cancelled by offline mode / terminate — leave UI cleared by cancelAll.

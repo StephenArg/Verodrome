@@ -191,6 +191,10 @@ struct ArtistDetailView: View {
     private func openAlbum(_ album: Album) {
         trackFillTask?.cancel()
         trackFillTask = nil
+        if router.showFullPlayer {
+            router.pushPlayer(.album(album.compoundRemoteId))
+            return
+        }
         selectedAlbum = AlbumNavigationID(id: album.compoundRemoteId)
     }
 

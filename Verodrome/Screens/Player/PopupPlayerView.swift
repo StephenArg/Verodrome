@@ -18,12 +18,11 @@ struct PopupPlayerView: View {
     @State private var currentSong: Song?
     @State private var bottomPanel: BottomPanel?
     @State private var artistCredits: [PlayerArtistCredit] = []
-    @State private var selectedAlbumId: String?
     /// False until the artwork hold elapses (or the user toggles lyrics on manually).
     @State private var lyricsRevealReady = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $router.playerDestinations) {
             ZStack {
                 playerContent
                 if player.isStartingRadio {
@@ -31,7 +30,14 @@ struct PopupPlayerView: View {
                 }
             }
             .background(playerBackground)
-            .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+            .navigationDestination(for: PlayerDestination.self) { destination in
+                switch destination {
+                case .album(let id):
+                    AlbumDetailView(albumID: id)
+                case .artist(let id):
+                    ArtistDetailView(artistID: id)
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .task(id: player.currentItem?.playableId) {
                 currentSong = resolveCurrentSong()
@@ -406,7 +412,11 @@ struct PopupPlayerView: View {
             speedMenuEnabled: player.currentItem?.isLiveStream != true,
             sleepTimerDeadline: player.sleepTimerDeadline,
             onDismiss: { dismiss() },
-            onOpenAlbum: { selectedAlbumId = currentSong?.album?.compoundRemoteId },
+            onOpenAlbum: {
+                if let albumId = currentSong?.album?.compoundRemoteId {
+                    router.pushPlayer(.album(albumId))
+                }
+            },
             onShare: { presentShareSheet() },
             onAddToPlaylist: { bottomPanel = .addToPlaylist },
             onStartRadio: {
@@ -675,8 +685,8 @@ struct PopupPlayerView: View {
         if artistCredits.count == 1, let only = artistCredits.first {
             // Single credit — keep marquee for long names.
             if let artistID = only.artistID {
-                NavigationLink {
-                    ArtistDetailView(artistID: artistID)
+                Button {
+                    router.pushPlayer(.artist(artistID))
                 } label: {
                     MarqueeText(
                         text: only.name,
@@ -707,8 +717,8 @@ struct PopupPlayerView: View {
                                 .foregroundStyle(.secondary)
                         }
                         if let artistID = credit.artistID {
-                            NavigationLink {
-                                ArtistDetailView(artistID: artistID)
+                            Button {
+                                router.pushPlayer(.artist(artistID))
                             } label: {
                                 Text(credit.name)
                                     .font(.subheadline)

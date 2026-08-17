@@ -76,6 +76,32 @@ public enum SongRadioQueue {
         return result
     }
 
+    /// IDs that must not reappear in a radio-continuation top-up.
+    ///
+    /// - Artist / genre queues: exclude only the playhead and everything still ahead,
+    ///   plus radio-continuation rows already appended. Already-played catalog tracks
+    ///   may return — similar-song results heavily overlap those large contexts.
+    /// - All other origins: exclude every song currently in the queue (original behavior).
+    public static func continuationExclusionIDs(
+        queue: [QueueItem],
+        currentIndex: Int,
+        origin: QueueOrigin?
+    ) -> Set<String> {
+        switch origin {
+        case .artist, .genre:
+            var ids = Set<String>()
+            for (index, item) in queue.enumerated() {
+                guard !item.playableId.isEmpty else { continue }
+                if item.isRadioContinuation || index >= currentIndex {
+                    ids.insert(item.playableId)
+                }
+            }
+            return ids
+        case .album, .playlist, .song, .none:
+            return Set(queue.map(\.playableId).filter { !$0.isEmpty })
+        }
+    }
+
     /// Builds a radio-continuation batch from parallel similar-song results.
     /// One seed → full-length list; two or three → zipper of 25-song lists.
     public static func buildContinuation(
@@ -95,6 +121,27 @@ public enum SongRadioQueue {
         // Zipper across lists; makeContinuationItems already excluded the queue, but
         // cross-list duplicates still need one more pass via zipperMerge's seen set.
         return zipperMerge(lists)
+    }
+
+    /// Backup when similar-song radio yields nothing: one shuffled list per genre,
+    /// zipper-merged and deduped against `alreadyQueued`.
+    public static func buildGenreContinuation(
+        genreLists: [[QueueItem]],
+        excluding alreadyQueued: Set<String>
+    ) -> [QueueItem] {
+        guard !genreLists.isEmpty else { return [] }
+        let prepared = genreLists.map { list in
+            var seen = alreadyQueued
+            var items: [QueueItem] = []
+            for item in list where item.kind == .song && !item.playableId.isEmpty {
+                guard seen.insert(item.playableId).inserted else { continue }
+                var copy = item
+                copy.isRadioContinuation = true
+                items.append(copy)
+            }
+            return items
+        }
+        return zipperMerge(prepared)
     }
 }
 

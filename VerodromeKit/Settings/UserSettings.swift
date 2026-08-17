@@ -8,6 +8,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var downloadTranscodeQuality: AudioTranscodeQuality
     public var smartQueuePrefetchEnabled: Bool
     public var queuePrefetchStaleHours: Int
+    /// How many upcoming queue tracks to keep in the temporary prefetch cache (0...10).
+    public var queuePrefetchSongsAhead: Int
+    /// How many previous queue tracks to keep in the temporary prefetch cache (0...5).
+    public var queuePrefetchSongsBehind: Int
     public var scrobbleTiming: ScrobbleTiming
     public var hapticsEnabled: Bool
     public var replayGainEnabled: Bool
@@ -36,6 +40,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         downloadTranscodeQuality: AudioTranscodeQuality = .original,
         smartQueuePrefetchEnabled: Bool = true,
         queuePrefetchStaleHours: Int = 18,
+        queuePrefetchSongsAhead: Int = 5,
+        queuePrefetchSongsBehind: Int = 2,
         scrobbleTiming: ScrobbleTiming = .default,
         hapticsEnabled: Bool = true,
         replayGainEnabled: Bool = false,
@@ -59,6 +65,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.downloadTranscodeQuality = downloadTranscodeQuality
         self.smartQueuePrefetchEnabled = smartQueuePrefetchEnabled
         self.queuePrefetchStaleHours = queuePrefetchStaleHours
+        self.queuePrefetchSongsAhead = Self.clampedAhead(queuePrefetchSongsAhead)
+        self.queuePrefetchSongsBehind = Self.clampedBehind(queuePrefetchSongsBehind)
         self.scrobbleTiming = scrobbleTiming
         self.hapticsEnabled = hapticsEnabled
         self.replayGainEnabled = replayGainEnabled
@@ -78,6 +86,19 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
     public static let `default` = UserSettings()
 
+    public static let defaultSongsAhead = 5
+    public static let defaultSongsBehind = 2
+    public static let maxSongsAhead = 10
+    public static let maxSongsBehind = 5
+
+    public static func clampedAhead(_ value: Int) -> Int {
+        min(max(value, 0), maxSongsAhead)
+    }
+
+    public static func clampedBehind(_ value: Int) -> Int {
+        min(max(value, 0), maxSongsBehind)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case isOfflineMode
         case cacheLimitBytes
@@ -86,6 +107,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case downloadTranscodeQuality
         case smartQueuePrefetchEnabled
         case queuePrefetchStaleHours
+        case queuePrefetchSongsAhead
+        case queuePrefetchSongsBehind
         case scrobbleTiming
         case hapticsEnabled
         case replayGainEnabled
@@ -123,6 +146,12 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
         smartQueuePrefetchEnabled = try c.decodeIfPresent(Bool.self, forKey: .smartQueuePrefetchEnabled) ?? true
         queuePrefetchStaleHours = try c.decodeIfPresent(Int.self, forKey: .queuePrefetchStaleHours) ?? 18
+        queuePrefetchSongsAhead = Self.clampedAhead(
+            try c.decodeIfPresent(Int.self, forKey: .queuePrefetchSongsAhead) ?? Self.defaultSongsAhead
+        )
+        queuePrefetchSongsBehind = Self.clampedBehind(
+            try c.decodeIfPresent(Int.self, forKey: .queuePrefetchSongsBehind) ?? Self.defaultSongsBehind
+        )
         scrobbleTiming = try c.decodeIfPresent(ScrobbleTiming.self, forKey: .scrobbleTiming) ?? .default
         hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         replayGainEnabled = try c.decodeIfPresent(Bool.self, forKey: .replayGainEnabled) ?? false
@@ -149,6 +178,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
         try c.encode(smartQueuePrefetchEnabled, forKey: .smartQueuePrefetchEnabled)
         try c.encode(queuePrefetchStaleHours, forKey: .queuePrefetchStaleHours)
+        try c.encode(queuePrefetchSongsAhead, forKey: .queuePrefetchSongsAhead)
+        try c.encode(queuePrefetchSongsBehind, forKey: .queuePrefetchSongsBehind)
         try c.encode(scrobbleTiming, forKey: .scrobbleTiming)
         try c.encode(hapticsEnabled, forKey: .hapticsEnabled)
         try c.encode(replayGainEnabled, forKey: .replayGainEnabled)
