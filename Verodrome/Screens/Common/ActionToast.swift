@@ -68,7 +68,8 @@ enum ActionToast {
                 items: items,
                 startAt: 0,
                 shuffle: false,
-                radioSeedTitle: seed.title
+                radioSeedTitle: seed.title,
+                origin: .song(seed.title)
             )
         }
         startRadio(result)

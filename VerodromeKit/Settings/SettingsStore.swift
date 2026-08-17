@@ -41,6 +41,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var smartQueueStaleHours: Int = 18
     @Published public var cacheLimitBytes: Int64 = PlayableCacheLimit.default.rawValue
     @Published public var gaplessPlaybackEnabled: Bool = true
+    /// When the queue runs low, append similar-song radio so listening can continue.
+    @Published public var radioContinuationEnabled: Bool = true
     @Published public var crossfadeEnabled: Bool = false
     @Published public var crossfadeDurationSeconds: Double = 3
     @Published public var replayGainEnabled: Bool = false
@@ -75,6 +77,7 @@ public final class SettingsStore: ObservableObject {
         var smartQueueStaleHours: Int
         var cacheLimitBytes: Int64
         var gaplessPlaybackEnabled: Bool
+        var radioContinuationEnabled: Bool
         var crossfadeEnabled: Bool
         var crossfadeDurationSeconds: Double
         var replayGainEnabled: Bool
@@ -108,6 +111,7 @@ public final class SettingsStore: ObservableObject {
             smartQueueStaleHours: Int,
             cacheLimitBytes: Int64,
             gaplessPlaybackEnabled: Bool,
+            radioContinuationEnabled: Bool,
             crossfadeEnabled: Bool,
             crossfadeDurationSeconds: Double,
             replayGainEnabled: Bool,
@@ -140,6 +144,7 @@ public final class SettingsStore: ObservableObject {
             self.smartQueueStaleHours = smartQueueStaleHours
             self.cacheLimitBytes = cacheLimitBytes
             self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+            self.radioContinuationEnabled = radioContinuationEnabled
             self.crossfadeEnabled = crossfadeEnabled
             self.crossfadeDurationSeconds = crossfadeDurationSeconds
             self.replayGainEnabled = replayGainEnabled
@@ -174,6 +179,7 @@ public final class SettingsStore: ObservableObject {
             case smartQueueStaleHours
             case cacheLimitBytes
             case gaplessPlaybackEnabled
+            case radioContinuationEnabled
             case crossfadeEnabled
             case crossfadeDurationSeconds
             case replayGainEnabled
@@ -212,6 +218,7 @@ public final class SettingsStore: ObservableObject {
             smartQueueStaleHours = try c.decode(Int.self, forKey: .smartQueueStaleHours)
             cacheLimitBytes = try c.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? PlayableCacheLimit.default.rawValue
             gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
+            radioContinuationEnabled = try c.decodeIfPresent(Bool.self, forKey: .radioContinuationEnabled) ?? true
             crossfadeEnabled = try c.decodeIfPresent(Bool.self, forKey: .crossfadeEnabled) ?? false
             crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
             replayGainEnabled = try c.decodeIfPresent(Bool.self, forKey: .replayGainEnabled) ?? false
@@ -255,6 +262,7 @@ public final class SettingsStore: ObservableObject {
             try c.encode(smartQueueStaleHours, forKey: .smartQueueStaleHours)
             try c.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
             try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
+            try c.encode(radioContinuationEnabled, forKey: .radioContinuationEnabled)
             try c.encode(crossfadeEnabled, forKey: .crossfadeEnabled)
             try c.encode(crossfadeDurationSeconds, forKey: .crossfadeDurationSeconds)
             try c.encode(replayGainEnabled, forKey: .replayGainEnabled)
@@ -310,6 +318,7 @@ public final class SettingsStore: ObservableObject {
             smartQueueStaleHours: smartQueueStaleHours,
             cacheLimitBytes: cacheLimitBytes,
             gaplessPlaybackEnabled: gaplessPlaybackEnabled,
+            radioContinuationEnabled: radioContinuationEnabled,
             crossfadeEnabled: crossfadeEnabled,
             crossfadeDurationSeconds: crossfadeDurationSeconds,
             replayGainEnabled: replayGainEnabled,
@@ -355,6 +364,7 @@ public final class SettingsStore: ObservableObject {
         user.streamingQualityCellular = streamingQualityCellular
         user.downloadTranscodeQuality = downloadTranscodeQuality
         user.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+        user.radioContinuationEnabled = radioContinuationEnabled
         user.crossfadeEnabled = crossfadeEnabled
         user.crossfadeDurationSeconds = crossfadeDurationSeconds
         user.replayGainEnabled = replayGainEnabled
@@ -378,6 +388,7 @@ public final class SettingsStore: ObservableObject {
         streamingQualityCellular = settings.streamingQualityCellular
         downloadTranscodeQuality = settings.downloadTranscodeQuality
         gaplessPlaybackEnabled = settings.gaplessPlaybackEnabled
+        radioContinuationEnabled = settings.radioContinuationEnabled
         crossfadeEnabled = settings.crossfadeEnabled
         crossfadeDurationSeconds = settings.crossfadeDurationSeconds
         replayGainEnabled = settings.replayGainEnabled
@@ -430,6 +441,7 @@ public final class SettingsStore: ObservableObject {
             smartQueueStaleHours = snapshot.smartQueueStaleHours
             cacheLimitBytes = snapshot.cacheLimitBytes
             gaplessPlaybackEnabled = snapshot.gaplessPlaybackEnabled
+            radioContinuationEnabled = snapshot.radioContinuationEnabled
             crossfadeEnabled = snapshot.crossfadeEnabled
             crossfadeDurationSeconds = snapshot.crossfadeDurationSeconds
             replayGainEnabled = snapshot.replayGainEnabled
@@ -457,6 +469,7 @@ public final class SettingsStore: ObservableObject {
         streamingQualityCellular = user.streamingQualityCellular
         downloadTranscodeQuality = user.downloadTranscodeQuality
         gaplessPlaybackEnabled = user.gaplessPlaybackEnabled
+        radioContinuationEnabled = user.radioContinuationEnabled
         crossfadeEnabled = user.crossfadeEnabled
         crossfadeDurationSeconds = user.crossfadeDurationSeconds
         replayGainEnabled = user.replayGainEnabled
@@ -483,6 +496,7 @@ public final class SettingsStore: ObservableObject {
         user.streamingQualityCellular = streamingQualityCellular
         user.downloadTranscodeQuality = downloadTranscodeQuality
         user.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+        user.radioContinuationEnabled = radioContinuationEnabled
         user.crossfadeEnabled = crossfadeEnabled
         user.crossfadeDurationSeconds = crossfadeDurationSeconds
         user.replayGainEnabled = replayGainEnabled

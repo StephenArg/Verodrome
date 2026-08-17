@@ -164,28 +164,60 @@ struct QueueView: View {
     private var rows: [QueueEntry] {
         let queue = queueList.queue
         let queued = userQueued
+        let radioStart = queue.firstIndex(where: \.isRadioContinuation)
+        let hideRadioSection = queueList.repeatMode == .all
         var entries: [QueueEntry] = []
-        entries.reserveCapacity(queue.count + 2)
+        entries.reserveCapacity(queue.count + 3)
         for index in queue.indices {
-            if !queued.isEmpty {
+            let item = queue[index]
+            if item.isRadioContinuation {
+                // Repeat All obscures the radio tail; keep the playing row if we're on it.
+                if hideRadioSection, index != queueList.currentIndex { continue }
+                if index == radioStart, !hideRadioSection {
+                    entries.append(.header(.radio(radioSectionTitle)))
+                }
+            } else if !queued.isEmpty {
                 if index == queued.lowerBound { entries.append(.header(.userQueued)) }
                 if index == queued.upperBound { entries.append(.header(.nextUp)) }
             }
-            entries.append(.song(queue[index], index: index))
+            entries.append(.song(item, index: index))
         }
         return entries
     }
 
+    private var radioSectionTitle: String {
+        if let origin = queueList.queueOrigin {
+            return origin.radioSectionTitle
+        }
+        let current = queueList.queue.indices.contains(queueList.currentIndex)
+            ? queueList.queue[queueList.currentIndex]
+            : nil
+        let fallback = current?.albumName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? current?.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
+        if fallback.isEmpty { return "Radio" }
+        return "\(fallback) radio"
+    }
+
+    @ViewBuilder
     private func headerRow(_ header: QueueSectionHeader) -> some View {
-        Text(header.title)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 14)
-            .padding(.bottom, 2)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+        HStack(spacing: 6) {
+            Text(header.title)
+            if case .radio = header {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -409,11 +441,13 @@ struct QueueView: View {
 private enum QueueSectionHeader: Hashable {
     case userQueued
     case nextUp
+    case radio(String)
 
     var title: String {
         switch self {
         case .userQueued: return "Added to Queue"
         case .nextUp: return "Next Up"
+        case .radio(let name): return name
         }
     }
 }

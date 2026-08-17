@@ -416,7 +416,7 @@ public final class AudioPlayer: ObservableObject {
         backend.setRepeatOne(repeatOne)
     }
 
-    public func play(items: [QueueItem], startAt index: Int = 0) async {
+    public func play(items: [QueueItem], startAt index: Int = 0, origin: QueueOrigin? = nil) async {
         PlayTrace.mark("AudioPlayer.play(items:)", details: "count=\(items.count) startAt=\(index) first=\(items.first?.title ?? "nil")")
         consecutivePlayFailures = 0
         stalled = nil
@@ -429,7 +429,7 @@ public final class AudioPlayer: ObservableObject {
         preloadInvalidationTask?.cancel()
         preloadedNextItemId = nil
         backend.abandonCurrentPlayback()
-        queueHandler.replaceContext(with: items, startAt: index)
+        queueHandler.replaceContext(with: items, startAt: index, origin: origin)
         PlayTrace.mark("replaceContext returned")
         await playCurrent()
         PlayTrace.mark("playCurrent await finished (audio may still be buffering)")

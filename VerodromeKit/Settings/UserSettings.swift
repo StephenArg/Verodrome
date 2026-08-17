@@ -15,6 +15,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var crossfadeEnabled: Bool
     public var crossfadeDurationSeconds: Double
     public var gaplessPlaybackEnabled: Bool
+    /// When the queue runs low, append similar-song radio so listening can continue.
+    public var radioContinuationEnabled: Bool
     public var showLyricsWhenAvailable: Bool
     /// Whether the full-screen player shows the lyrics panel in place of the artwork.
     public var showLyricsInPlayer: Bool
@@ -39,6 +41,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         crossfadeEnabled: Bool = false,
         crossfadeDurationSeconds: Double = 3,
         gaplessPlaybackEnabled: Bool = true,
+        radioContinuationEnabled: Bool = true,
         showLyricsWhenAvailable: Bool = true,
         showLyricsInPlayer: Bool = false,
         changingColorsInPlayer: Bool = true,
@@ -60,6 +63,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.crossfadeEnabled = crossfadeEnabled
         self.crossfadeDurationSeconds = crossfadeDurationSeconds
         self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+        self.radioContinuationEnabled = radioContinuationEnabled
         self.showLyricsWhenAvailable = showLyricsWhenAvailable
         self.showLyricsInPlayer = showLyricsInPlayer
         self.changingColorsInPlayer = changingColorsInPlayer
@@ -85,6 +89,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case crossfadeEnabled
         case crossfadeDurationSeconds
         case gaplessPlaybackEnabled
+        case radioContinuationEnabled
         case showLyricsWhenAvailable
         case showLyricsInPlayer
         case changingColorsInPlayer
@@ -120,6 +125,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         crossfadeEnabled = try c.decodeIfPresent(Bool.self, forKey: .crossfadeEnabled) ?? false
         crossfadeDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .crossfadeDurationSeconds) ?? 3
         gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
+        radioContinuationEnabled = try c.decodeIfPresent(Bool.self, forKey: .radioContinuationEnabled) ?? true
         showLyricsWhenAvailable = try c.decodeIfPresent(Bool.self, forKey: .showLyricsWhenAvailable) ?? true
         showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
         changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
@@ -144,6 +150,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(crossfadeEnabled, forKey: .crossfadeEnabled)
         try c.encode(crossfadeDurationSeconds, forKey: .crossfadeDurationSeconds)
         try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
+        try c.encode(radioContinuationEnabled, forKey: .radioContinuationEnabled)
         try c.encode(showLyricsWhenAvailable, forKey: .showLyricsWhenAvailable)
         try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
         try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)

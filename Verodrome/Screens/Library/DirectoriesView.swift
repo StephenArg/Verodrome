@@ -107,7 +107,7 @@ struct DirectoryBrowserView: View {
         let songs = entries.compactMap { $0.asQueueItem() }
         guard let item = entry.asQueueItem(),
               let index = songs.firstIndex(where: { $0.playableId == item.playableId }) else { return }
-        player.play(items: songs, startAt: index)
+        player.play(items: songs, startAt: index, origin: .song(item.title))
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

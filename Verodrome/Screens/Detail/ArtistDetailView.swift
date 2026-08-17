@@ -249,7 +249,7 @@ struct ArtistDetailView: View {
             guard !items.isEmpty else { return }
             PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
             PlayTrace.mark("calling player.play")
-            player.play(items: items, shuffle: shuffle)
+            player.play(items: items, shuffle: shuffle, origin: .artist(artist.name))
             router.openPlayer()
         }
     }
@@ -259,7 +259,9 @@ struct ArtistDetailView: View {
         let items = artistSongs.map(QueueItem.from)
         let index = artistSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         PlayTrace.mark("calling player.play", details: "count=\(items.count) startAt=\(index)")
-        player.play(items: items, startAt: index)
+        let origin = artists.first.map { QueueOrigin.artist($0.name) }
+            ?? song.artistName.map { QueueOrigin.artist($0) }
+        player.play(items: items, startAt: index, origin: origin)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

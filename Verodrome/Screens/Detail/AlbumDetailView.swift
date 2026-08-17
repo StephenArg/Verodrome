@@ -287,13 +287,13 @@ struct AlbumDetailView: View {
                     PlayTrace.error("no tracks after sync")
                     return
                 }
-                player.play(items: items, shuffle: shuffle)
+                player.play(items: items, shuffle: shuffle, origin: .album(album.title))
                 router.openPlayer()
             }
             return
         }
 
-        player.play(items: items, shuffle: shuffle)
+        player.play(items: items, shuffle: shuffle, origin: .album(album.title))
         router.openPlayer()
     }
 
@@ -301,7 +301,8 @@ struct AlbumDetailView: View {
         let albumArt = albums.first?.artworkToken
         let items = queueItems(for: tracks, albumArtworkId: albumArt)
         let index = tracks.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
-        player.play(items: items, startAt: index)
+        let origin = albums.first.map { QueueOrigin.album($0.title) }
+        player.play(items: items, startAt: index, origin: origin)
     }
 
     private func queueItems(for tracks: [Song], albumArtworkId: String?) -> [QueueItem] {

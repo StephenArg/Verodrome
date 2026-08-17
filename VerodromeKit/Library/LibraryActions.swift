@@ -286,7 +286,15 @@ public final class LibraryActions {
 
     /// Fetches similar songs and builds a radio queue. Does not start playback — the
     /// UI should hand the items to `PlayerViewModel.play` so the on-screen queue updates.
-    public func prepareRadioQueue(seed: QueueItem) async -> PrepareRadioOutcome {
+    ///
+    /// - Parameters:
+    ///   - count: How many similar songs to request (default matches Instant Mix scale).
+    ///   - includeSeed: When true (Start Radio), the seed is first in the queue.
+    public func prepareRadioQueue(
+        seed: QueueItem,
+        count: Int = SongRadioQueue.defaultSimilarCount,
+        includeSeed: Bool = true
+    ) async -> PrepareRadioOutcome {
         guard seed.kind == .song else {
             await EventLogger.shared.info(
                 "radio",
@@ -305,16 +313,26 @@ public final class LibraryActions {
         do {
             let similar = try await provider.similarSongs(
                 toSongId: seed.playableId,
-                count: SongRadioQueue.defaultSimilarCount
+                count: count
             )
-            let items = SongRadioQueue.makeItems(seed: seed, similar: similar)
+            let items: [QueueItem]
+            if includeSeed {
+                items = SongRadioQueue.makeItems(seed: seed, similar: similar)
+            } else {
+                items = SongRadioQueue.makeContinuationItems(similar: similar)
+            }
             await EventLogger.shared.info(
                 "radio",
                 "Start radio seed=\(seed.playableId) title=\(seed.title) similar=\(similar.count) queue=\(items.count)"
             )
 
-            // Need at least one similar beyond the seed.
-            guard items.count > 1 else { return .noSimilarSongs }
+            // Need at least one similar beyond the seed when starting radio; for
+            // continuation, any non-empty result is usable.
+            if includeSeed {
+                guard items.count > 1 else { return .noSimilarSongs }
+            } else {
+                guard !items.isEmpty else { return .noSimilarSongs }
+            }
 
             if let ingestor = kit.activeLibraryIngester {
                 let songs = similar
@@ -331,6 +349,72 @@ public final class LibraryActions {
             )
             return .failed
         }
+    }
+
+    /// Fetches similar songs for 1–3 seeds and builds a zipper-merged radio-continuation
+    /// batch to append to the end of the current queue.
+    public func prepareRadioContinuation(
+        seeds: [QueueItem],
+        excluding alreadyQueued: Set<String>
+    ) async -> PrepareRadioOutcome {
+        let songSeeds = seeds.filter { $0.kind == .song && !$0.playableId.isEmpty }
+        guard !songSeeds.isEmpty else { return .unavailable }
+        guard let provider = syncer as? (any SimilarSongProviding) else {
+            return .unavailable
+        }
+
+        let count = songSeeds.count == 1
+            ? SongRadioQueue.defaultSimilarCount
+            : SongRadioQueue.continuationSimilarCount
+
+        var seedResults: [(seed: QueueItem, similar: [IngestSong])] = []
+        seedResults.reserveCapacity(songSeeds.count)
+
+        // Fetch in parallel while staying on the MainActor — each call is independently awaitable.
+        await withTaskGroup(of: (Int, QueueItem, [IngestSong]?).self) { group in
+            for (offset, seed) in songSeeds.enumerated() {
+                group.addTask { @MainActor in
+                    do {
+                        let similar = try await provider.similarSongs(
+                            toSongId: seed.playableId,
+                            count: count
+                        )
+                        return (offset, seed, similar)
+                    } catch {
+                        return (offset, seed, nil)
+                    }
+                }
+            }
+            var collected: [(Int, QueueItem, [IngestSong])] = []
+            for await (offset, seed, similar) in group {
+                if let similar {
+                    collected.append((offset, seed, similar))
+                }
+            }
+            collected.sort { $0.0 < $1.0 }
+            seedResults = collected.map { ($0.1, $0.2) }
+        }
+
+        guard !seedResults.isEmpty else { return .failed }
+
+        let items = SongRadioQueue.buildContinuation(
+            seedResults: seedResults,
+            excluding: alreadyQueued
+        )
+        await EventLogger.shared.info(
+            "radio",
+            "Radio continuation seeds=\(seedResults.count) queue=\(items.count)"
+        )
+        guard !items.isEmpty else { return .noSimilarSongs }
+
+        if let ingestor = kit.activeLibraryIngester {
+            let songs = seedResults.flatMap(\.similar)
+            Task.detached(priority: .utility) {
+                try? await ingestor.ingest(songs: songs)
+            }
+        }
+
+        return .ready(items)
     }
 
     // MARK: - Playlists

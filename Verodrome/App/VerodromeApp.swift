@@ -9,6 +9,7 @@ struct VerodromeApp: App {
     @StateObject private var kit = VerodromeKit.shared
     @StateObject private var player = PlayerViewModel()
     @StateObject private var shuffleAll = ShuffleAllCoordinator()
+    @StateObject private var radioContinuation = RadioContinuationCoordinator()
     @StateObject private var themeManager: ThemeManager
     @Environment(\.scenePhase) private var scenePhase
 
@@ -27,6 +28,7 @@ struct VerodromeApp: App {
                 .environmentObject(player.nowPlaying)
                 .environmentObject(player.queueList)
                 .environmentObject(shuffleAll)
+                .environmentObject(radioContinuation)
                 .environmentObject(themeManager)
                 .preferredColorScheme(colorScheme)
                 .tint(themeManager.accentColor)
@@ -35,6 +37,7 @@ struct VerodromeApp: App {
                     await kit.initialize()
                     player.attach(facade: kit.player)
                     shuffleAll.attach(player: player)
+                    radioContinuation.attach(player: player, shuffleAll: shuffleAll)
                     themeManager.applyTheme()
                 }
                 .onOpenURL { url in

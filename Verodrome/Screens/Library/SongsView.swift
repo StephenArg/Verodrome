@@ -221,7 +221,7 @@ struct SongsView: View {
         // follow the user here and randomise the tracks queued behind the one they
         // tapped. Picking a song out of a list is a request for that song, then the ones
         // after it.
-        player.play(items: items, startAt: 0, shuffle: false)
+        player.play(items: items, startAt: 0, shuffle: false, origin: .song(item.title))
 
         // Only unfiltered, for the same reason Shuffle All disables while a filter is
         // typed or downloaded-only is on: the rows on screen are then the user's own

@@ -35,10 +35,17 @@ final class QueueListModel: ObservableObject {
     @Published private(set) var currentEntryId: UUID?
     @Published private(set) var userQueuedRange: Range<Int> = 0..<0
     @Published private(set) var isReorderable = false
+    @Published private(set) var queueOrigin: QueueOrigin?
+    @Published private(set) var repeatMode: RepeatMode = .off
 
     fileprivate weak var player: PlayerViewModel?
 
-    func apply(queue: [QueueItem], currentIndex: Int) {
+    func apply(
+        queue: [QueueItem],
+        currentIndex: Int,
+        origin: QueueOrigin? = nil,
+        repeatMode: RepeatMode = .off
+    ) {
         let entryId = queue.indices.contains(currentIndex) ? queue[currentIndex].entryId : nil
         let range = queue.userQueuedRun(after: currentIndex)
         let reorderable = !queue.isEmpty
@@ -47,12 +54,16 @@ final class QueueListModel: ObservableObject {
             || self.currentEntryId != entryId
             || self.userQueuedRange != range
             || self.isReorderable != reorderable
+            || self.queueOrigin != origin
+            || self.repeatMode != repeatMode
         else { return }
         self.queue = queue
         self.currentIndex = currentIndex
         self.currentEntryId = entryId
         self.userQueuedRange = range
         self.isReorderable = reorderable
+        self.queueOrigin = origin
+        self.repeatMode = repeatMode
     }
 
     func jump(to index: Int) { player?.jump(to: index) }
@@ -125,6 +136,8 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isStartingRadio = false
     /// Seed track title for the active song-radio context. Nil for album / playlist / etc.
     @Published private(set) var radioSeedTitle: String?
+    /// Album / playlist / song that seeded the playing context — labels radio continuation.
+    @Published private(set) var queueOrigin: QueueOrigin?
 
     let progress = PlayerProgressModel()
     let nowPlaying = NowPlayingModel()
@@ -206,12 +219,14 @@ final class PlayerViewModel: ObservableObject {
     ///     stays off so there is no original order to restore, but the queue is still
     ///     treated as user-arrangeable.
     ///   - radioSeedTitle: When non-nil, the queue is a song radio seeded by this title.
+    ///   - origin: Where this context came from — used to label a radio-continuation section.
     func play(
         items: [QueueItem],
         startAt index: Int? = nil,
         shuffle: Bool? = nil,
         arrivedShuffled: Bool = false,
-        radioSeedTitle: String? = nil
+        radioSeedTitle: String? = nil,
+        origin: QueueOrigin? = nil
     ) {
         guard !items.isEmpty else {
             PlayTrace.error("PlayerViewModel.play — empty items")
@@ -219,6 +234,7 @@ final class PlayerViewModel: ObservableObject {
         }
         let trimmedSeed = radioSeedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.radioSeedTitle = (trimmedSeed?.isEmpty == false) ? trimmedSeed : nil
+        self.queueOrigin = origin
         queueArrivedShuffled = arrivedShuffled
         let mode: ShuffleMode? = shuffle.map { $0 ? .on : .off }
         let startIndex: Int
@@ -238,7 +254,7 @@ final class PlayerViewModel: ObservableObject {
         let seedEntryId = items[startIndex].entryId
         Task(priority: .userInitiated) {
             PlayTrace.mark("PlayerViewModel Task running (await facade)")
-            await facade?.play(items: items, startAt: startIndex, shuffle: mode)
+            await facade?.play(items: items, startAt: startIndex, shuffle: mode, origin: origin)
             // A newer `play` may have replaced the context while we were awaiting.
             let stillOurs = facade?.currentItem?.entryId == seedEntryId
                 || (facade?.queue.contains { $0.entryId == seedEntryId } ?? false)
@@ -246,6 +262,7 @@ final class PlayerViewModel: ObservableObject {
             syncQueue(fallback: items)
             currentItem = facade?.currentItem
             shuffleMode = facade?.shuffleMode ?? shuffleMode
+            queueOrigin = facade?.queueOrigin ?? origin
             // Re-assert after the await so the flag matches the context that landed.
             queueArrivedShuffled = arrivedShuffled
             progress.duration = facade?.duration ?? items[startIndex].duration
@@ -278,11 +295,20 @@ final class PlayerViewModel: ObservableObject {
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
         contextGeneration = facade?.contextGeneration ?? contextGeneration
-        queueList.apply(queue: queue, currentIndex: currentIndex)
+        queueOrigin = facade?.queueOrigin ?? queueOrigin
+        if let facade {
+            repeatMode = facade.repeatMode
+        }
+        queueList.apply(queue: queue, currentIndex: currentIndex, origin: queueOrigin, repeatMode: repeatMode)
         // A brand-new context isn't a step through a queue, so its index delta says
         // nothing about direction — leave the last one standing.
         if contextGeneration == previousGeneration,
-           let direction = Self.slideDirection(from: previousIndex, to: currentIndex, count: queue.count) {
+           let direction = Self.slideDirection(
+            from: previousIndex,
+            to: currentIndex,
+            count: queue.count,
+            queue: queue
+           ) {
             artworkSlideDirection = direction
         }
         PlayerArtworkWarmer.shared.warm(queue: queue, currentIndex: currentIndex)
@@ -290,10 +316,15 @@ final class PlayerViewModel: ObservableObject {
 
     /// Nil when the queue didn't move. Repeat-all wraps the index around the ends, and
     /// that is still one step forward (or back), not a jump the length of the queue.
-    private static func slideDirection(from previous: Int, to new: Int, count: Int) -> ArtworkSlideDirection? {
+    /// When a radio-continuation tail exists, wrap is scoped to the original context.
+    private static func slideDirection(from previous: Int, to new: Int, count: Int, queue: [QueueItem]) -> ArtworkSlideDirection? {
         guard count > 0, previous != new else { return nil }
-        if previous == count - 1, new == 0 { return .forward }
-        if previous == 0, new == count - 1 { return .backward }
+        let scope = queue.indices.filter { !queue[$0].isRadioContinuation }
+        let wrapScope = scope.isEmpty || scope.count == queue.count ? Array(queue.indices) : scope
+        if let first = wrapScope.first, let last = wrapScope.last {
+            if previous == last, new == first { return .forward }
+            if previous == first, new == last { return .backward }
+        }
         return new > previous ? .forward : .backward
     }
 
@@ -444,6 +475,7 @@ final class PlayerViewModel: ObservableObject {
         lyrics = ""
         statusMessage = ""
         radioSeedTitle = nil
+        queueOrigin = nil
         playbackSpeed = facade?.sessionPlaybackRate ?? 1
         isRandomPlaybackSpeed = facade?.isRandomPlaybackSpeed ?? false
         sleepTimerDeadline = facade?.sleepTimerDeadline
@@ -453,11 +485,17 @@ final class PlayerViewModel: ObservableObject {
 
     func toggleRepeat() {
         switch repeatMode {
-        case .off: repeatMode = .one
-        case .one: repeatMode = .all
-        case .all: repeatMode = .off
+        case .off: repeatMode = .all
+        case .all: repeatMode = .one
+        case .one: repeatMode = .off
         }
         facade?.setRepeatMode(repeatMode)
+        queueList.apply(
+            queue: queue,
+            currentIndex: currentIndex,
+            origin: queueOrigin,
+            repeatMode: repeatMode
+        )
     }
 
     func toggleShuffle() {

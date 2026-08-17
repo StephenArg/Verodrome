@@ -39,7 +39,8 @@ enum DeepLinkHandler {
                 || ($0.artistName?.lowercased().contains(lowered) ?? false)
         }
         guard !matches.isEmpty else { return }
-        player.play(items: matches.map(QueueItem.from), startAt: 0)
+        let items = matches.map(QueueItem.from)
+        player.play(items: items, startAt: 0, origin: .song(items[0].title))
     }
 }
 

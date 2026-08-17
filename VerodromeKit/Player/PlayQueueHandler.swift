@@ -17,6 +17,8 @@ public final class PlayQueueHandler: ObservableObject {
     @Published public var repeatMode: RepeatMode = .off
     @Published public var shuffleMode: ShuffleMode = .off
     @Published public var playerMode: PlayerMode = .music
+    /// Album / playlist / song that seeded the current context — labels radio continuation.
+    @Published public private(set) var queueOrigin: QueueOrigin?
 
     /// How far into the current track playback had reached, carried into every snapshot
     /// so a relaunch resumes mid-song rather than at the start. Kept here rather than
@@ -50,9 +52,10 @@ public final class PlayQueueHandler: ObservableObject {
         return q[currentIndex]
     }
 
-    public func replaceContext(with items: [QueueItem], startAt index: Int = 0) {
+    public func replaceContext(with items: [QueueItem], startAt index: Int = 0, origin: QueueOrigin? = nil) {
         PlayTrace.mark("PlayQueueHandler.replaceContext", details: "items=\(items.count) startAt=\(index) shuffleMode=\(shuffleMode)")
         unshuffledContext = items
+        queueOrigin = origin
         let safeIndex = items.isEmpty ? 0 : min(max(0, index), items.count - 1)
         if shuffleMode == .on, !items.isEmpty {
             let t0 = CFAbsoluteTimeGetCurrent()
@@ -165,11 +168,33 @@ public final class PlayQueueHandler: ObservableObject {
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
     }
 
-    /// Drops tracks that played long ago, keeping at most `maxPlayedHistory` behind the
-    /// playing one. An open-ended context tops itself up for as long as playback runs,
-    /// so without a bound both the queue array and the rows persisted alongside it grow
-    /// all session.
+    /// Drops tracks that played long ago so open-ended contexts (Shuffle All, radio
+    /// continuation) cannot grow forever.
+    ///
+    /// When a radio-continuation tail is present, original context rows are never
+    /// trimmed — Repeat All needs the first and last of that scope. Only played
+    /// radio-continuation rows beyond `maxPlayedHistory` are removed.
+    ///
+    /// Without a radio tail, the classic Shuffle All trim applies: drop everything
+    /// more than `maxPlayedHistory` behind the playhead.
     private func trimPlayedHistory() {
+        if contextQueue.contains(where: \.isRadioContinuation) {
+            let playedRadio = contextQueue.indices.filter {
+                $0 < currentIndex && contextQueue[$0].isRadioContinuation
+            }
+            let excess = playedRadio.count - Self.maxPlayedHistory
+            guard excess > 0 else { return }
+
+            let removeIndices = Array(playedRadio.prefix(excess))
+            for index in removeIndices.reversed() {
+                contextQueue.remove(at: index)
+                if currentIndex > index { currentIndex -= 1 }
+            }
+            let remaining = Set(contextQueue.map(\.entryId))
+            unshuffledContext.removeAll { !remaining.contains($0.entryId) }
+            return
+        }
+
         let excess = currentIndex - Self.maxPlayedHistory
         guard excess > 0 else { return }
 
@@ -179,6 +204,16 @@ public final class PlayQueueHandler: ObservableObject {
         // `entryId` rather than `id` because the same song can sit in the queue twice.
         let remaining = Set(contextQueue.map(\.entryId))
         unshuffledContext.removeAll { !remaining.contains($0.entryId) }
+    }
+
+    /// Indices that Repeat All wraps within: everything that is not a radio-continuation
+    /// row. Empty when there is no radio tail (then Repeat All wraps the whole queue).
+    public var repeatScopeIndices: [Int] {
+        let q = activeQueue
+        guard q.contains(where: \.isRadioContinuation) else {
+            return Array(q.indices)
+        }
+        return q.indices.filter { !q[$0].isRadioContinuation }
     }
 
     /// Where the tracks the user queued themselves sit: the run right after the playing
@@ -331,7 +366,7 @@ public final class PlayQueueHandler: ObservableObject {
         let departedIndex = currentIndex
         switch repeatMode {
         case .all:
-            currentIndex = (currentIndex + 1) % q.count
+            currentIndex = nextIndexForRepeatAll(from: departedIndex, in: q)
         case .off, .one:
             if currentIndex + 1 < q.count { currentIndex += 1 } else { return nil }
         }
@@ -348,7 +383,7 @@ public final class PlayQueueHandler: ObservableObject {
         let departedIndex = currentIndex
         switch repeatMode {
         case .all:
-            currentIndex = (currentIndex - 1 + q.count) % q.count
+            currentIndex = previousIndexForRepeatAll(from: departedIndex, in: q)
         case .off, .one:
             if currentIndex > 0 { currentIndex -= 1 } else { return currentItem }
         }
@@ -359,6 +394,28 @@ public final class PlayQueueHandler: ObservableObject {
         persist()
         NotificationCenter.default.post(name: .verodromeQueueIndexChanged, object: currentIndex)
         return currentItem
+    }
+
+    /// When a radio continuation exists, Repeat All wraps only the original context.
+    /// From a radio row (Repeat All turned on mid-radio), jump to the first scope item.
+    private func nextIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
+        let scope = repeatScopeIndices
+        guard !scope.isEmpty else { return (index + 1) % q.count }
+        if let pos = scope.firstIndex(of: index) {
+            return scope[(pos + 1) % scope.count]
+        }
+        // Currently on a radio-continuation row — jump into the album/playlist.
+        return scope[0]
+    }
+
+    /// From a radio row with Repeat All on, jump to the last scope item.
+    private func previousIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
+        let scope = repeatScopeIndices
+        guard !scope.isEmpty else { return (index - 1 + q.count) % q.count }
+        if let pos = scope.firstIndex(of: index) {
+            return scope[(pos - 1 + scope.count) % scope.count]
+        }
+        return scope[scope.count - 1]
     }
 
     public func jump(to index: Int) {
@@ -436,32 +493,51 @@ public final class PlayQueueHandler: ObservableObject {
         let playingId = playingItem?.id
 
         if mode == .on {
-            // Turn ON — move the playing track to the front, then shuffle the rest.
-            // Done as swap-then-shuffle so `currentItem` never points at a different
-            // song between the two @Published writes (that flash corrupts now-playing).
+            // Turn ON — move the playing track to the front, then shuffle the rest of the
+            // original context. Radio-continuation rows stay pinned at the end in order.
             shuffleMode = .on
             unshuffledContext = contextQueue
-            if playingItem != nil, contextQueue.indices.contains(playingAt) {
-                if playingAt != 0 {
-                    contextQueue.swapAt(0, playingAt)
-                    currentIndex = 0
+            let (scope, radioTail) = splitRadioTail(contextQueue)
+            var working = scope
+            let playingInScope = working.indices.contains(playingAt)
+                && playingAt < scope.count
+            let scopePlayingAt = playingInScope
+                ? playingAt
+                : working.firstIndex(where: { $0.entryId == playingItem?.entryId })
+            if let scopePlayingAt, working.indices.contains(scopePlayingAt) {
+                if scopePlayingAt != 0 {
+                    working.swapAt(0, scopePlayingAt)
                 }
-                if contextQueue.count > 1 {
-                    var rest = Array(contextQueue[1...])
+                if working.count > 1 {
+                    var rest = Array(working[1...])
                     rest.shuffle()
-                    contextQueue = [contextQueue[0]] + rest
+                    working = [working[0]] + rest
                 }
-                PlayTrace.mark("shuffled remainder behind playing track")
+                contextQueue = working + radioTail
+                currentIndex = 0
+                PlayTrace.mark("shuffled remainder behind playing track; radio tail pinned")
+            } else if playingItem != nil, playingItem!.isRadioContinuation {
+                // Playing a radio row — shuffle the scope, leave the playhead on that radio row.
+                working.shuffle()
+                contextQueue = working + radioTail
+                currentIndex = working.count + (radioTail.firstIndex(where: { $0.entryId == playingItem!.entryId }) ?? 0)
+                PlayTrace.mark("shuffled scope while playing radio row")
             } else {
-                contextQueue = contextQueue.shuffled()
-                PlayTrace.mark("shuffled all (no current item)")
+                working.shuffle()
+                contextQueue = working + radioTail
+                PlayTrace.mark("shuffled all scope (no current item)")
             }
         } else {
             // Turn OFF — restore original order; keep pointing at the same playing track.
             // Staged via swaps so `currentItem` never resolves to a different song between
             // the @Published writes (same flash as turning shuffle on).
             shuffleMode = .off
-            let restored = unshuffledContext.isEmpty ? contextQueue : unshuffledContext
+            let restoredFull = unshuffledContext.isEmpty ? contextQueue : unshuffledContext
+            let (restoredScope, restoredRadio) = splitRadioTail(restoredFull)
+            // Prefer the live radio tail (may have grown via top-up) over the snapshot.
+            let (_, liveRadio) = splitRadioTail(contextQueue)
+            let radioTail = liveRadio.isEmpty ? restoredRadio : liveRadio
+            let restored = restoredScope + radioTail
             let restoredIndex = playingId.flatMap { id in
                 restored.firstIndex(where: { $0.id == id })
             } ?? min(playingAt, max(0, restored.count - 1))
@@ -482,6 +558,17 @@ public final class PlayQueueHandler: ObservableObject {
         persist()
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: nil)
         PlayTrace.end("setShuffle done", details: "now=\(shuffleMode)")
+    }
+
+    /// Splits a contiguous radio-continuation tail from the original context.
+    /// Radio rows are expected at the end; any earlier continuation row stays in scope
+    /// so a malformed queue still has a stable partition.
+    private func splitRadioTail(_ items: [QueueItem]) -> (scope: [QueueItem], radioTail: [QueueItem]) {
+        var split = items.count
+        while split > 0, items[split - 1].isRadioContinuation {
+            split -= 1
+        }
+        return (Array(items[..<split]), Array(items[split...]))
     }
 
     public func windowItems(previous: Int, next: Int) -> [QueueItem] {
@@ -513,6 +600,7 @@ public final class PlayQueueHandler: ObservableObject {
         userQueue = []
         podcastQueue = []
         unshuffledContext = []
+        queueOrigin = nil
         playbackPosition = 0
         currentIndex = 0
         queueGeneration += 1
@@ -581,6 +669,7 @@ public final class PlayQueueHandler: ObservableObject {
         shuffleMode = snapshot.shuffleMode
         playerMode = snapshot.playerMode
         playbackPosition = snapshot.playbackPosition
+        queueOrigin = snapshot.origin
         if playerMode == .music, let restoredEntryId,
            let found = context.firstIndex(where: { $0.entryId == restoredEntryId }) {
             currentIndex = found
@@ -631,7 +720,8 @@ public final class PlayQueueHandler: ObservableObject {
             repeatMode: repeatMode,
             shuffleMode: shuffleMode,
             playerMode: playerMode,
-            playbackPosition: playbackPosition
+            playbackPosition: playbackPosition,
+            origin: queueOrigin
         )
     }
 

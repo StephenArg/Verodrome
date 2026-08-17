@@ -463,14 +463,16 @@ struct PlaylistDetailView: View {
     private func play(shuffle: Bool) {
         let items = songs.map(QueueItem.from)
         guard !items.isEmpty else { return }
-        player.play(items: items, shuffle: shuffle)
+        let origin = playlists.first.map { QueueOrigin.playlist($0.name) }
+        player.play(items: items, shuffle: shuffle, origin: origin)
         router.openPlayer()
     }
 
     private func playSong(_ song: Song, entryId: PlaylistRowItem.ID) {
         let items = songs.map(QueueItem.from)
         let index = entries.firstIndex(where: { $0.id == entryId }) ?? 0
-        player.play(items: items, startAt: index)
+        let origin = playlists.first.map { QueueOrigin.playlist($0.name) }
+        player.play(items: items, startAt: index, origin: origin)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

@@ -484,7 +484,7 @@ struct SearchView: View {
             }
             let items = songs.map(QueueItem.from)
             guard !items.isEmpty else { return }
-            player.play(items: items, shuffle: shuffle)
+            player.play(items: items, shuffle: shuffle, origin: .artist(artist.name))
             router.openPlayer()
         }
     }
@@ -509,7 +509,8 @@ struct SearchView: View {
         guard !items.isEmpty else { return }
         // Explicitly unshuffled — same as Songs: a search hit is a request for that song,
         // then the ones after it in the result list.
-        player.play(items: items, startAt: 0, shuffle: false)
+        let origin = items.first.map { QueueOrigin.song($0.title) }
+        player.play(items: items, startAt: 0, shuffle: false, origin: origin)
         router.openPlayer()
     }
 

@@ -817,4 +817,91 @@ final class PlayQueueHandlerTests: XCTestCase {
         let ids = handler.activeQueue.map(\.playableId)
         XCTAssertEqual(ids, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "kept"])
     }
+
+    func testRepeatAllWrapsOriginalContextIgnoringRadioTail() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 2, origin: .album("Test"))
+        handler.appendContext([
+            QueueItem(playableId: "r0", title: "Radio 0", isRadioContinuation: true),
+            QueueItem(playableId: "r1", title: "Radio 1", isRadioContinuation: true)
+        ])
+        handler.setRepeat(.all)
+
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "0")
+        XCTAssertFalse(handler.currentItem?.isRadioContinuation ?? true)
+
+        handler.jump(to: 0)
+        _ = handler.retreat()
+        XCTAssertEqual(handler.currentItem?.playableId, "2")
+    }
+
+    func testRepeatAllSkipFromRadioJumpsToFirstOrLast() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0, origin: .album("Test"))
+        handler.appendContext([
+            QueueItem(playableId: "r0", title: "Radio 0", isRadioContinuation: true),
+            QueueItem(playableId: "r1", title: "Radio 1", isRadioContinuation: true)
+        ])
+        handler.jump(to: 3) // first radio row
+        handler.setRepeat(.all)
+
+        _ = handler.advance()
+        XCTAssertEqual(handler.currentItem?.playableId, "0")
+
+        handler.jump(to: 4) // second radio row
+        _ = handler.retreat()
+        XCTAssertEqual(handler.currentItem?.playableId, "2")
+    }
+
+    func testShufflePinsRadioContinuationAtEnd() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(5), startAt: 2, origin: .playlist("Mix"))
+        let radio = (0..<4).map {
+            QueueItem(playableId: "r\($0)", title: "Radio \($0)", isRadioContinuation: true)
+        }
+        handler.appendContext(radio)
+        handler.toggleShuffle()
+
+        let queue = handler.activeQueue
+        XCTAssertEqual(handler.currentItem?.playableId, "2")
+        XCTAssertEqual(queue.suffix(4).map(\.playableId), ["r0", "r1", "r2", "r3"])
+        XCTAssertTrue(queue.suffix(4).allSatisfy(\.isRadioContinuation))
+        XCTAssertFalse(queue.prefix(5).contains(where: \.isRadioContinuation))
+    }
+
+    func testTrimPlayedHistoryKeepsOriginalContext() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0, origin: .album("Keep"))
+        // More radio rows than maxPlayedHistory so trim has something to drop.
+        let radioCount = PlayQueueHandler.maxPlayedHistory + 20
+        let radio = (0..<radioCount).map {
+            QueueItem(playableId: "r\($0)", title: "Radio \($0)", isRadioContinuation: true)
+        }
+        handler.appendContext(radio)
+
+        // Advance deep into the radio tail so many radio rows are behind the playhead.
+        for _ in 0..<(3 + PlayQueueHandler.maxPlayedHistory + 5) {
+            XCTAssertNotNil(handler.advance())
+        }
+
+        // Trim runs on append — top up with one more row to trigger it.
+        handler.appendContext([
+            QueueItem(playableId: "r-extra", title: "Extra", isRadioContinuation: true)
+        ])
+
+        let queue = handler.activeQueue
+        XCTAssertTrue(queue.contains(where: { $0.playableId == "0" && !$0.isRadioContinuation }))
+        XCTAssertTrue(queue.contains(where: { $0.playableId == "2" && !$0.isRadioContinuation }))
+        let radioBehind = queue.indices.filter { $0 < handler.currentIndex && queue[$0].isRadioContinuation }
+        XCTAssertLessThanOrEqual(radioBehind.count, PlayQueueHandler.maxPlayedHistory)
+    }
+
+    func testReplaceContextStoresOrigin() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(2), startAt: 0, origin: .artist("Radiohead"))
+        XCTAssertEqual(handler.queueOrigin, .artist("Radiohead"))
+        handler.replaceContext(with: Self.songs(1), startAt: 0)
+        XCTAssertNil(handler.queueOrigin)
+    }
 }

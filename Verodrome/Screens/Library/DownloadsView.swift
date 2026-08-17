@@ -524,7 +524,7 @@ struct DownloadsView: View {
     private func play(_ row: DownloadedSongRow) {
         let items = downloadedRows.map(\.queueItem)
         let index = downloadedRows.firstIndex(where: { $0.id == row.id }) ?? 0
-        player.play(items: items, startAt: index)
+        player.play(items: items, startAt: index, origin: .song(row.title))
     }
 
     private func remove(_ row: DownloadedSongRow) {

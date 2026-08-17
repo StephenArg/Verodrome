@@ -21,6 +21,29 @@ public enum PlayerMode: Int, Codable, CaseIterable, Sendable {
     case podcast = 1
 }
 
+/// Where the current play context came from — used to label a radio-continuation section.
+public enum QueueOrigin: Codable, Sendable, Equatable {
+    case album(String)
+    case playlist(String)
+    case artist(String)
+    case song(String)
+    case genre(String)
+
+    public var displayName: String {
+        switch self {
+        case .album(let name), .playlist(let name), .artist(let name),
+             .song(let name), .genre(let name):
+            return name
+        }
+    }
+
+    public var radioSectionTitle: String {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Radio" }
+        return "\(trimmed) radio"
+    }
+}
+
 /// Sticky playback-speed options for the current play context.
 public enum PlaybackSpeed {
     public static let options: [Float] = [2, 1.75, 1.5, 1.25, 1, 0.75, 0.5]
@@ -106,6 +129,9 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
     /// and its prefetched file is dropped with it. Set by "Add to Queue", which is meant
     /// to slot tracks in without permanently joining the queue.
     public var isEphemeral: Bool = false
+    /// Appended by radio continuation when the original context runs low. Repeat All
+    /// scopes wrap/skip to non-continuation rows and the queue UI can hide this section.
+    public var isRadioContinuation: Bool = false
 
     public var isLiveStream: Bool { kind == .radio || directStreamURL != nil }
 
@@ -120,6 +146,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         directStreamURL: URL? = nil,
         isUserQueued: Bool = false,
         isEphemeral: Bool = false,
+        isRadioContinuation: Bool = false,
         entryId: UUID = UUID()
     ) {
         self.entryId = entryId
@@ -133,6 +160,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         self.directStreamURL = directStreamURL
         self.isUserQueued = isUserQueued
         self.isEphemeral = isEphemeral
+        self.isRadioContinuation = isRadioContinuation
     }
 
     public init(from ref: PlayableRef) {
@@ -185,6 +213,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         directStreamURL = try c.decodeIfPresent(URL.self, forKey: .directStreamURL)
         isUserQueued = try c.decodeIfPresent(Bool.self, forKey: .isUserQueued) ?? false
         isEphemeral = try c.decodeIfPresent(Bool.self, forKey: .isEphemeral) ?? false
+        isRadioContinuation = try c.decodeIfPresent(Bool.self, forKey: .isRadioContinuation) ?? false
     }
 
     public var artist: String? { artistName }
@@ -245,6 +274,8 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
     public var playerMode: PlayerMode
     /// How far into the current track playback had reached.
     public var playbackPosition: TimeInterval
+    /// Album / playlist / etc. that seeded this context — labels radio continuation.
+    public var origin: QueueOrigin?
 
     public init(
         context: [QueueItem] = [],
@@ -256,7 +287,8 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
         repeatMode: RepeatMode = .off,
         shuffleMode: ShuffleMode = .off,
         playerMode: PlayerMode = .music,
-        playbackPosition: TimeInterval = 0
+        playbackPosition: TimeInterval = 0,
+        origin: QueueOrigin? = nil
     ) {
         self.context = context
         self.user = user
@@ -268,6 +300,7 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
         self.shuffleMode = shuffleMode
         self.playerMode = playerMode
         self.playbackPosition = playbackPosition
+        self.origin = origin
     }
 
     public var isEmpty: Bool { context.isEmpty && podcast.isEmpty }
@@ -284,6 +317,7 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
         shuffleMode = try c.decodeIfPresent(ShuffleMode.self, forKey: .shuffleMode) ?? .off
         playerMode = try c.decodeIfPresent(PlayerMode.self, forKey: .playerMode) ?? .music
         playbackPosition = try c.decodeIfPresent(TimeInterval.self, forKey: .playbackPosition) ?? 0
+        origin = try c.decodeIfPresent(QueueOrigin.self, forKey: .origin)
     }
 }
 

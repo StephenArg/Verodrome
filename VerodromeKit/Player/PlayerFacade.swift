@@ -19,6 +19,8 @@ public protocol PlayerControlling: AnyObject {
     func play(items: [QueueItem], startAt: Int) async
     /// `shuffle == nil` keeps the current shuffle state.
     func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?) async
+    /// Starts a new context with optional shuffle and an origin label for radio continuation.
+    func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?, origin: QueueOrigin?) async
     func play()
     func pause()
     func togglePlayPause()
@@ -185,6 +187,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public var currentIndex: Int { audioPlayer.queueHandler.currentIndex }
     public var userQueuedRange: Range<Int> { audioPlayer.queueHandler.userQueuedRange }
     public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
+    public var queueOrigin: QueueOrigin? { audioPlayer.queueHandler.queueOrigin }
 
     /// Test seam for session-speed coverage without playing audio.
     var test_queueHandler: PlayQueueHandler { audioPlayer.queueHandler }
@@ -211,21 +214,25 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public var shuffleMode: ShuffleMode { audioPlayer.queueHandler.shuffleMode }
 
     public func play(items: [QueueItem], startAt: Int) async {
-        PlayTrace.mark("PlayerFacade.play", details: "count=\(items.count) startAt=\(startAt)")
-        await audioPlayer.play(items: items, startAt: startAt)
-        PlayTrace.mark("PlayerFacade.play — audioPlayer returned; refreshPublished")
-        refreshPublished()
-        PlayTrace.mark("PlayerFacade.refreshPublished done")
+        await play(items: items, startAt: startAt, shuffle: nil, origin: nil)
     }
 
     /// Starts a new context with an explicit shuffle state. The mode is recorded
     /// before the context is replaced so the queue handler shuffles the incoming
     /// items itself and remembers their unshuffled order.
     public func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?) async {
+        await play(items: items, startAt: startAt, shuffle: shuffle, origin: nil)
+    }
+
+    public func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?, origin: QueueOrigin?) async {
+        PlayTrace.mark("PlayerFacade.play", details: "count=\(items.count) startAt=\(startAt)")
         if let shuffle {
             audioPlayer.queueHandler.setShuffle(shuffle, reorder: false)
         }
-        await play(items: items, startAt: startAt)
+        await audioPlayer.play(items: items, startAt: startAt, origin: origin)
+        PlayTrace.mark("PlayerFacade.play — audioPlayer returned; refreshPublished")
+        refreshPublished()
+        PlayTrace.mark("PlayerFacade.refreshPublished done")
     }
 
     public func play() {
