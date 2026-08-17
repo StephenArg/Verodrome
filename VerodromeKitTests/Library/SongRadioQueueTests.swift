@@ -81,6 +81,29 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertEqual(Set(seeds.map(\.playableId)).count, 3)
     }
 
+    func testPickContinuationSeedsPrefersRadioTail() {
+        var queue = (0..<10).map { QueueItem(playableId: "o\($0)", title: "Orig \($0)") }
+        queue.append(contentsOf: (0..<6).map {
+            QueueItem(playableId: "r\($0)", title: "Radio \($0)", isRadioContinuation: true)
+        })
+        // With plenty of radio rows, most seeds should come from that tail.
+        var radioHits = 0
+        for _ in 0..<40 {
+            let seeds = SongRadioQueue.pickContinuationSeeds(from: queue, count: 5)
+            XCTAssertEqual(seeds.count, 5)
+            radioHits += seeds.filter(\.isRadioContinuation).count
+        }
+        // 40 draws × ~3–4 radio seeds expected → well above random 50/50.
+        XCTAssertGreaterThan(radioHits, 80)
+    }
+
+    func testContinuationSeedCountAndThresholdForArtist() {
+        XCTAssertEqual(SongRadioQueue.continuationSeedCount(for: .artist("A")), 5)
+        XCTAssertEqual(SongRadioQueue.continuationSeedCount(for: .album("A")), 3)
+        XCTAssertEqual(SongRadioQueue.continuationThreshold(for: .genre("Rock")), 8)
+        XCTAssertEqual(SongRadioQueue.continuationThreshold(for: .playlist("P")), 3)
+    }
+
     func testBuildContinuationSingleSeedIsFullList() {
         let seed = QueueItem(playableId: "seed", title: "Seed")
         let similar = (0..<5).map { IngestSong(id: "s\($0)", title: "S\($0)") }
@@ -105,37 +128,34 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertEqual(items.map(\.playableId), ["a1", "b1", "a2", "b2"])
     }
 
-    func testContinuationExclusionAllowsAlreadyPlayedForArtistAndGenreOnly() {
+    func testContinuationExclusionIncludesEntireQueue() {
         var queue = (0..<5).map { QueueItem(playableId: "\($0)", title: "Song \($0)") }
         queue.append(QueueItem(playableId: "r0", title: "Radio", isRadioContinuation: true))
+        let expected = Set(["0", "1", "2", "3", "4", "r0"])
 
-        let artistExcluded = SongRadioQueue.continuationExclusionIDs(
-            queue: queue,
-            currentIndex: 3,
-            origin: .artist("Radiohead")
+        XCTAssertEqual(
+            SongRadioQueue.continuationExclusionIDs(queue: queue, currentIndex: 3, origin: .artist("Radiohead")),
+            expected
         )
-        XCTAssertEqual(artistExcluded, Set(["3", "4", "r0"]))
+        XCTAssertEqual(
+            SongRadioQueue.continuationExclusionIDs(queue: queue, currentIndex: 3, origin: .genre("Rock")),
+            expected
+        )
+        XCTAssertEqual(
+            SongRadioQueue.continuationExclusionIDs(queue: queue, currentIndex: 3, origin: .album("OK Computer")),
+            expected
+        )
+    }
 
-        let genreExcluded = SongRadioQueue.continuationExclusionIDs(
-            queue: queue,
-            currentIndex: 3,
-            origin: .genre("Rock")
-        )
-        XCTAssertEqual(genreExcluded, Set(["3", "4", "r0"]))
-
-        let albumExcluded = SongRadioQueue.continuationExclusionIDs(
-            queue: queue,
-            currentIndex: 3,
-            origin: .album("OK Computer")
-        )
-        XCTAssertEqual(albumExcluded, Set(["0", "1", "2", "3", "4", "r0"]))
-
-        let playlistExcluded = SongRadioQueue.continuationExclusionIDs(
-            queue: queue,
-            currentIndex: 3,
-            origin: .playlist("Favorites")
-        )
-        XCTAssertEqual(playlistExcluded, Set(["0", "1", "2", "3", "4", "r0"]))
+    func testExcludingArtistDropsMatchingCredits() {
+        let items = [
+            QueueItem(playableId: "1", title: "A", artistName: "Radiohead"),
+            QueueItem(playableId: "2", title: "B", artistName: "Portishead"),
+            QueueItem(playableId: "3", title: "C", artistName: "radiohead"),
+            QueueItem(playableId: "4", title: "D", artistName: nil)
+        ]
+        let filtered = SongRadioQueue.excludingArtist(items, named: "Radiohead")
+        XCTAssertEqual(filtered.map(\.playableId), ["2", "4"])
     }
 
     func testBuildGenreContinuationZippersAndDedupes() {

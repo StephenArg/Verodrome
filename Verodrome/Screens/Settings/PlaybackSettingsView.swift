@@ -62,7 +62,7 @@ struct PlaybackSettingsView: View {
             } header: {
                 Text("Queue")
             } footer: {
-                Text("When a queue of songs is nearly finished and Repeat is off, Verodrome picks a few tracks from that queue, fetches similar songs from the server, and appends them as a radio section so listening can keep going — albums, playlists, artists, genres, and other song lists included. Turn this off to stop at the end of the original queue.")
+                Text("When a queue of songs is nearly finished and Repeat is off, Verodrome appends a radio section of similar songs from the server. For artist queues it keeps related artists (not the same catalog again) and can pad with other artists in matching genres when similar results are thin. Turn this off to stop at the end of the original queue.")
             }
 
             Section {

@@ -351,50 +351,87 @@ public final class LibraryActions {
         }
     }
 
-    /// Fetches similar songs for 1–3 seeds and builds a zipper-merged radio-continuation
-    /// batch to append to the end of the current queue. When similar songs produce
-    /// nothing, falls back to a zipper of local songs from each seed's genre.
+    /// Builds a radio-continuation batch from server similar-songs, preferring
+    /// related artists. For artist queues, drops same-artist tracks and pads with
+    /// other artists in the same genre when similar results are thin.
     public func prepareRadioContinuation(
         seeds: [QueueItem],
-        excluding alreadyQueued: Set<String>
+        excluding alreadyQueued: Set<String>,
+        origin: QueueOrigin? = nil
     ) async -> PrepareRadioOutcome {
         let songSeeds = seeds.filter { $0.kind == .song && !$0.playableId.isEmpty }
         guard !songSeeds.isEmpty else { return .unavailable }
 
+        var combined: [QueueItem] = []
+        var exclude = alreadyQueued
+        let originArtistName: String? = {
+            if case .artist(let name) = origin {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            return nil
+        }()
+        let wantsLargeDraw = originArtistName != nil || {
+            if case .genre = origin { return true }
+            return false
+        }()
+
+        // Song seeds only — artist/album ID anchors often return the same discography.
         if let similarItems = await similarContinuationItems(
             seeds: songSeeds,
-            excluding: alreadyQueued
-        ), !similarItems.isEmpty {
-            return .ready(similarItems)
+            excluding: exclude,
+            largeDraw: wantsLargeDraw
+        ) {
+            let filtered = originArtistName.map {
+                SongRadioQueue.excludingArtist(similarItems, named: $0)
+            } ?? similarItems
+            if !filtered.isEmpty {
+                combined.append(contentsOf: filtered)
+                exclude.formUnion(filtered.map(\.playableId))
+            }
         }
 
-        if let genreItems = genreContinuationItems(
-            seeds: songSeeds,
-            excluding: alreadyQueued
-        ), !genreItems.isEmpty {
-            await EventLogger.shared.info(
-                "radio",
-                "Radio continuation genre fallback queue=\(genreItems.count) seeds=\(songSeeds.count)"
-            )
-            return .ready(genreItems)
+        if combined.count < SongRadioQueue.minContinuationBatch {
+            let genreLimit = wantsLargeDraw ? SongRadioQueue.artistGenreSimilarCount : nil
+            if let genreItems = genreContinuationItems(
+                seeds: songSeeds,
+                excluding: exclude,
+                perGenreLimit: genreLimit,
+                excludingArtistName: originArtistName
+            ), !genreItems.isEmpty {
+                combined.append(contentsOf: genreItems)
+                await EventLogger.shared.info(
+                    "radio",
+                    "Radio continuation genre pad +\(genreItems.count) total=\(combined.count)"
+                )
+            }
         }
 
-        return .noSimilarSongs
+        guard !combined.isEmpty else { return .noSimilarSongs }
+        return .ready(combined)
     }
 
     /// Similar-song path. Nil when the API is unavailable or every request fails;
     /// empty array when requests succeed but nothing survives dedupe.
     private func similarContinuationItems(
         seeds: [QueueItem],
-        excluding alreadyQueued: Set<String>
+        excluding alreadyQueued: Set<String>,
+        largeDraw: Bool
     ) async -> [QueueItem]? {
         guard let provider = syncer as? (any SimilarSongProviding) else {
             return nil
         }
 
-        let count = seeds.count == 1
-            ? SongRadioQueue.defaultSimilarCount
-            : SongRadioQueue.continuationSimilarCount
+        let count: Int
+        if largeDraw {
+            count = seeds.count <= 1
+                ? SongRadioQueue.artistGenreSimilarCount
+                : 50
+        } else if seeds.count == 1 {
+            count = SongRadioQueue.defaultSimilarCount
+        } else {
+            count = SongRadioQueue.continuationSimilarCount
+        }
 
         var seedResults: [(seed: QueueItem, similar: [IngestSong])] = []
         seedResults.reserveCapacity(seeds.count)
@@ -431,7 +468,7 @@ public final class LibraryActions {
         )
         await EventLogger.shared.info(
             "radio",
-            "Radio continuation similar seeds=\(seedResults.count) queue=\(items.count)"
+            "Radio continuation similar seeds=\(seeds.count) count=\(count) queue=\(items.count)"
         )
 
         if !items.isEmpty, let ingestor = kit.activeLibraryIngester {
@@ -446,9 +483,13 @@ public final class LibraryActions {
 
     /// Local genre backup: unique genres from the seed tracks, one shuffled song list
     /// each, zipper-merged. Uses the same local genreName matching as GenreDetailView.
+    /// When `excludingArtistName` is set (artist-queue radio), drops that artist's
+    /// own tracks so the pad is related artists in the same genre.
     private func genreContinuationItems(
         seeds: [QueueItem],
-        excluding alreadyQueued: Set<String>
+        excluding alreadyQueued: Set<String>,
+        perGenreLimit: Int? = nil,
+        excludingArtistName: String? = nil
     ) -> [QueueItem]? {
         guard let repository, let account = try? kit.activeAccount() else { return nil }
 
@@ -464,14 +505,24 @@ public final class LibraryActions {
         }
         guard !genreNames.isEmpty else { return nil }
 
-        let perGenreLimit = genreNames.count == 1
-            ? SongRadioQueue.defaultSimilarCount
-            : SongRadioQueue.continuationSimilarCount
+        // When dropping an origin artist, filter first so the pad is other artists.
+        let baseLimit = perGenreLimit ?? (
+            genreNames.count == 1
+                ? SongRadioQueue.defaultSimilarCount
+                : SongRadioQueue.continuationSimilarCount
+        )
+        let blockedArtist = excludingArtistName.map(SongRadioQueue.normalizedArtistKey)
 
         let lists: [[QueueItem]] = genreNames.compactMap { name in
-            let songs = songsInGenre(name, repository: repository)
+            var songs = songsInGenre(name, repository: repository)
+            if let blockedArtist, !blockedArtist.isEmpty {
+                songs = songs.filter {
+                    SongRadioQueue.normalizedArtistKey($0.artistName ?? $0.artist?.name)
+                        != blockedArtist
+                }
+            }
             guard !songs.isEmpty else { return nil }
-            return Array(songs.shuffled().prefix(perGenreLimit)).map(QueueItem.from)
+            return Array(songs.shuffled().prefix(baseLimit)).map(QueueItem.from)
         }
         guard !lists.isEmpty else { return nil }
 

@@ -6,9 +6,10 @@ import VerodromeKit
 ///
 /// Applies to any active music queue whose tracks can seed Start Radio (album,
 /// playlist, artist, genre, songs list, downloads, and so on). When Repeat is off
-/// and only a few tracks remain, picks 1–3 seeds from the queue, fetches similar
-/// songs, zipper-merges them, and appends a radio-continuation section. Shuffle
-/// All, podcasts, and live streams are excluded; Repeat All cancels in-flight work.
+/// and only a few tracks remain, picks seeds from the queue (biased toward any
+/// radio tail already appended), fetches similar songs plus local pads, and
+/// appends a radio-continuation section. Shuffle All, podcasts, and live streams
+/// are excluded; Repeat All cancels in-flight work.
 @MainActor
 final class RadioContinuationCoordinator: ObservableObject {
     private weak var player: PlayerViewModel?
@@ -63,17 +64,19 @@ final class RadioContinuationCoordinator: ObservableObject {
         guard player.currentItem?.isLiveStream != true else { return }
 
         let remaining = queue.count - player.currentIndex - 1
-        guard remaining <= SongRadioQueue.continuationThreshold else { return }
+        let origin = player.queueOrigin
+        guard remaining <= SongRadioQueue.continuationThreshold(for: origin) else { return }
 
         // Need at least one song seed available.
-        let seeds = SongRadioQueue.pickContinuationSeeds(from: queue)
+        let seedCount = SongRadioQueue.continuationSeedCount(for: origin)
+        let seeds = SongRadioQueue.pickContinuationSeeds(from: queue, count: seedCount)
         guard !seeds.isEmpty else { return }
 
         let generation = player.contextGeneration
         let excluding = SongRadioQueue.continuationExclusionIDs(
             queue: queue,
             currentIndex: player.currentIndex,
-            origin: player.queueOrigin
+            origin: origin
         )
         isToppingUp = true
         topUpTask = Task { [weak self] in
@@ -85,7 +88,8 @@ final class RadioContinuationCoordinator: ObservableObject {
 
             let outcome = await LibraryActions.shared.prepareRadioContinuation(
                 seeds: seeds,
-                excluding: excluding
+                excluding: excluding,
+                origin: origin
             )
 
             guard !Task.isCancelled else { return }
