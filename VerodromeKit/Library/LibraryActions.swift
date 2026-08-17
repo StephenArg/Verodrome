@@ -168,6 +168,37 @@ public final class LibraryActions {
         }
     }
 
+    /// Removes every offline / pinned download on this device and cancels in-flight
+    /// transfers. Temporary queue-prefetch files are left alone (Storage owns those).
+    ///
+    /// Playlist `keepDownloaded` pins are cleared first so reconciliation cannot
+    /// immediately re-queue the same tracks.
+    public func clearAllDownloads() async {
+        await downloader?.cancelAll()
+
+        guard let repository,
+              let account = try? kit.activeAccount()
+        else { return }
+
+        if let playlists = try? repository.fetchPlaylists(account: account) {
+            var clearedPin = false
+            for playlist in playlists where playlist.keepDownloaded {
+                playlist.keepDownloaded = false
+                playlist.updatedAt = .now
+                clearedPin = true
+            }
+            if clearedPin {
+                try? repository.save()
+            }
+        }
+
+        let songs = ((try? repository.fetchSongs(account: account)) ?? [])
+            .filter { $0.cacheReason.isUserPinnedReason || $0.isUserPinned }
+        for song in songs {
+            await removeDownload(song: song)
+        }
+    }
+
     // MARK: - Playlist downloads
 
     /// Marks a playlist to be kept on disk, tracks and all, including any added later.

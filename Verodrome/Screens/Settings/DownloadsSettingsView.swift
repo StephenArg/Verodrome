@@ -7,6 +7,8 @@ struct DownloadsSettingsView: View {
     @State private var offlineBytes: Int64 = 0
     @State private var offlineCount = 0
     @State private var isRefreshing = false
+    @State private var isClearing = false
+    @State private var showClearAllConfirm = false
 
     var body: some View {
         Form {
@@ -24,6 +26,14 @@ struct DownloadsSettingsView: View {
                     Text("\(offlineCount)")
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                }
+
+                Button("Clear All Downloads", role: .destructive) {
+                    showClearAllConfirm = true
+                }
+                .disabled(isClearing || offlineCount == 0)
+                if isClearing {
+                    ProgressView("Clearing…")
                 }
             } header: {
                 Text("On This Device")
@@ -77,12 +87,26 @@ struct DownloadsSettingsView: View {
         }
         .verodromePlainList()
         .navigationTitle("Downloads")
+        .alert("Clear All Downloads?", isPresented: $showClearAllConfirm) {
+            Button("Clear All Downloads", role: .destructive) {
+                Task { await clearAllDownloads() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(clearAllMessage)
+        }
         .task {
             await refreshStorageStats()
         }
         .refreshable {
             await refreshStorageStats()
         }
+    }
+
+    private var clearAllMessage: String {
+        let size = byteFormatter.string(fromByteCount: offlineBytes)
+        let tracks = offlineCount == 1 ? "1 offline song" : "\(offlineCount) offline songs"
+        return "This deletes \(tracks) (\(size)) from this device. Playlist and album download pins are cleared too."
     }
 
     private var byteFormatter: ByteCountFormatter {
@@ -101,6 +125,13 @@ struct DownloadsSettingsView: View {
         }.value
         offlineBytes = stats.offlineBytes
         offlineCount = stats.offlineCount
+    }
+
+    private func clearAllDownloads() async {
+        isClearing = true
+        defer { isClearing = false }
+        await LibraryActions.shared.clearAllDownloads()
+        await refreshStorageStats()
     }
 }
 
