@@ -77,6 +77,8 @@
 		52063389D2F9B2C73A2EC634 /* LibrarySyncProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19183A4EE6ACBB78D78BB661 /* LibrarySyncProgressTests.swift */; };
 		52F41BD966E5173305BFA09E /* EntityRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CECBEC6776AB360840C8573 /* EntityRow.swift */; };
 		5371EC355699B80E676DC89A /* SubsonicPlaylistMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CADDBC42745624E6D6DD32B /* SubsonicPlaylistMutationTests.swift */; };
+		3B8F12C90E7A4D61A5C20394 /* ArtworkSwipeCommit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81E4C09B2D75F13E6A20481 /* ArtworkSwipeCommit.swift */; };
+		4C1D83D0A6F95B27C8E01503 /* ArtworkSwipeCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92F70E1C4A85F36B7D10492 /* ArtworkSwipeCommitTests.swift */; };
 		538D7229A83CB41D071FCB7C /* PlayQueueHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11C71398F94E81333A5FB15 /* PlayQueueHandlerTests.swift */; };
 		5467BEF19CB588185B537122 /* EventLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75F057916C4439CFA0188162 /* EventLogView.swift */; };
 		5525612F8F9123A08603CC6A /* AutoDownloadSyncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B26712F5131DCDDA123AA8C9 /* AutoDownloadSyncer.swift */; };
@@ -441,6 +443,8 @@
 		783FDE6DE5719CB832273B8C /* HoldableButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldableButton.swift; sourceTree = "<group>"; };
 		79C608D45C92BE99A40397C0 /* AboutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettingsView.swift; sourceTree = "<group>"; };
 		7B1A2DF283F636E828B51C1D /* QueueCachePolicyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyManager.swift; sourceTree = "<group>"; };
+		A81E4C09B2D75F13E6A20481 /* ArtworkSwipeCommit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkSwipeCommit.swift; sourceTree = "<group>"; };
+		B92F70E1C4A85F36B7D10492 /* ArtworkSwipeCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkSwipeCommitTests.swift; sourceTree = "<group>"; };
 		7B4A837E80B2C8370393876A /* VerodromeKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VerodromeKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DEA6D5BA45D76DA54613293 /* LibrarySyncProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncProgressBar.swift; sourceTree = "<group>"; };
 		7E861159C805C4329A8CF06F /* ShareParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareParserTests.swift; sourceTree = "<group>"; };
@@ -740,6 +744,7 @@
 		5BE828B9B50150CC687A97C7 /* Player */ = {
 			isa = PBXGroup;
 			children = (
+				A81E4C09B2D75F13E6A20481 /* ArtworkSwipeCommit.swift */,
 				F4CC560078D02294213853B0 /* AudioPlayer.swift */,
 				BC8B838855F131E7176E4D53 /* AudioSessionHandler.swift */,
 				F402E78584387A2E17155A2E /* BackendAudioPlayer.swift */,
@@ -1026,6 +1031,7 @@
 		A4DEF725787DB93F848E7701 /* Player */ = {
 			isa = PBXGroup;
 			children = (
+				B92F70E1C4A85F36B7D10492 /* ArtworkSwipeCommitTests.swift */,
 				968CFD3AA8FDC705D3EE5C95 /* FilePlayerQueueStoreTests.swift */,
 				C01CD3E5C54AC2624F3B1458 /* LyricsParserTests.swift */,
 				F468D7484BE1C2293733AB52 /* OfflineFailoverTests.swift */,
@@ -1446,6 +1452,7 @@
 				9EBBE53221AECCEF77946C26 /* NavidromeNativeApiTests.swift in Sources */,
 				A2189ACE58694CEFADC6B1AE /* NetworkMonitorTests.swift in Sources */,
 				9B66C45B233ABBF036803D96 /* OfflineFailoverTests.swift in Sources */,
+				4C1D83D0A6F95B27C8E01503 /* ArtworkSwipeCommitTests.swift in Sources */,
 				538D7229A83CB41D071FCB7C /* PlayQueueHandlerTests.swift in Sources */,
 				8816DAA47D75146425772B84 /* PlayableCacheTests.swift in Sources */,
 				D0E635F11DFE4C11A6C599DD /* LyricsCacheTests.swift in Sources */,
@@ -1528,6 +1535,7 @@
 				29CEF9A9C857D40EE7449116 /* ObservableSettings.swift in Sources */,
 				7327B0C1D0C4CC1591B5DD45 /* PerfTrace.swift in Sources */,
 				1DF6D4BC5DD490CF06FAD071 /* PersistentStorage.swift in Sources */,
+				3B8F12C90E7A4D61A5C20394 /* ArtworkSwipeCommit.swift in Sources */,
 				637A9246E66FDBA474573399 /* PlayQueueHandler.swift in Sources */,
 				E3231953F3EE8BC73A4336C8 /* PlayTrace.swift in Sources */,
 				64982C28F0B2C2426B18B8FA /* PlayableDownloadDelegate.swift in Sources */,

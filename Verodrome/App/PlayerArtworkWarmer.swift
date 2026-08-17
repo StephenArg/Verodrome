@@ -21,8 +21,8 @@ final class PlayerArtworkWarmer {
     private var warmTask: Task<Void, Never>?
     private var warmedWindow: [String] = []
 
-    func warm(queue: [QueueItem], currentIndex: Int) {
-        let covers = Self.upcomingCovers(queue: queue, currentIndex: currentIndex)
+    func warm(queue: [QueueItem], currentIndex: Int, repeatMode: RepeatMode = .off) {
+        let covers = Self.upcomingCovers(queue: queue, currentIndex: currentIndex, repeatMode: repeatMode)
         // Skipping one track normally shifts the window by a single entry; re-decoding the
         // other nine on every skip would be pure waste.
         let tokens = covers.map(\.token)
@@ -56,19 +56,31 @@ final class PlayerArtworkWarmer {
         warmedWindow = []
     }
 
-    /// Unique covers for the current track and the ones after it, nearest first — the
-    /// cache is bounded, so the track about to play must never be the entry that a
-    /// further-out cover evicted.
+    /// Unique covers nearest the playhead first — current, next, previous (including a
+    /// Repeat All wrap), then the rest of the lookahead. The cache is bounded, so the
+    /// track about to play must never be the entry that a further-out cover evicted.
     private static func upcomingCovers(
         queue: [QueueItem],
-        currentIndex: Int
+        currentIndex: Int,
+        repeatMode: RepeatMode
     ) -> [(token: String, kind: ArtworkKind)] {
         guard !queue.isEmpty else { return [] }
         let start = max(0, min(currentIndex, queue.count - 1))
         let end = min(queue.count - 1, start + lookAhead)
+        let adjacent = PlayQueueHandler.peekAdjacent(
+            queue: queue,
+            currentIndex: currentIndex,
+            repeatMode: repeatMode
+        )
+        var items: [QueueItem] = [queue[start]]
+        if let next = adjacent.next { items.append(next) }
+        if let previous = adjacent.previous { items.append(previous) }
+        if start + 1 <= end {
+            items.append(contentsOf: queue[(start + 1)...end])
+        }
         var seen = Set<String>()
         var covers: [(token: String, kind: ArtworkKind)] = []
-        for item in queue[start...end] {
+        for item in items {
             guard let token = item.artworkId, !token.isEmpty, seen.insert(token).inserted else { continue }
             covers.append((token, item.kind == .podcastEpisode ? .podcast : .album))
         }

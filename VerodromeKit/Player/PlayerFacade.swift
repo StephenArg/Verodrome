@@ -274,6 +274,13 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         refreshPublished()
     }
 
+    /// Steps to the previous queue row even when the current track is past the
+    /// restart-if-late threshold that `previous()` uses.
+    public func previousItem() {
+        audioPlayer.playPreviousItem()
+        refreshPublished()
+    }
+
     public func seek(to seconds: TimeInterval) {
         audioPlayer.backend.seek(to: seconds)
         currentTime = seconds

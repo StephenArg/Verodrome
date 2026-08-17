@@ -209,11 +209,7 @@ public final class PlayQueueHandler: ObservableObject {
     /// Indices that Repeat All wraps within: everything that is not a radio-continuation
     /// row. Empty when there is no radio tail (then Repeat All wraps the whole queue).
     public var repeatScopeIndices: [Int] {
-        let q = activeQueue
-        guard q.contains(where: \.isRadioContinuation) else {
-            return Array(q.indices)
-        }
-        return q.indices.filter { !q[$0].isRadioContinuation }
+        Self.repeatScopeIndices(in: activeQueue)
     }
 
     /// Where the tracks the user queued themselves sit: the run right after the playing
@@ -396,10 +392,51 @@ public final class PlayQueueHandler: ObservableObject {
         return currentItem
     }
 
+    /// Covers that artwork swipe can peek without changing the playhead. Nil on a side
+    /// that has nowhere to go (queue end, or Repeat All wrapping back onto this row).
+    public func peekAdjacent() -> (previous: QueueItem?, next: QueueItem?) {
+        Self.peekAdjacent(queue: activeQueue, currentIndex: currentIndex, repeatMode: repeatMode)
+    }
+
+    /// Same wrap rules as `advance` / `retreat`, so the player UI can peek from its
+    /// published snapshot without asking the handler on every frame.
+    public static func peekAdjacent(
+        queue: [QueueItem],
+        currentIndex: Int,
+        repeatMode: RepeatMode
+    ) -> (previous: QueueItem?, next: QueueItem?) {
+        guard !queue.isEmpty, queue.indices.contains(currentIndex) else { return (nil, nil) }
+        let previousIndex: Int?
+        let nextIndex: Int?
+        switch repeatMode {
+        case .all:
+            let previous = previousIndexForRepeatAll(from: currentIndex, in: queue)
+            let next = nextIndexForRepeatAll(from: currentIndex, in: queue)
+            previousIndex = previous == currentIndex ? nil : previous
+            nextIndex = next == currentIndex ? nil : next
+        case .off, .one:
+            previousIndex = currentIndex > 0 ? currentIndex - 1 : nil
+            nextIndex = currentIndex + 1 < queue.count ? currentIndex + 1 : nil
+        }
+        return (
+            previousIndex.map { queue[$0] },
+            nextIndex.map { queue[$0] }
+        )
+    }
+
     /// When a radio continuation exists, Repeat All wraps only the original context.
     /// From a radio row (Repeat All turned on mid-radio), jump to the first scope item.
     private func nextIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
-        let scope = repeatScopeIndices
+        Self.nextIndexForRepeatAll(from: index, in: q)
+    }
+
+    /// From a radio row with Repeat All on, jump to the last scope item.
+    private func previousIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
+        Self.previousIndexForRepeatAll(from: index, in: q)
+    }
+
+    private static func nextIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
+        let scope = repeatScopeIndices(in: q)
         guard !scope.isEmpty else { return (index + 1) % q.count }
         if let pos = scope.firstIndex(of: index) {
             return scope[(pos + 1) % scope.count]
@@ -408,14 +445,20 @@ public final class PlayQueueHandler: ObservableObject {
         return scope[0]
     }
 
-    /// From a radio row with Repeat All on, jump to the last scope item.
-    private func previousIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
-        let scope = repeatScopeIndices
+    private static func previousIndexForRepeatAll(from index: Int, in q: [QueueItem]) -> Int {
+        let scope = repeatScopeIndices(in: q)
         guard !scope.isEmpty else { return (index - 1 + q.count) % q.count }
         if let pos = scope.firstIndex(of: index) {
             return scope[(pos - 1 + scope.count) % scope.count]
         }
         return scope[scope.count - 1]
+    }
+
+    private static func repeatScopeIndices(in q: [QueueItem]) -> [Int] {
+        guard q.contains(where: \.isRadioContinuation) else {
+            return Array(q.indices)
+        }
+        return q.indices.filter { !q[$0].isRadioContinuation }
     }
 
     public func jump(to index: Int) {

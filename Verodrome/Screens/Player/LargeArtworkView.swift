@@ -1,6 +1,13 @@
 import SwiftUI
 import VerodromeKit
 
+/// Identity for a cover that artwork swipe can peek beside the playing track.
+struct ArtworkPeek: Equatable {
+    var trackID: String?
+    var urlString: String?
+    var symbol: String
+}
+
 struct LargeArtworkView: View {
     var urlString: String?
     var symbol: String = "music.note"
@@ -8,6 +15,13 @@ struct LargeArtworkView: View {
     /// move on every skip.
     var trackID: String? = nil
     var slideDirection: ArtworkSlideDirection = .forward
+    var previousCover: ArtworkPeek? = nil
+    var nextCover: ArtworkPeek? = nil
+    /// Live streams keep swipe-down dismiss but do not skip.
+    var allowsSkipSwipe: Bool = true
+    var onSkipNext: (() -> Void)? = nil
+    var onSkipPrevious: (() -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
 
     /// Floor for the cover, so an extremely short layout still shows recognizable
     /// art rather than a sliver.
@@ -15,6 +29,10 @@ struct LargeArtworkView: View {
 
     /// Short enough that a run of skips doesn't stack a backlog of half-finished slides.
     private static let slideDuration: TimeInterval = 0.22
+    private static let axisLockSlop: CGFloat = 14
+    /// High enough that a double-tap for lyrics is not stolen by the skip drag.
+    private static let dragMinimumDistance: CGFloat = 24
+    private static let dismissTranslation: CGFloat = 80
 
     /// The cover currently parked in the hero slot.
     @State private var shownTrackID: String?
@@ -28,9 +46,18 @@ struct LargeArtworkView: View {
     @State private var leavingSymbol: String = "music.note"
     @State private var leavingOffset: CGFloat = 0
 
+    /// Neighbor being dragged in. Separate from `leaving*` so an automatic skip-slide
+    /// and an in-progress swipe don't share a layer.
+    @State private var peekingTrackID: String?
+    @State private var peekingURL: String?
+    @State private var peekingSymbol: String = "music.note"
+    @State private var peekingOffset: CGFloat = 0
+
     /// Bumped on every skip so a completion from an interrupted slide can't clear the
     /// cover that replaced it.
     @State private var slideGeneration = 0
+    @State private var dragAxis: ArtworkSwipeAxis?
+    @State private var isInteractiveDrag = false
 
     var body: some View {
         // Explicit offsets rather than `.transition(.move)`: SwiftUI latches the removal
@@ -51,10 +78,17 @@ struct LargeArtworkView: View {
                         .allowsHitTesting(false)
                 }
 
+                if peekingTrackID != nil {
+                    cover(url: peekingURL, symbol: peekingSymbol)
+                        .offset(x: peekingOffset)
+                        .allowsHitTesting(false)
+                }
+
                 cover(url: shownURL, symbol: shownSymbol)
                     .offset(x: shownOffset)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
             .clipped()
             .onAppear {
                 guard shownTrackID == nil else { return }
@@ -65,12 +99,26 @@ struct LargeArtworkView: View {
             .onChange(of: trackID) { _, newID in
                 beginSlide(to: newID, width: width)
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: Self.dragMinimumDistance)
+                    .onChanged { value in
+                        handleDragChanged(value, width: width)
+                    }
+                    .onEnded { value in
+                        handleDragEnded(value, width: width)
+                    }
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .frame(minHeight: minimumSide)
     }
 
     private func beginSlide(to newID: String?, width: CGFloat) {
+        if isInteractiveDrag || peekingTrackID != nil {
+            clearPeek()
+            isInteractiveDrag = false
+            dragAxis = nil
+        }
         guard newID != shownTrackID else {
             shownURL = urlString
             shownSymbol = symbol
@@ -105,11 +153,139 @@ struct LargeArtworkView: View {
             shownOffset = incomingStart
         }
 
+        animateSlide(shownTo: 0, leavingTo: outgoingEnd)
+    }
+
+    private func handleDragChanged(_ value: DragGesture.Value, width: CGFloat) {
+        if dragAxis == nil {
+            let dx = abs(value.translation.width)
+            let dy = abs(value.translation.height)
+            if dx > dy + 2, dx >= Self.axisLockSlop {
+                dragAxis = .horizontal
+            } else if dy > dx + 2, dy >= Self.axisLockSlop {
+                dragAxis = .vertical
+            } else {
+                return
+            }
+        }
+
+        guard dragAxis == .horizontal, allowsSkipSwipe else { return }
+        // Don't steal an automatic skip-slide that is already mid-flight.
+        guard leavingTrackID == nil || isInteractiveDrag else { return }
+
+        isInteractiveDrag = true
+        let offset = ArtworkSwipeCommit.dragOffset(
+            translation: value.translation.width,
+            canGoPrevious: previousCover != nil,
+            canGoNext: nextCover != nil
+        )
+        shownOffset = offset
+
+        if offset < 0, let next = nextCover {
+            peekingTrackID = next.trackID
+            peekingURL = next.urlString
+            peekingSymbol = next.symbol
+            peekingOffset = width + offset
+        } else if offset > 0, let previous = previousCover {
+            peekingTrackID = previous.trackID
+            peekingURL = previous.urlString
+            peekingSymbol = previous.symbol
+            peekingOffset = -width + offset
+        } else {
+            clearPeek()
+        }
+    }
+
+    private func handleDragEnded(_ value: DragGesture.Value, width: CGFloat) {
+        let axis = dragAxis
+        dragAxis = nil
+
+        if axis == .vertical {
+            isInteractiveDrag = false
+            if value.translation.height > Self.dismissTranslation {
+                onDismiss?()
+            }
+            return
+        }
+
+        guard axis == .horizontal, isInteractiveDrag else {
+            isInteractiveDrag = false
+            return
+        }
+
+        let decision = ArtworkSwipeCommit.decision(
+            translation: value.translation.width,
+            velocity: value.velocity.width,
+            width: width,
+            canGoPrevious: previousCover != nil,
+            canGoNext: nextCover != nil
+        )
+        switch decision {
+        case .commitNext:
+            commitSwipe(to: nextCover, width: width, direction: .forward, skip: onSkipNext)
+        case .commitPrevious:
+            commitSwipe(to: previousCover, width: width, direction: .backward, skip: onSkipPrevious)
+        case .cancel:
+            cancelSwipe()
+        }
+    }
+
+    private func commitSwipe(
+        to incoming: ArtworkPeek?,
+        width: CGFloat,
+        direction: ArtworkSlideDirection,
+        skip: (() -> Void)?
+    ) {
+        guard let incoming else {
+            cancelSwipe()
+            return
+        }
+
+        leavingTrackID = shownTrackID
+        leavingURL = shownURL
+        leavingSymbol = shownSymbol
+        leavingOffset = shownOffset
+
+        let incomingOffset = peekingOffset
+        shownTrackID = incoming.trackID
+        shownURL = incoming.urlString
+        shownSymbol = incoming.symbol
+        clearPeek()
+        isInteractiveDrag = false
+
+        var prep = Transaction()
+        prep.disablesAnimations = true
+        withTransaction(prep) {
+            shownOffset = incomingOffset
+        }
+
+        let outgoingEnd: CGFloat = direction == .forward ? -width : width
+        animateSlide(shownTo: 0, leavingTo: outgoingEnd)
+        skip?()
+    }
+
+    private func cancelSwipe() {
+        let peekRest = peekingTrackID == nil ? 0 : peekingOffset - shownOffset
+        isInteractiveDrag = false
         slideGeneration += 1
         let generation = slideGeneration
         withAnimation(.easeOut(duration: Self.slideDuration)) {
             shownOffset = 0
-            leavingOffset = outgoingEnd
+            if peekingTrackID != nil {
+                peekingOffset = peekRest
+            }
+        } completion: {
+            guard generation == slideGeneration else { return }
+            clearPeek()
+        }
+    }
+
+    private func animateSlide(shownTo: CGFloat, leavingTo: CGFloat) {
+        slideGeneration += 1
+        let generation = slideGeneration
+        withAnimation(.easeOut(duration: Self.slideDuration)) {
+            shownOffset = shownTo
+            leavingOffset = leavingTo
         } completion: {
             guard generation == slideGeneration else { return }
             leavingTrackID = nil
@@ -118,9 +294,21 @@ struct LargeArtworkView: View {
         }
     }
 
+    private func clearPeek() {
+        peekingTrackID = nil
+        peekingURL = nil
+        peekingSymbol = "music.note"
+        peekingOffset = 0
+    }
+
     private func cover(url: String?, symbol: String) -> some View {
         ArtworkView.hero(url, symbol: symbol)
             .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
             .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
     }
+}
+
+private enum ArtworkSwipeAxis {
+    case horizontal
+    case vertical
 }

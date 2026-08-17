@@ -311,7 +311,12 @@ final class PlayerViewModel: ObservableObject {
            ) {
             artworkSlideDirection = direction
         }
-        PlayerArtworkWarmer.shared.warm(queue: queue, currentIndex: currentIndex)
+        PlayerArtworkWarmer.shared.warm(queue: queue, currentIndex: currentIndex, repeatMode: repeatMode)
+    }
+
+    /// Queue rows artwork swipe can peek. Same wrap rules as skip, from the published snapshot.
+    var adjacentQueueItems: (previous: QueueItem?, next: QueueItem?) {
+        PlayQueueHandler.peekAdjacent(queue: queue, currentIndex: currentIndex, repeatMode: repeatMode)
     }
 
     /// Nil when the queue didn't move. Repeat-all wraps the index around the ends, and
@@ -342,6 +347,14 @@ final class PlayerViewModel: ObservableObject {
         // The restart-vs-previous-track decision lives in the player, which also knows
         // whether the engine can still seek at all.
         facade?.previous()
+        syncQueue()
+        currentItem = facade?.currentItem
+    }
+
+    /// Always the previous queue row. Artwork swipe has already peeked that cover, so
+    /// the button's restart-if-late rule would fight the animation.
+    func skipToPreviousTrack() {
+        facade?.previousItem()
         syncQueue()
         currentItem = facade?.currentItem
     }

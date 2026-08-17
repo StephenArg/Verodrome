@@ -274,14 +274,21 @@ struct PopupPlayerView: View {
     /// Artwork and lyrics are crossfaded rather than swapped, so the cover keeps its
     /// place behind the lyrics instead of being torn down and reloaded on the way back.
     private var heroPanel: some View {
-        ZStack {
+        let adjacent = player.adjacentQueueItems
+        return ZStack {
             LargeArtworkView(
                 urlString: player.currentItem?.artworkId,
                 symbol: player.currentItem?.kind == .radio
                     ? "dot.radiowaves.left.and.right"
                     : "music.note",
                 trackID: player.currentItem?.id,
-                slideDirection: player.artworkSlideDirection
+                slideDirection: player.artworkSlideDirection,
+                previousCover: adjacent.previous.map(Self.artworkPeek),
+                nextCover: adjacent.next.map(Self.artworkPeek),
+                allowsSkipSwipe: player.currentItem?.isLiveStream != true,
+                onSkipNext: player.skipForward,
+                onSkipPrevious: player.skipToPreviousTrack,
+                onDismiss: { dismiss() }
             )
             // Slide / scale with the crossfade so double-tap feels like the cover
             // gives way to lyrics (and the reverse when lyrics close).
@@ -289,16 +296,6 @@ struct PopupPlayerView: View {
             .opacity(showingLyrics ? 0 : 1)
             .scaleEffect(showingLyrics ? 0.96 : 1, anchor: .center)
             .allowsHitTesting(!showingLyrics)
-            // Keep dismiss-swipe local to artwork so it cannot steal
-            // button / sheet gestures — or fight lyrics scrolling.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 40)
-                    .onEnded { value in
-                        if value.translation.height > 80, abs(value.translation.width) < 80 {
-                            dismiss()
-                        }
-                    }
-            )
             .onTapGesture(count: 2) {
                 toggleLyrics()
             }
@@ -325,6 +322,16 @@ struct PopupPlayerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.28), value: showingLyrics)
+    }
+
+    private static func artworkPeek(_ item: QueueItem) -> ArtworkPeek {
+        ArtworkPeek(
+            trackID: item.id,
+            urlString: item.artworkId,
+            symbol: item.kind == .radio
+                ? "dot.radiowaves.left.and.right"
+                : "music.note"
+        )
     }
 
     private var lyricsButtonTint: Color {

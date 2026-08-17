@@ -497,6 +497,12 @@ public final class AudioPlayer: ObservableObject {
             backend.seek(to: 0)
             return
         }
+        playPreviousItem()
+    }
+
+    /// Always steps to the previous queue row. Used by artwork swipe, which has already
+    /// shown that cover — restarting the current track would snap the art back.
+    public func playPreviousItem() {
         stalled = nil
         _ = queueHandler.retreat()
         Task { await playCurrent() }

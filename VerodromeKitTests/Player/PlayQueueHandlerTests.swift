@@ -904,4 +904,97 @@ final class PlayQueueHandlerTests: XCTestCase {
         handler.replaceContext(with: Self.songs(1), startAt: 0)
         XCTAssertNil(handler.queueOrigin)
     }
+
+    func testPeekAdjacentMidQueue() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(5), startAt: 2)
+        let adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "1")
+        XCTAssertEqual(adjacent.next?.playableId, "3")
+    }
+
+    func testPeekAdjacentEndsWhenRepeatOff() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.setRepeat(.off)
+        var adjacent = handler.peekAdjacent()
+        XCTAssertNil(adjacent.previous)
+        XCTAssertEqual(adjacent.next?.playableId, "1")
+
+        handler.jump(to: 2)
+        adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "1")
+        XCTAssertNil(adjacent.next)
+    }
+
+    func testPeekAdjacentRepeatOneDoesNotWrap() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.setRepeat(.one)
+        let adjacent = handler.peekAdjacent()
+        XCTAssertNil(adjacent.previous)
+        XCTAssertEqual(adjacent.next?.playableId, "1")
+    }
+
+    func testPeekAdjacentRepeatAllWraps() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        handler.setRepeat(.all)
+        var adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "2")
+        XCTAssertEqual(adjacent.next?.playableId, "1")
+
+        handler.jump(to: 2)
+        adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "1")
+        XCTAssertEqual(adjacent.next?.playableId, "0")
+    }
+
+    func testPeekAdjacentSingleItemHasNoNeighbor() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(1), startAt: 0)
+        handler.setRepeat(.off)
+        var adjacent = handler.peekAdjacent()
+        XCTAssertNil(adjacent.previous)
+        XCTAssertNil(adjacent.next)
+
+        handler.setRepeat(.all)
+        adjacent = handler.peekAdjacent()
+        XCTAssertNil(adjacent.previous)
+        XCTAssertNil(adjacent.next)
+    }
+
+    func testPeekAdjacentRepeatAllIgnoresRadioTail() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 2, origin: .album("Test"))
+        handler.appendContext([
+            QueueItem(playableId: "r0", title: "Radio 0", isRadioContinuation: true),
+            QueueItem(playableId: "r1", title: "Radio 1", isRadioContinuation: true)
+        ])
+        handler.setRepeat(.all)
+
+        var adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "1")
+        XCTAssertEqual(adjacent.next?.playableId, "0")
+
+        handler.jump(to: 0)
+        adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "2")
+        XCTAssertEqual(adjacent.next?.playableId, "1")
+    }
+
+    func testPeekAdjacentFromRadioRowJumpsToContext() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0, origin: .album("Test"))
+        handler.appendContext([
+            QueueItem(playableId: "r0", title: "Radio 0", isRadioContinuation: true),
+            QueueItem(playableId: "r1", title: "Radio 1", isRadioContinuation: true)
+        ])
+        handler.jump(to: 3)
+        handler.setRepeat(.all)
+
+        let adjacent = handler.peekAdjacent()
+        XCTAssertEqual(adjacent.previous?.playableId, "2")
+        XCTAssertEqual(adjacent.next?.playableId, "0")
+    }
 }
