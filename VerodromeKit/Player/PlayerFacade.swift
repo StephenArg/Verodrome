@@ -291,6 +291,20 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         )
     }
 
+    public func seekWithRamp(to seconds: TimeInterval) async {
+        await audioPlayer.backend.seekWithRamp(to: seconds)
+        currentTime = seconds
+        nowPlayingHandler?.updatePlaybackState(
+            isPlaying: isPlaying,
+            elapsed: currentTime,
+            rate: audioPlayer.backend.playbackRate
+        )
+    }
+
+    public func restoreFullVolume() {
+        audioPlayer.backend.restoreFullVolume()
+    }
+
     /// Temporarily change engine rate (e.g. hold skip = 2× / hold previous = 0.5×).
     public func setPlaybackRate(_ rate: Float) {
         audioPlayer.backend.setRate(rate)

@@ -35,6 +35,23 @@ struct NowPlayingSettingsView: View {
             }
 
             Section {
+                Toggle("Mini Skips", isOn: $settings.miniSkipEnabled)
+                    .onChange(of: settings.miniSkipEnabled) { _, _ in settings.save() }
+                if settings.miniSkipEnabled {
+                    Picker("Interval", selection: $settings.miniSkipInterval) {
+                        ForEach(MiniSkipInterval.allCases) { interval in
+                            Text(interval.label).tag(interval)
+                        }
+                    }
+                    .onChange(of: settings.miniSkipInterval) { _, _ in settings.save() }
+                }
+            } header: {
+                Text("Skip Buttons")
+            } footer: {
+                Text("When on, skip jumps by the interval. Hold skip to keep jumping, with a short play at each stop. Hold the left or right side of the artwork or lyrics for half or double speed. Swipe the artwork to change tracks. Turn this off to skip tracks and hold skip for speed.")
+            }
+
+            Section {
                 Toggle("Match Background to Artwork", isOn: $settings.changingColorsInPlayer)
                     .onChange(of: settings.changingColorsInPlayer) { _, _ in settings.save() }
             } header: {

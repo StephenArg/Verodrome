@@ -6,6 +6,7 @@ struct PlayerControlView: View {
     @EnvironmentObject private var progress: PlayerProgressModel
     @EnvironmentObject private var shuffleAll: ShuffleAllCoordinator
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var settings: SettingsStore
 
     /// Thumb position while the user drags, so the time labels follow the scrub
     /// instead of the (still advancing) playback clock.
@@ -118,23 +119,61 @@ struct PlayerControlView: View {
         holdRate: Float
     ) -> some View {
         let isLive = player.currentItem?.isLiveStream == true
+        let seconds = settings.miniSkipInterval.rawValue
+        let delta = settings.miniSkipInterval.timeInterval
+        let intervalDelta = direction == .forward ? delta : -delta
         return HoldableButton(
             isEnabled: !isLive,
-            onTap: onTap,
-            onHoldStart: { player.beginHoldSpeed(holdRate) },
-            onHoldEnd: { player.endHoldSpeed() }
+            onTap: {
+                if settings.miniSkipEnabled {
+                    player.seekByInterval(intervalDelta)
+                } else {
+                    onTap()
+                }
+            },
+            onHoldStart: {
+                if settings.miniSkipEnabled {
+                    player.beginIntervalHold(intervalDelta)
+                } else {
+                    player.beginHoldSpeed(holdRate)
+                }
+            },
+            onHoldEnd: {
+                if settings.miniSkipEnabled {
+                    player.endIntervalHold()
+                } else {
+                    player.endHoldSpeed()
+                }
+            }
         ) {
             SkipControlIcon(direction: direction)
                 .frame(width: skipIconSize + 4, height: skipIconSize)
                 .frame(width: skipIconSize + 12, height: playDiameter)
         }
         .opacity(isLive ? 0.35 : 1)
-        .accessibilityLabel(direction == .backward ? "Previous" : "Next")
-        .accessibilityHint(
-            direction == .backward
-                ? "Hold to play at half speed"
-                : "Hold to fast forward at double speed"
-        )
+        .accessibilityLabel(skipAccessibilityLabel(direction: direction, seconds: seconds))
+        .accessibilityHint(skipAccessibilityHint(direction: direction, seconds: seconds))
+    }
+
+    private func skipAccessibilityLabel(
+        direction: SkipControlIcon.Direction,
+        seconds: Int
+    ) -> String {
+        if settings.miniSkipEnabled {
+            return direction == .backward
+                ? "Skip back \(seconds) seconds"
+                : "Skip forward \(seconds) seconds"
+        }
+        return direction == .backward ? "Previous" : "Next"
+    }
+
+    private func skipAccessibilityHint(direction: SkipControlIcon.Direction, seconds: Int) -> String {
+        if settings.miniSkipEnabled {
+            return "Hold to keep skipping \(seconds) seconds"
+        }
+        return direction == .backward
+            ? "Hold to play at half speed"
+            : "Hold to fast forward at double speed"
     }
 
     private var shuffleButton: some View {

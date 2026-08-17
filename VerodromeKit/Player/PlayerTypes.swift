@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 public enum PlayType: String, Sendable {
@@ -318,6 +319,42 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
         playerMode = try c.decodeIfPresent(PlayerMode.self, forKey: .playerMode) ?? .music
         playbackPosition = try c.decodeIfPresent(TimeInterval.self, forKey: .playbackPosition) ?? 0
         origin = try c.decodeIfPresent(QueueOrigin.self, forKey: .origin)
+    }
+}
+
+/// Seek target for a mini-skip tap. Stays inside the current track.
+public enum MiniSkipSeek {
+    public static func target(
+        current: TimeInterval,
+        duration: TimeInterval,
+        delta: TimeInterval
+    ) -> TimeInterval {
+        let end = max(duration, 0)
+        return min(max(0, current + delta), end)
+    }
+}
+
+/// Left / right hold-speed on the player hero (artwork or lyrics).
+public enum HoldSpeedZone: Equatable, Sendable {
+    case slow
+    case fast
+    case none
+
+    public var rate: Float? {
+        switch self {
+        case .slow: 0.5
+        case .fast: 2
+        case .none: nil
+        }
+    }
+
+    /// Left 40% is 0.5×, right 40% is 2×, center 20% is a dead zone.
+    public static func zone(x: CGFloat, width: CGFloat) -> HoldSpeedZone {
+        guard width > 0 else { return .none }
+        let t = x / width
+        if t < 0.4 { return .slow }
+        if t > 0.6 { return .fast }
+        return .none
     }
 }
 

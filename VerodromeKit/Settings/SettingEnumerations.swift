@@ -157,6 +157,25 @@ public enum LyricsArtworkHold: Double, Codable, CaseIterable, Sendable, Identifi
     }
 }
 
+/// How far a mini-skip tap jumps inside the current track.
+public enum MiniSkipInterval: Int, Codable, CaseIterable, Sendable, Identifiable {
+    case three = 3
+    case five = 5
+    case seven = 7
+    case ten = 10
+    case fifteen = 15
+    case twenty = 20
+    case thirty = 30
+
+    public var id: Int { rawValue }
+
+    public static let `default`: MiniSkipInterval = .five
+
+    public var label: String { "\(rawValue)s" }
+
+    public var timeInterval: TimeInterval { TimeInterval(rawValue) }
+}
+
 /// Items that can appear in the phone tab bar / iPad sidebar.
 public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     case search

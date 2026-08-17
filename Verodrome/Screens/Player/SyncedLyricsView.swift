@@ -14,6 +14,9 @@ struct SyncedLyricsView: View {
     /// Double-tap anywhere in the list (including on a line) toggles lyrics in the
     /// popup player. Optional so the inspector lyrics pane stays tap-to-seek only.
     var onDoubleTap: (() -> Void)? = nil
+    /// Hold left = 0.5×, hold right = 2×. Nil keeps the inspector tap-to-seek only.
+    var onHoldSpeedStart: ((Float) -> Void)? = nil
+    var onHoldSpeedEnd: (() -> Void)? = nil
 
     /// Auto-scroll stays out of the way for this long after the user drags.
     private let manualScrollGracePeriod: TimeInterval = 4
@@ -23,6 +26,11 @@ struct SyncedLyricsView: View {
     /// Lines currently on screen. Auto-scroll only recenters a line that is already
     /// visible, so a reader who has scrolled ahead is never yanked back.
     @State private var visibleLines: Set<Int> = []
+    @State private var isHoldSpeed = false
+    /// Stays true through touch-up so a hold-speed press cannot also seek a line.
+    @State private var speedHoldConsumedThisPress = false
+
+    private static let holdDuration: TimeInterval = 0.2
 
     private var lines: [LyricLine] { player.lyricLines }
     private var isSynced: Bool { LyricsParser.isSynced(lines) }
@@ -58,10 +66,20 @@ struct SyncedLyricsView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4).onChanged { _ in lastManualScroll = Date() }
                 )
-                // simultaneous so line seek buttons still receive their single tap.
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded { onDoubleTap?() }
+                .holdSpeed(
+                    enabled: onHoldSpeedStart != nil && player.currentItem?.isLiveStream != true,
+                    duration: Self.holdDuration,
+                    maxDistance: 14,
+                    onStart: { point in beginHoldSpeed(at: point, width: geometry.size.width) },
+                    onEnd: { finishHoldSpeed() }
                 )
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        onDoubleTap?()
+                    },
+                    including: onDoubleTap != nil ? .all : .subviews
+                )
+                .onDisappear { finishHoldSpeed() }
                 .onPreferenceChange(VisibleLyricLinesKey.self) { visibleLines = $0 }
                 .onChange(of: activeIndex) { _, index in
                     scroll(to: index, using: proxy)
@@ -104,31 +122,64 @@ struct SyncedLyricsView: View {
     @ViewBuilder
     private func lineView(_ line: LyricLine) -> some View {
         let isActive = activeIndex == line.id
-        let text = Text(line.text.isEmpty ? " " : line.text)
+        let styledText = Text(line.text.isEmpty ? " " : line.text)
             .font(.title3.weight(isActive ? .bold : .semibold))
             .multilineTextAlignment(alignment)
             .foregroundStyle(.primary)
             .opacity(isSynced ? (isActive ? 1 : 0.35) : 1)
             .scaleEffect(isActive ? 1.04 : 1, anchor: anchor)
-            .frame(maxWidth: .infinity, alignment: frameAlignment)
             .animation(.easeInOut(duration: 0.25), value: isActive)
+            // Keep multi-line wrapping (horizontal flexible) but let the view
+            // size to the text height so its bounds hug the glyphs. That way the
+            // Spacers on either side stay tappable dead-zones for the container's
+            // double-tap-to-toggle-lyrics gesture on shorter lines.
+            .fixedSize(horizontal: false, vertical: true)
 
         if let start = line.start {
-            Button {
-                lastManualScroll = nil
-                player.seek(to: start)
-            } label: {
-                text
+            HStack(spacing: 0) {
+                if alignment == .center { Spacer(minLength: 0) }
+                styledText
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard !speedHoldConsumedThisPress else { return }
+                        lastManualScroll = nil
+                        player.seek(to: start)
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Plays from this line")
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Plays from this line")
         } else {
-            text
+            styledText
+                .frame(maxWidth: .infinity, alignment: frameAlignment)
         }
     }
 
     private var anchor: UnitPoint {
         alignment == .center ? .center : .leading
+    }
+
+    private func beginHoldSpeed(at point: CGPoint, width: CGFloat) {
+        guard !isHoldSpeed else { return }
+        guard onHoldSpeedStart != nil, player.currentItem?.isLiveStream != true else { return }
+        guard let rate = HoldSpeedZone.zone(x: point.x, width: width).rate else { return }
+        isHoldSpeed = true
+        speedHoldConsumedThisPress = true
+        onHoldSpeedStart?(rate)
+    }
+
+    private func finishHoldSpeed() {
+        guard isHoldSpeed else {
+            speedHoldConsumedThisPress = false
+            return
+        }
+        isHoldSpeed = false
+        onHoldSpeedEnd?()
+        // Swallow any late tap that fires on the same finger release.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            speedHoldConsumedThisPress = false
+        }
     }
 
     /// Reports whether `line` currently overlaps the visible part of the scroll view.

@@ -57,6 +57,10 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     private static let silentStuckGrace: TimeInterval = 2
     private static let startRampDuration: TimeInterval = 0.08
     private static let startRampPollInterval: TimeInterval = 0.03
+    /// Mute before a scan-seek so the buffer flush is not audible.
+    private static let intervalSeekFadeOut: TimeInterval = 0.06
+    private static let intervalSeekFadeIn: TimeInterval = 0.10
+    private static let intervalSeekFadeOutNanos: UInt64 = 60_000_000
     private static let progressPollInterval: TimeInterval = 0.25
     private var stallDetector = PlaybackStallDetector(timeout: BackendAudioPlayer.stallTimeout)
     /// True until the new entry has produced real progress, so we can fade in and hide
@@ -394,6 +398,24 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         currentTime = seconds
         // The clock jumps (possibly backwards), so rebase rather than reading it as a stall.
         stallDetector.extendWindow()
+    }
+
+    /// Duck, seek, then ramp back up so a hold-to-scan jump does not click.
+    public func seekWithRamp(to seconds: TimeInterval) async {
+        fadeVolume(to: 0, duration: Self.intervalSeekFadeOut, completion: nil)
+        try? await Task.sleep(nanoseconds: Self.intervalSeekFadeOutNanos)
+        cancelVolumeFade()
+        if Task.isCancelled {
+            streamingPlayer.volume = 1
+            return
+        }
+        seek(to: seconds)
+        fadeVolume(to: 1, duration: Self.intervalSeekFadeIn, completion: nil)
+    }
+
+    public func restoreFullVolume() {
+        cancelVolumeFade()
+        streamingPlayer.volume = 1
     }
 
     /// Enables Random mode and immediately rolls a rate for the current track.

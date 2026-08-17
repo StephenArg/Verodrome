@@ -271,6 +271,11 @@ struct PopupPlayerView: View {
         settings.showLyricsInPlayer && lyricsAvailable && lyricsRevealReady
     }
 
+    /// Mini-skip mode moves 0.5× / 2× onto the artwork or lyrics hero.
+    private var heroHoldSpeedEnabled: Bool {
+        settings.miniSkipEnabled && player.currentItem?.isLiveStream != true
+    }
+
     /// Artwork and lyrics are crossfaded rather than swapped, so the cover keeps its
     /// place behind the lyrics instead of being torn down and reloaded on the way back.
     private var heroPanel: some View {
@@ -288,7 +293,12 @@ struct PopupPlayerView: View {
                 allowsSkipSwipe: player.currentItem?.isLiveStream != true,
                 onSkipNext: player.skipForward,
                 onSkipPrevious: player.skipToPreviousTrack,
-                onDismiss: { dismiss() }
+                onDismiss: { dismiss() },
+                onHoldSpeedStart: heroHoldSpeedEnabled && !showingLyrics
+                    ? { player.beginHoldSpeed($0) } : nil,
+                onHoldSpeedEnd: heroHoldSpeedEnabled && !showingLyrics
+                    ? { player.endHoldSpeed() } : nil,
+                onDoubleTap: { toggleLyrics() }
             )
             // Slide / scale with the crossfade so double-tap feels like the cover
             // gives way to lyrics (and the reverse when lyrics close).
@@ -296,9 +306,6 @@ struct PopupPlayerView: View {
             .opacity(showingLyrics ? 0 : 1)
             .scaleEffect(showingLyrics ? 0.96 : 1, anchor: .center)
             .allowsHitTesting(!showingLyrics)
-            .onTapGesture(count: 2) {
-                toggleLyrics()
-            }
             .accessibilityHint(
                 "Double tap to \(settings.showLyricsInPlayer ? "hide" : "show") lyrics"
             )
@@ -306,9 +313,15 @@ struct PopupPlayerView: View {
             // Only mounted while the user wants lyrics, so the playback clock isn't
             // redrawing an invisible lyric list four times a second.
             if settings.showLyricsInPlayer {
-                SyncedLyricsView(onDoubleTap: {
-                    toggleLyrics()
-                })
+                SyncedLyricsView(
+                    onDoubleTap: {
+                        toggleLyrics()
+                    },
+                    onHoldSpeedStart: heroHoldSpeedEnabled && showingLyrics
+                        ? { player.beginHoldSpeed($0) } : nil,
+                    onHoldSpeedEnd: heroHoldSpeedEnabled && showingLyrics
+                        ? { player.endHoldSpeed() } : nil
+                )
                 .offset(y: showingLyrics ? 0 : 28)
                 .opacity(showingLyrics ? 1 : 0)
                 .allowsHitTesting(showingLyrics)

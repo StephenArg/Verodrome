@@ -51,3 +51,85 @@ struct HoldableButton<Label: View>: View {
             }
     }
 }
+
+/// Detects a still-finger hold on the receiver and reports the initial touch
+/// location. Uses a `DragGesture(minimumDistance: 0)` as a passive touch tracker
+/// so the timer starts on touch-down (a `LongPressGesture.sequenced(before:)`
+/// would starve if the finger never moves, delaying the fire indefinitely).
+/// Attached with `.simultaneousGesture` so tap / double-tap / swipe on the same
+/// view still recognize.
+struct HoldSpeedModifier: ViewModifier {
+    var enabled: Bool
+    var duration: TimeInterval = 0.2
+    var maxDistance: CGFloat = 14
+    var onStart: (CGPoint) -> Void
+    var onEnd: () -> Void
+
+    @State private var holdTask: Task<Void, Never>?
+    @State private var pressLocation: CGPoint = .zero
+    @State private var isHolding = false
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if holdTask == nil, !isHolding {
+                            pressLocation = value.startLocation
+                            let delayNanos = UInt64(duration * 1_000_000_000)
+                            holdTask = Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: delayNanos)
+                                guard !Task.isCancelled else { return }
+                                isHolding = true
+                                onStart(pressLocation)
+                            }
+                        }
+                        // Cancel the arming timer once the user has clearly moved:
+                        // that's a swipe, not a hold.
+                        if !isHolding {
+                            let dx = abs(value.translation.width)
+                            let dy = abs(value.translation.height)
+                            if dx > maxDistance || dy > maxDistance {
+                                holdTask?.cancel()
+                                holdTask = nil
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        holdTask?.cancel()
+                        holdTask = nil
+                        if isHolding {
+                            isHolding = false
+                            onEnd()
+                        }
+                    },
+                including: enabled ? .all : .subviews
+            )
+            .onDisappear {
+                holdTask?.cancel()
+                holdTask = nil
+                if isHolding {
+                    isHolding = false
+                    onEnd()
+                }
+            }
+    }
+}
+
+extension View {
+    func holdSpeed(
+        enabled: Bool,
+        duration: TimeInterval = 0.2,
+        maxDistance: CGFloat = 14,
+        onStart: @escaping (CGPoint) -> Void,
+        onEnd: @escaping () -> Void
+    ) -> some View {
+        modifier(HoldSpeedModifier(
+            enabled: enabled,
+            duration: duration,
+            maxDistance: maxDistance,
+            onStart: onStart,
+            onEnd: onEnd
+        ))
+    }
+}

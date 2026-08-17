@@ -22,6 +22,10 @@ struct LargeArtworkView: View {
     var onSkipNext: (() -> Void)? = nil
     var onSkipPrevious: (() -> Void)? = nil
     var onDismiss: (() -> Void)? = nil
+    /// Hold left = 0.5×, hold right = 2×. Nil disables hold-speed.
+    var onHoldSpeedStart: ((Float) -> Void)? = nil
+    var onHoldSpeedEnd: (() -> Void)? = nil
+    var onDoubleTap: (() -> Void)? = nil
 
     /// Floor for the cover, so an extremely short layout still shows recognizable
     /// art rather than a sliver.
@@ -33,6 +37,7 @@ struct LargeArtworkView: View {
     /// High enough that a double-tap for lyrics is not stolen by the skip drag.
     private static let dragMinimumDistance: CGFloat = 16
     private static let dismissTranslation: CGFloat = 80
+    private static let holdDuration: TimeInterval = 0.2
 
     /// The cover currently parked in the hero slot.
     @State private var shownTrackID: String?
@@ -61,6 +66,7 @@ struct LargeArtworkView: View {
     /// Added to the live translation so a new flick can pick up a cover that is
     /// still settling from the last skip, instead of jumping or waiting.
     @State private var dragOriginOffset: CGFloat = 0
+    @State private var isHoldSpeed = false
 
     var body: some View {
         // Explicit offsets rather than `.transition(.move)`: SwiftUI latches the removal
@@ -111,6 +117,20 @@ struct LargeArtworkView: View {
                         handleDragEnded(value, width: width)
                     }
             )
+            .holdSpeed(
+                enabled: onHoldSpeedStart != nil,
+                duration: Self.holdDuration,
+                maxDistance: Self.axisLockSlop,
+                onStart: { point in beginHoldSpeed(at: point, width: width) },
+                onEnd: { finishHoldSpeed() }
+            )
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                    onDoubleTap?()
+                },
+                including: onDoubleTap != nil ? .all : .subviews
+            )
+            .onDisappear { finishHoldSpeed() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .frame(minHeight: minimumSide)
@@ -160,7 +180,21 @@ struct LargeArtworkView: View {
         animateSlide(shownTo: 0, leavingTo: outgoingEnd)
     }
 
+    private func beginHoldSpeed(at point: CGPoint, width: CGFloat) {
+        guard !isHoldSpeed else { return }
+        guard let rate = HoldSpeedZone.zone(x: point.x, width: width).rate else { return }
+        isHoldSpeed = true
+        onHoldSpeedStart?(rate)
+    }
+
+    private func finishHoldSpeed() {
+        guard isHoldSpeed else { return }
+        isHoldSpeed = false
+        onHoldSpeedEnd?()
+    }
+
     private func handleDragChanged(_ value: DragGesture.Value, width: CGFloat) {
+        if isHoldSpeed { return }
         if dragAxis == nil {
             let dx = abs(value.translation.width)
             let dy = abs(value.translation.height)
@@ -223,6 +257,11 @@ struct LargeArtworkView: View {
     }
 
     private func handleDragEnded(_ value: DragGesture.Value, width: CGFloat) {
+        if isHoldSpeed {
+            dragAxis = nil
+            isInteractiveDrag = false
+            return
+        }
         let axis = dragAxis
         dragAxis = nil
 

@@ -153,12 +153,17 @@ final class PlayerViewModel: ObservableObject {
 
     private var facade: PlayerFacadeImpl?
     private var cancellables = Set<AnyCancellable>()
+    /// Repeats a mini-skip while the skip control is held.
+    private var intervalHoldTask: Task<Void, Never>?
+    /// Audible time at each hold-skip landing before the next jump.
+    private static let intervalHoldPreviewNanoseconds: UInt64 = 1_050_000_000
 
     init() {
         queueList.player = self
     }
 
     func attach(facade: (any PlayerFacade)?) {
+        endIntervalHold()
         cancellables.removeAll()
         queueList.player = self
         guard let impl = facade as? PlayerFacadeImpl else { return }
@@ -429,6 +434,54 @@ final class PlayerViewModel: ObservableObject {
         let clamped = min(max(0, time), max(progress.duration, 1))
         facade?.seek(to: clamped)
         progress.currentTime = clamped
+    }
+
+    /// Jump forward or back inside the current track. Clamped to the duration.
+    func seekByInterval(_ delta: TimeInterval) {
+        guard currentItem?.isLiveStream != true else { return }
+        seek(
+            to: MiniSkipSeek.target(
+                current: progress.currentTime,
+                duration: progress.duration,
+                delta: delta
+            )
+        )
+    }
+
+    /// Hold skip: jump by `delta`, play a snippet, jump again until `endIntervalHold()`.
+    func beginIntervalHold(_ delta: TimeInterval) {
+        guard currentItem?.isLiveStream != true else { return }
+        endIntervalHold()
+        if !isPlaying {
+            facade?.play()
+            isPlaying = facade?.isPlaying ?? isPlaying
+        }
+        intervalHoldTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.seekByIntervalWithRamp(delta)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.intervalHoldPreviewNanoseconds)
+                guard !Task.isCancelled else { break }
+                await self.seekByIntervalWithRamp(delta)
+            }
+        }
+    }
+
+    func endIntervalHold() {
+        intervalHoldTask?.cancel()
+        intervalHoldTask = nil
+        facade?.restoreFullVolume()
+    }
+
+    private func seekByIntervalWithRamp(_ delta: TimeInterval) async {
+        guard currentItem?.isLiveStream != true else { return }
+        let target = MiniSkipSeek.target(
+            current: progress.currentTime,
+            duration: progress.duration,
+            delta: delta
+        )
+        progress.currentTime = target
+        await facade?.seekWithRamp(to: target)
     }
 
     /// Records that the queue playing was handed over pre-shuffled, so the queue screen

@@ -179,3 +179,48 @@ final class ArtworkSwipeCommitTests: XCTestCase {
         )
     }
 }
+
+final class MiniSkipSeekTests: XCTestCase {
+    func testForwardStaysInsideDuration() {
+        XCTAssertEqual(MiniSkipSeek.target(current: 10, duration: 100, delta: 5), 15)
+        XCTAssertEqual(MiniSkipSeek.target(current: 98, duration: 100, delta: 5), 100)
+        XCTAssertEqual(MiniSkipSeek.target(current: 100, duration: 100, delta: 5), 100)
+    }
+
+    func testBackwardClampsToZero() {
+        XCTAssertEqual(MiniSkipSeek.target(current: 10, duration: 100, delta: -5), 5)
+        XCTAssertEqual(MiniSkipSeek.target(current: 3, duration: 100, delta: -5), 0)
+        XCTAssertEqual(MiniSkipSeek.target(current: 0, duration: 100, delta: -5), 0)
+    }
+
+    func testZeroOrMissingDuration() {
+        XCTAssertEqual(MiniSkipSeek.target(current: 4, duration: 0, delta: 5), 0)
+        XCTAssertEqual(MiniSkipSeek.target(current: 0, duration: 0, delta: -5), 0)
+        XCTAssertEqual(MiniSkipSeek.target(current: 2, duration: -1, delta: 5), 0)
+    }
+}
+
+final class HoldSpeedZoneTests: XCTestCase {
+    func testLeftIsSlow() {
+        XCTAssertEqual(HoldSpeedZone.zone(x: 0, width: 100), .slow)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 39, width: 100), .slow)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 0, width: 100).rate, 0.5)
+    }
+
+    func testRightIsFast() {
+        XCTAssertEqual(HoldSpeedZone.zone(x: 61, width: 100), .fast)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 100, width: 100), .fast)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 100, width: 100).rate, 2)
+    }
+
+    func testCenterIsDeadZone() {
+        XCTAssertEqual(HoldSpeedZone.zone(x: 40, width: 100), .none)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 50, width: 100), .none)
+        XCTAssertEqual(HoldSpeedZone.zone(x: 60, width: 100), .none)
+        XCTAssertNil(HoldSpeedZone.zone(x: 50, width: 100).rate)
+    }
+
+    func testZeroWidthIsNone() {
+        XCTAssertEqual(HoldSpeedZone.zone(x: 10, width: 0), .none)
+    }
+}
