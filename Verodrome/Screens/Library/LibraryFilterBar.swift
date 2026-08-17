@@ -9,6 +9,9 @@ struct LibraryFilterBar: View {
     /// When true (default), adds the inset used above a full-width library table.
     /// Detail accessories sit inside an already-padded header and pass `false`.
     var showsOuterPadding: Bool = true
+    /// When set, keyboard return runs this (Search uses it for remote search) and
+    /// shows a Search submit label instead of Done.
+    var onSubmit: (() -> Void)? = nil
 
     @FocusState private var isFocused: Bool
 
@@ -22,7 +25,8 @@ struct LibraryFilterBar: View {
 
             TextField(prompt, text: $text)
                 .focused($isFocused)
-                .submitLabel(.done)
+                .submitLabel(onSubmit == nil ? .done : .search)
+                .onSubmit { onSubmit?() }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 // A TextField's intrinsic width tracks its text, which would push the

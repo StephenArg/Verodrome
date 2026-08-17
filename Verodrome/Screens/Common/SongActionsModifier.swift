@@ -161,4 +161,35 @@ extension View {
     func songActions(_ song: Song) -> some View {
         modifier(SongActionsModifier(song: song))
     }
+
+    /// Resolves the song by compound id, then attaches the shared long-press / swipe menu.
+    /// Used by snapshot-backed lists (Search) that don't hold a live `Song` in the row.
+    func songActions(compoundRemoteId: String) -> some View {
+        modifier(DeferredSongActionsModifier(compoundRemoteId: compoundRemoteId))
+    }
+}
+
+/// Loads a `Song` once, then forwards to `SongActionsModifier`.
+private struct DeferredSongActionsModifier: ViewModifier {
+    let compoundRemoteId: String
+    @Environment(\.modelContext) private var modelContext
+    @State private var song: Song?
+
+    func body(content: Content) -> some View {
+        Group {
+            if let song {
+                content.songActions(song)
+            } else {
+                content
+            }
+        }
+        .task(id: compoundRemoteId) {
+            let id = compoundRemoteId
+            var descriptor = FetchDescriptor<Song>(
+                predicate: #Predicate<Song> { $0.compoundRemoteId == id }
+            )
+            descriptor.fetchLimit = 1
+            song = try? modelContext.fetch(descriptor).first
+        }
+    }
 }
