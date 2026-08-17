@@ -7,30 +7,79 @@ struct DownloadsView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var shuffle: ShuffleAllCoordinator
     @EnvironmentObject private var router: AppRouter
-    @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var albumRows: [DownloadedAlbumRow] = []
     @State private var downloadedRows: [DownloadedSongRow] = []
     /// Titles for songs that are downloading but not on disk yet, so the in-progress
     /// section can name a track the downloaded list has never seen.
     @State private var inFlightRows: [String: DownloadedSongRow] = [:]
+    /// remoteId → row for O(1) in-progress / waiting / failed lookups.
+    @State private var songRowByRemoteId: [String: DownloadedSongRow] = [:]
+    /// album compound id → song row ids (select cascade).
+    @State private var songsByAlbumId: [String: Set<String>] = [:]
+    /// song row id → album compound id (select cascade).
+    @State private var albumIdBySongId: [String: String] = [:]
+
+    /// Membership snapshots — updated on `activityEpoch`, not progress ticks.
+    @State private var workingIds: Set<String> = []
+    @State private var deferredIds: Set<String> = []
+    @State private var failedIds: Set<String> = []
+    @State private var completedCount = 0
+
     @State private var selectedAlbumId: String?
     @State private var loadGeneration = 0
+    @State private var editMode: EditMode = .inactive
+    @State private var selection: Set<String> = []
+    /// False until the first library fetch finishes.
+    @State private var hasLoadedOnce = false
+    @State private var showRemoveConfirm = false
 
     private var hasLibraryContent: Bool {
         !albumRows.isEmpty || !downloadedRows.isEmpty
     }
 
+    private var isSelecting: Bool {
+        editMode.isEditing && hasLibraryContent
+    }
+
     private var isEmpty: Bool {
         !hasLibraryContent
-            && activeEntries.isEmpty
-            && waitingRows.isEmpty
-            && downloadCenter.failedIds.isEmpty
+            && workingIds.isEmpty
+            && deferredIds.isEmpty
+            && failedIds.isEmpty
+    }
+
+    private var allSelectableIds: Set<String> {
+        Set(albumRows.map(\.id)).union(downloadedRows.map(\.id))
+    }
+
+    private var isAllSelected: Bool {
+        !allSelectableIds.isEmpty && allSelectableIds.isSubset(of: selection)
+    }
+
+    private var selectedSongRows: [DownloadedSongRow] {
+        downloadedRows.filter { selection.contains($0.id) }
+    }
+
+    private var removeConfirmTitle: String {
+        let count = selectedSongRows.count
+        return count == 1 ? "Remove Download?" : "Remove \(count) Downloads?"
+    }
+
+    private var removeConfirmMessage: String {
+        let count = selectedSongRows.count
+        if count == 1, let title = selectedSongRows.first?.title {
+            return "“\(title)” will be deleted from this device. You can download it again later."
+        }
+        return "\(count) songs will be deleted from this device. You can download them again later."
     }
 
     var body: some View {
         Group {
-            if isEmpty {
+            if !hasLoadedOnce {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isEmpty {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
@@ -46,7 +95,7 @@ struct DownloadsView: View {
                                 secondaryCount: downloadedRows.count,
                                 secondaryNoun: "song",
                                 isShuffleBusy: shuffle.isStarting,
-                                isShuffleDisabled: downloadedRows.isEmpty,
+                                isShuffleDisabled: downloadedRows.isEmpty || isSelecting,
                                 onShuffle: shuffleDownloaded
                             )
                             .listRowInsets(EdgeInsets())
@@ -55,24 +104,12 @@ struct DownloadsView: View {
                         }
                     }
 
-                    if !activeEntries.isEmpty {
-                        Section("In Progress") {
-                            ForEach(activeEntries, id: \.row.id) { entry in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    EntityRow(
-                                        title: entry.row.title,
-                                        subtitle: entry.row.subtitle,
-                                        artworkURL: entry.row.artworkToken,
-                                        trailing: entry.progress == nil
-                                            ? "Waiting"
-                                            : "\(Int((entry.progress ?? 0) * 100))%"
-                                    )
-                                    ProgressView(value: entry.progress ?? 0)
-                                        .opacity(entry.progress == nil ? 0.4 : 1)
-                                }
-                            }
-                        }
-                    }
+                    // Observes `activeDownloads` in isolation so progress ticks don't
+                    // rebuild the album / song sections.
+                    DownloadsInProgressSection(
+                        workingIds: workingIds,
+                        rowsByRemoteId: songRowByRemoteId
+                    )
 
                     if !waitingRows.isEmpty {
                         Section {
@@ -91,9 +128,9 @@ struct DownloadsView: View {
                         }
                     }
 
-                    if !downloadCenter.failedIds.isEmpty {
+                    if !failedIds.isEmpty {
                         Section("Failed") {
-                            ForEach(Array(downloadCenter.failedIds).sorted(), id: \.self) { id in
+                            ForEach(Array(failedIds).sorted(), id: \.self) { id in
                                 let title = title(forRemoteId: id)
                                 HStack {
                                     Text(title)
@@ -110,18 +147,7 @@ struct DownloadsView: View {
                     if !albumRows.isEmpty {
                         Section("Albums") {
                             ForEach(albumRows) { row in
-                                Button {
-                                    selectedAlbumId = row.id
-                                } label: {
-                                    EntityRow(
-                                        title: row.title,
-                                        subtitle: row.subtitle,
-                                        artworkURL: row.artworkToken,
-                                        symbol: "square.stack.fill",
-                                        downloadStatus: albumDownloadStatus(for: row)
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                albumRow(row)
                             }
                         }
                     }
@@ -129,25 +155,7 @@ struct DownloadsView: View {
                     if !downloadedRows.isEmpty {
                         Section("Songs") {
                             ForEach(downloadedRows) { row in
-                                Button {
-                                    play(row)
-                                } label: {
-                                    EntityRow(
-                                        title: row.title,
-                                        subtitle: row.subtitle,
-                                        artworkURL: row.artworkToken,
-                                        isPlaying: nowPlaying.currentItem?.playableId == row.remoteId,
-                                        trailing: row.durationText
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        remove(row)
-                                    } label: {
-                                        Label("Remove", systemImage: "trash")
-                                    }
-                                }
+                                songRow(row)
                             }
                         }
                     }
@@ -157,6 +165,29 @@ struct DownloadsView: View {
         }
         .navigationTitle("Downloads")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+        .toolbar { toolbarContent }
+        .alert(
+            removeConfirmTitle,
+            isPresented: $showRemoveConfirm
+        ) {
+            Button("Remove", role: .destructive) {
+                removeSelected()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(removeConfirmMessage)
+        }
+        .onChange(of: hasLibraryContent) { _, hasContent in
+            if !hasContent {
+                finishSelecting()
+            }
+        }
+        .onReceive(DownloadCenter.shared.$activityEpoch) { _ in
+            syncDownloadMembership()
+        }
+        .onAppear {
+            syncDownloadMembership()
+        }
         // One trigger, not two: a plain `.task` alongside `.task(id:)` runs the
         // whole fetch twice on appear.
         .task(id: reloadKey) {
@@ -164,45 +195,163 @@ struct DownloadsView: View {
         }
     }
 
+    // MARK: - Rows
+
+    @ViewBuilder
+    private func albumRow(_ row: DownloadedAlbumRow) -> some View {
+        let content = EntityRow(
+            title: row.title,
+            subtitle: row.subtitle,
+            artworkURL: row.artworkToken,
+            symbol: "square.stack.fill",
+            downloadStatus: albumDownloadStatus(for: row)
+        )
+        if isSelecting {
+            Button {
+                toggleAlbum(row)
+            } label: {
+                selectableRow(isSelected: selection.contains(row.id)) {
+                    content
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                selectedAlbumId = row.id
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func songRow(_ row: DownloadedSongRow) -> some View {
+        let content = EntityRow(
+            title: row.title,
+            subtitle: row.subtitle,
+            artworkURL: row.artworkToken,
+            isPlaying: nowPlaying.currentItem?.playableId == row.remoteId,
+            trailing: row.durationText
+        )
+        if isSelecting {
+            Button {
+                toggleSong(row)
+            } label: {
+                selectableRow(isSelected: selection.contains(row.id)) {
+                    content
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                play(row)
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    remove(row)
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func selectableRow<Content: View>(
+        isSelected: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
+            content()
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if isSelecting {
+                Button(isAllSelected ? "Deselect All" : "Select All") {
+                    if isAllSelected {
+                        selection.removeAll()
+                    } else {
+                        selection = allSelectableIds
+                    }
+                }
+                if !selection.isEmpty {
+                    Button("Remove", role: .destructive) {
+                        showRemoveConfirm = true
+                    }
+                }
+                Button("Done") {
+                    finishSelecting()
+                }
+            } else {
+                // Always present so the trailing slot doesn't pop in after the first fetch.
+                Button("Select") {
+                    withAnimation { editMode = .active }
+                }
+                .disabled(!hasLibraryContent)
+            }
+        }
+    }
+
     /// Changes whenever a download starts, finishes, or fails — each of those moves a
-    /// song between the sections below.
+    /// song between the sections below. Progress ticks do not change this key.
     private var reloadKey: String {
-        "\(downloadCenter.completedIds.count)-\(downloadCenter.workingIds.count)-\(downloadCenter.failedIds.count)-\(downloadCenter.deferredIds.count)"
+        "\(completedCount)-\(workingIds.count)-\(failedIds.count)-\(deferredIds.count)"
     }
 
     /// Downloads parked until Wi-Fi. They have no file yet, so the metadata comes from
     /// the same in-flight lookup the In Progress section uses.
     private var waitingRows: [DownloadedSongRow] {
-        downloadCenter.deferredIds
-            .compactMap { row(forRemoteId: $0) }
+        deferredIds
+            .compactMap { songRowByRemoteId[$0] }
             .sorted { $0.title < $1.title }
     }
 
-    /// Active and queued downloads with whatever metadata we have for them. `progress`
-    /// is nil while a download waits behind the concurrency limit.
-    private var activeEntries: [(row: DownloadedSongRow, progress: Double?)] {
-        downloadCenter.workingIds.compactMap { id in
-            guard let row = row(forRemoteId: id) else { return nil }
-            return (row, downloadCenter.activeDownloads[id])
-        }
-        .sorted { $0.row.title < $1.row.title }
-    }
-
-    private func row(forRemoteId id: String) -> DownloadedSongRow? {
-        downloadedRows.first { $0.remoteId == id } ?? inFlightRows[id]
-    }
-
     private func title(forRemoteId id: String) -> String {
-        row(forRemoteId: id)?.title ?? id
+        songRowByRemoteId[id]?.title ?? id
     }
 
+    /// Membership-only album glyph — no live progress rings (those stay in In Progress).
     private func albumDownloadStatus(for row: DownloadedAlbumRow) -> DownloadStatus {
-        SongsDownloadSummary(
-            songRemoteIds: row.songRemoteIds,
-            downloadedIds: row.downloadedSongIds,
-            trackTotal: row.trackTotal,
-            center: downloadCenter
-        ).status
+        // In-flight / deferred / failed remotes aren't always in `songRemoteIds` (that
+        // list is only what's already on disk). Map through the remoteId index instead;
+        // those sets stay small so scanning them per album is cheap.
+        if workingIds.contains(where: { songRowByRemoteId[$0]?.albumId == row.id }) {
+            return .pending
+        }
+        if deferredIds.contains(where: { songRowByRemoteId[$0]?.albumId == row.id }) {
+            return .waiting
+        }
+        let downloaded = row.downloadedSongIds.count
+        if downloaded > 0, downloaded >= row.trackTotal {
+            return .downloaded
+        }
+        if downloaded > 0, downloaded < row.trackTotal {
+            return .partial
+        }
+        if failedIds.contains(where: { songRowByRemoteId[$0]?.albumId == row.id }) {
+            return .failed
+        }
+        return downloaded > 0 ? .downloaded : .none
+    }
+
+    private func syncDownloadMembership() {
+        let center = DownloadCenter.shared
+        workingIds = center.workingIds
+        deferredIds = center.deferredIds
+        failedIds = center.failedIds
+        completedCount = center.completedIds.count
     }
 
     private func shuffleDownloaded() {
@@ -213,19 +362,88 @@ struct DownloadsView: View {
         }
     }
 
+    private func finishSelecting() {
+        withAnimation {
+            editMode = .inactive
+            selection.removeAll()
+        }
+    }
+
+    // MARK: - Selection cascade
+
+    private func toggleAlbum(_ album: DownloadedAlbumRow) {
+        var next = selection
+        let songIds = songsByAlbumId[album.id] ?? []
+        if next.contains(album.id) {
+            next.remove(album.id)
+            next.subtract(songIds)
+        } else {
+            next.insert(album.id)
+            next.formUnion(songIds)
+        }
+        selection = next
+    }
+
+    private func toggleSong(_ song: DownloadedSongRow) {
+        var next = selection
+        if next.contains(song.id) {
+            next.remove(song.id)
+            // Unchecking any song clears its album checkmark; siblings stay selected.
+            if let albumId = albumIdBySongId[song.id] {
+                next.remove(albumId)
+            }
+        } else {
+            next.insert(song.id)
+        }
+        selection = next
+    }
+
+    private func rebuildSelectionMaps() {
+        var byAlbum: [String: Set<String>] = [:]
+        var albumBySong: [String: String] = [:]
+        byAlbum.reserveCapacity(albumRows.count)
+        albumBySong.reserveCapacity(downloadedRows.count)
+        for song in downloadedRows {
+            guard let albumId = song.albumId else { continue }
+            byAlbum[albumId, default: []].insert(song.id)
+            albumBySong[song.id] = albumId
+        }
+        songsByAlbumId = byAlbum
+        albumIdBySongId = albumBySong
+    }
+
+    private func rebuildRemoteIdIndex() {
+        var index: [String: DownloadedSongRow] = [:]
+        index.reserveCapacity(downloadedRows.count + inFlightRows.count)
+        for row in downloadedRows {
+            index[row.remoteId] = row
+        }
+        for (remoteId, row) in inFlightRows {
+            index[remoteId] = row
+        }
+        songRowByRemoteId = index
+    }
+
     private func reload() async {
         loadGeneration += 1
         let generation = loadGeneration
         let fetched = await Self.fetchDownloadedLibrary()
-        let pendingIds = downloadCenter.workingIds
-            .union(downloadCenter.failedIds)
-            .union(downloadCenter.deferredIds)
+        let center = DownloadCenter.shared
+        let pendingIds = center.workingIds
+            .union(center.failedIds)
+            .union(center.deferredIds)
             .subtracting(fetched.songs.map(\.remoteId))
         let pending = pendingIds.isEmpty ? [:] : await Self.fetchRows(remoteIds: pendingIds)
         guard generation == loadGeneration else { return }
         albumRows = fetched.albums
         downloadedRows = fetched.songs
         inFlightRows = pending
+        rebuildSelectionMaps()
+        rebuildRemoteIdIndex()
+        hasLoadedOnce = true
+        // Drop selection IDs that no longer exist after a background reload.
+        let valid = allSelectableIds
+        selection = selection.intersection(valid)
     }
 
     private static func fetchDownloadedLibrary() async -> (
@@ -242,35 +460,42 @@ struct DownloadsView: View {
                         sortBy: [SortDescriptor(\Song.title)]
                     )
                 )
-                let songRows = songs.map(DownloadedSongRow.init)
 
-                var albumsById: [String: Album] = [:]
+                // Group downloaded songs by album without faulting `album.songs`.
+                var albumMeta: [String: Album] = [:]
+                var downloadedRemoteIdsByAlbum: [String: Set<String>] = [:]
+                var songRows: [DownloadedSongRow] = []
+                songRows.reserveCapacity(songs.count)
+
                 for song in songs {
-                    guard let album = song.album else { continue }
-                    albumsById[album.compoundRemoteId] = album
+                    let album = song.album
+                    let albumId = album?.compoundRemoteId
+                    songRows.append(DownloadedSongRow(song: song, albumId: albumId))
+                    guard let album, let albumId else { continue }
+                    albumMeta[albumId] = album
+                    downloadedRemoteIdsByAlbum[albumId, default: []].insert(song.remoteId)
                 }
 
-                let albumRows = albumsById.values
-                    .map { album -> DownloadedAlbumRow in
-                        let albumSongs = album.songs
-                        let downloadedIds = Set(
-                            albumSongs.compactMap { $0.relFilePath != nil ? $0.remoteId : nil }
-                        )
-                        return DownloadedAlbumRow(
-                            id: album.compoundRemoteId,
-                            title: album.title,
-                            // Prefer the denormalized column so a missing artist
-                            // relationship doesn't fault every album during the map.
-                            subtitle: album.artistName ?? "Unknown Artist",
-                            artworkToken: album.artworkToken,
-                            songRemoteIds: albumSongs.map(\.remoteId),
-                            downloadedSongIds: downloadedIds,
-                            trackTotal: max(album.trackCount, albumSongs.count)
-                        )
-                    }
-                    .sorted {
-                        $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                    }
+                let albumRows = albumMeta.map { albumId, album -> DownloadedAlbumRow in
+                    let downloadedIds = downloadedRemoteIdsByAlbum[albumId] ?? []
+                    let downloadedList = Array(downloadedIds)
+                    return DownloadedAlbumRow(
+                        id: albumId,
+                        title: album.title,
+                        // Prefer the denormalized column so a missing artist
+                        // relationship doesn't fault every album during the map.
+                        subtitle: album.artistName ?? "Unknown Artist",
+                        artworkToken: album.artworkToken,
+                        // Only the downloaded tracks we already loaded — not the full
+                        // album relationship, which can be much larger on partial albums.
+                        songRemoteIds: downloadedList,
+                        downloadedSongIds: downloadedIds,
+                        trackTotal: max(album.trackCount, downloadedIds.count)
+                    )
+                }
+                .sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
 
                 return (albumRows, songRows)
             }
@@ -314,7 +539,79 @@ struct DownloadsView: View {
             albumRows = albumRows.compactMap { album in
                 var next = album
                 next.downloadedSongIds.remove(row.remoteId)
+                next.songRemoteIds.removeAll { $0 == row.remoteId }
                 return next.downloadedSongIds.isEmpty ? nil : next
+            }
+            rebuildSelectionMaps()
+            rebuildRemoteIdIndex()
+        }
+    }
+
+    private func removeSelected() {
+        let selectedSongs = selectedSongRows
+        guard !selectedSongs.isEmpty else { return }
+        let remoteIds = Set(selectedSongs.map(\.remoteId))
+        let compoundIds = Set(selectedSongs.map(\.id))
+
+        Task {
+            guard let repository = VerodromeKit.shared.repository(),
+                  let account = try? VerodromeKit.shared.activeAccount()
+            else { return }
+            let songs = selectedSongs.compactMap { row in
+                try? repository.resolveSong(remoteId: row.remoteId, account: account)
+            }
+            await LibraryActions.shared.removeDownloads(songs: songs)
+
+            downloadedRows.removeAll { compoundIds.contains($0.id) }
+            albumRows = albumRows.compactMap { album in
+                var next = album
+                next.downloadedSongIds.subtract(remoteIds)
+                next.songRemoteIds.removeAll { remoteIds.contains($0) }
+                return next.downloadedSongIds.isEmpty ? nil : next
+            }
+            rebuildSelectionMaps()
+            rebuildRemoteIdIndex()
+            selection.removeAll()
+            if albumRows.isEmpty && downloadedRows.isEmpty {
+                editMode = .inactive
+            }
+        }
+    }
+}
+
+/// Live progress for active transfers only — observing `DownloadCenter` here keeps
+/// progress ticks from invalidating the rest of `DownloadsView`.
+private struct DownloadsInProgressSection: View {
+    let workingIds: Set<String>
+    let rowsByRemoteId: [String: DownloadedSongRow]
+
+    @ObservedObject private var downloadCenter = DownloadCenter.shared
+
+    private var entries: [(row: DownloadedSongRow, progress: Double?)] {
+        workingIds.compactMap { id in
+            guard let row = rowsByRemoteId[id] else { return nil }
+            return (row, downloadCenter.activeDownloads[id])
+        }
+        .sorted { $0.row.title < $1.row.title }
+    }
+
+    var body: some View {
+        if !entries.isEmpty {
+            Section("In Progress") {
+                ForEach(entries, id: \.row.id) { entry in
+                    VStack(alignment: .leading, spacing: 6) {
+                        EntityRow(
+                            title: entry.row.title,
+                            subtitle: entry.row.subtitle,
+                            artworkURL: entry.row.artworkToken,
+                            trailing: entry.progress == nil
+                                ? "Waiting"
+                                : "\(Int((entry.progress ?? 0) * 100))%"
+                        )
+                        ProgressView(value: entry.progress ?? 0)
+                            .opacity(entry.progress == nil ? 0.4 : 1)
+                    }
+                }
             }
         }
     }
@@ -325,7 +622,7 @@ struct DownloadedAlbumRow: Identifiable, Hashable, Sendable {
     let title: String
     let subtitle: String
     let artworkToken: String?
-    let songRemoteIds: [String]
+    var songRemoteIds: [String]
     var downloadedSongIds: Set<String>
     let trackTotal: Int
 }
@@ -333,15 +630,18 @@ struct DownloadedAlbumRow: Identifiable, Hashable, Sendable {
 struct DownloadedSongRow: Identifiable, Hashable, Sendable {
     let id: String
     let remoteId: String
+    /// Album compound id when the song belongs to an album; drives select cascade.
+    let albumId: String?
     let title: String
     let subtitle: String
     let artworkToken: String?
     let duration: TimeInterval
     let durationText: String
 
-    init(song: Song) {
+    init(song: Song, albumId: String? = nil) {
         id = song.compoundRemoteId
         remoteId = song.remoteId
+        self.albumId = albumId ?? song.album?.compoundRemoteId
         title = song.title
         subtitle = song.displayArtist
         artworkToken = song.displayArtworkToken
