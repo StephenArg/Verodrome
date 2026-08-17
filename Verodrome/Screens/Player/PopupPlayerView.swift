@@ -19,6 +19,8 @@ struct PopupPlayerView: View {
     @State private var bottomPanel: BottomPanel?
     @State private var artistCredits: [PlayerArtistCredit] = []
     @State private var selectedAlbumId: String?
+    /// False until the artwork hold elapses (or the user toggles lyrics on manually).
+    @State private var lyricsRevealReady = false
 
     var body: some View {
         NavigationStack {
@@ -35,6 +37,14 @@ struct PopupPlayerView: View {
                 currentSong = resolveCurrentSong()
                 artistCredits = resolveArtistCredits()
                 if settings.showLyricsInPlayer { player.requestLyrics() }
+                // Cached lyrics would otherwise replace the cover on the first frame.
+                let holdSeconds = settings.lyricsArtworkHold.rawValue
+                lyricsRevealReady = holdSeconds <= 0
+                guard holdSeconds > 0 else { return }
+                let nanos = UInt64(holdSeconds * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanos)
+                guard !Task.isCancelled else { return }
+                lyricsRevealReady = true
             }
             .task(id: playerTintRequest) {
                 // Nothing to sample for a player the user has asked to leave plain.
@@ -249,9 +259,11 @@ struct PopupPlayerView: View {
     /// A track only has lyrics once the lookup has actually produced text.
     private var lyricsAvailable: Bool { !player.lyrics.isEmpty }
 
-    /// Lyrics take over the hero slot only when the user asked for them *and* this
-    /// track has some; otherwise the artwork stays put.
-    private var showingLyrics: Bool { settings.showLyricsInPlayer && lyricsAvailable }
+    /// Lyrics take over the hero slot only when the user asked for them, this track has
+    /// some, and the optional artwork hold has elapsed (or the user toggled lyrics on).
+    private var showingLyrics: Bool {
+        settings.showLyricsInPlayer && lyricsAvailable && lyricsRevealReady
+    }
 
     /// Artwork and lyrics are crossfaded rather than swapped, so the cover keeps its
     /// place behind the lyrics instead of being torn down and reloaded on the way back.
@@ -352,6 +364,10 @@ struct PopupPlayerView: View {
     private func toggleLyrics() {
         withAnimation(.easeInOut(duration: 0.28)) {
             settings.showLyricsInPlayer.toggle()
+            // Manual show skips the hold so double-tap / the lyrics button feel instant.
+            if settings.showLyricsInPlayer {
+                lyricsRevealReady = true
+            }
         }
         settings.save()
         if settings.showLyricsInPlayer { player.requestLyrics() }

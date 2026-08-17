@@ -136,6 +136,27 @@ public enum CacheReason: Int, Codable, CaseIterable, Sendable {
     }
 }
 
+/// How long the full-screen player keeps showing artwork before crossfading to lyrics.
+public enum LyricsArtworkHold: Double, Codable, CaseIterable, Sendable, Identifiable {
+    case off = 0
+    case halfSecond = 0.5
+    case oneSecond = 1
+    case twoSeconds = 2
+
+    public var id: Double { rawValue }
+
+    public static let `default`: LyricsArtworkHold = .oneSecond
+
+    public var label: String {
+        switch self {
+        case .off: "Off"
+        case .halfSecond: "0.5s"
+        case .oneSecond: "1s"
+        case .twoSeconds: "2s"
+        }
+    }
+}
+
 /// Items that can appear in the phone tab bar / iPad sidebar.
 public enum RootTabItem: String, Codable, CaseIterable, Sendable, Identifiable {
     case search

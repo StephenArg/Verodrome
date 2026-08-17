@@ -77,11 +77,19 @@ public actor DownloadManager: DownloadManaging {
         // land under `.original`. Checking the setting quality alone re-downloads the
         // whole keep window on every queue advance.
         let storedQuality = await storageQuality(for: playableId, kind: kind, reason: reason)
-        if cache.fileURL(forPlayableId: playableId, kind: kind, quality: storedQuality) != nil {
+        if let existingURL = cache.fileURL(forPlayableId: playableId, kind: kind, quality: storedQuality) {
             cache.touchPlayable(id: playableId, kind: kind, reason: reason)
             // The file is already here but the library may not know it — a queue
             // prefetch that later gets pinned, or a cache written before this ran.
             await recordCompletion(id: playableId, kind: kind, reason: reason)
+            // Audio may have landed before lyrics caching existed (or while prefetch
+            // skipped lyrics). Fill the sidecar without re-downloading the track.
+            if kind == .song {
+                await cacheLyricsIfNeeded(
+                    id: playableId,
+                    embedded: EmbeddedTagExtractor.lyrics(from: existingURL)
+                )
+            }
             return
         }
         // A prefetch of this track may already be queued or running. Upgrade it rather
@@ -238,6 +246,11 @@ public actor DownloadManager: DownloadManaging {
                         }
                     }
                 }
+                // Queue-window tracks and pinned downloads both need a lyrics sidecar so
+                // playback can show lyrics offline / without another server round-trip.
+                if kind == .song {
+                    await cacheLyricsIfNeeded(id: id, embedded: extracted.lyrics)
+                }
             }
             await recordCompletion(id: id, kind: kind, reason: reason)
             if reason.isUserPinnedReason {
@@ -287,6 +300,25 @@ public actor DownloadManager: DownloadManaging {
             else { return nil }
             return song.contentType
         }
+    }
+
+    /// Best-effort lyrics sidecar for a song on disk (prefetch or pinned). Failures never fail the download.
+    private func cacheLyricsIfNeeded(id: String, embedded: String?) async {
+        let lyricsCache = await MainActor.run { VerodromeKit.shared.lyricsCache }
+        guard let lyricsCache else { return }
+        if lyricsCache.load(id: id) != nil { return }
+
+        let syncer = await MainActor.run {
+            VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding)
+        }
+        _ = await LyricsLookup.resolve(
+            playableId: id,
+            cache: lyricsCache,
+            fetchFromServer: syncer.map { provider in
+                { try await provider.fetchLyrics(playableId: id) }
+            },
+            embeddedLyrics: { embedded }
+        )
     }
 
     /// Records the landed file on the library model. `relFilePath` is what the rest of

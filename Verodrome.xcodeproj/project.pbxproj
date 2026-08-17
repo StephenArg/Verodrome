@@ -234,6 +234,8 @@
 		E2648492EB961B28FB3AD71F /* SongRadioQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23D269C798CDF5CD2C5ECBB5 /* SongRadioQueue.swift */; };
 		E3231953F3EE8BC73A4336C8 /* PlayTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D763CC876E5E8BEADE87033E /* PlayTrace.swift */; };
 		E33DFE182E7BE70DC885C90F /* CacheFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14706109A4BD137F580AC45B /* CacheFileManager.swift */; };
+		00E3B656C3C94DFAB26226AA /* LyricsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE2CAB7EAAB40789B7C020C /* LyricsCache.swift */; };
+		D0E635F11DFE4C11A6C599DD /* LyricsCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78321BC19134B728DB62058 /* LyricsCacheTests.swift */; };
 		E49345E68E19BC5E1407FC79 /* HomeCollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3376E62695EDEB256B57019 /* HomeCollectionView.swift */; };
 		E4F1C0F2C348373C0DA3FD16 /* PodcastsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B8F8B9F367AA22D1B5E4216 /* PodcastsView.swift */; };
 		E5306A749C6D8A180D4D8005 /* AccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866DF3C3239DEE13A06AE1C1 /* AccountStore.swift */; };
@@ -345,6 +347,8 @@
 		12CFCA5177816C19517420BF /* AccountMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenuView.swift; sourceTree = "<group>"; };
 		13F5D2E16A9B2A163C195179 /* NowPlayingInfoCenterHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingInfoCenterHandler.swift; sourceTree = "<group>"; };
 		14706109A4BD137F580AC45B /* CacheFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFileManager.swift; sourceTree = "<group>"; };
+		BFE2CAB7EAAB40789B7C020C /* LyricsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCache.swift; sourceTree = "<group>"; };
+		D78321BC19134B728DB62058 /* LyricsCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCacheTests.swift; sourceTree = "<group>"; };
 		14FC5176B32254B740611D49 /* PlaceholderArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderArtwork.swift; sourceTree = "<group>"; };
 		1535ECA36FDEAD644843C5FE /* LibrarySortMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySortMenu.swift; sourceTree = "<group>"; };
 		16212BD1C4DE0F62CEA92E9F /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
@@ -664,6 +668,7 @@
 				7598C5E5C5681F5679CD3287 /* LibraryPruner.swift */,
 				9957AD20C58598334A0852C7 /* LibraryRepository.swift */,
 				28A6DE6C2987C4DC089C2CD9 /* LibraryRepository+Ingest.swift */,
+				BFE2CAB7EAAB40789B7C020C /* LyricsCache.swift */,
 				CCFA9DE670F67FCB8BB97F17 /* PersistentStorage.swift */,
 				5892552934E09633E720CF8C /* VerodromeModel.swift */,
 			);
@@ -1186,6 +1191,7 @@
 				CA225299404667148E64B0A2 /* ArtworkCacheTests.swift */,
 				FE0460F6EE14F8E42C0EE8D9 /* DownloadCenterTests.swift */,
 				F3CA3A2901ABED765D1514AE /* DownloadManagerTests.swift */,
+				D78321BC19134B728DB62058 /* LyricsCacheTests.swift */,
 				F4548C1D7141FDE97E03356D /* PlayableCacheTests.swift */,
 			);
 			path = Download;
@@ -1442,6 +1448,7 @@
 				9B66C45B233ABBF036803D96 /* OfflineFailoverTests.swift in Sources */,
 				538D7229A83CB41D071FCB7C /* PlayQueueHandlerTests.swift in Sources */,
 				8816DAA47D75146425772B84 /* PlayableCacheTests.swift in Sources */,
+				D0E635F11DFE4C11A6C599DD /* LyricsCacheTests.swift in Sources */,
 				501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */,
 				42B05DD5ADD0482650FE722C /* PlaybackStallDetectorTests.swift in Sources */,
 				F06912C1E063A2F0D2004B90 /* PlaylistDownloadCoordinatorTests.swift in Sources */,
@@ -1483,6 +1490,7 @@
 				7A8226B9AFD87B9BB0C276E6 /* BackgroundFetchSyncer.swift in Sources */,
 				BDCC3FECF798A791D682D940 /* BackgroundLibrarySyncer.swift in Sources */,
 				E33DFE182E7BE70DC885C90F /* CacheFileManager.swift in Sources */,
+				00E3B656C3C94DFAB26226AA /* LyricsCache.swift in Sources */,
 				EDDC4669D73820F995699936 /* CommonLibrarySyncer.swift in Sources */,
 				A32E4DF530E0B6610DED0044 /* CryptoHelpers.swift in Sources */,
 				A8DB63E991350B1400885BDF /* DeepLinkRouter.swift in Sources */,

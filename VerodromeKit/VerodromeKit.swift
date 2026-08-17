@@ -26,6 +26,7 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var downloadNetworkPolicy: DownloadNetworkPolicy?
     public private(set) var artworkDownloadManager: ArtworkDownloadManager?
     public private(set) var playableCache: FilePlayableCache?
+    public private(set) var lyricsCache: LyricsCache?
     public private(set) var libraryMutationOutbox: LibraryMutationOutbox?
     public private(set) var libraryMutationSyncer: LibraryMutationSyncer?
     public private(set) var scrobbleSyncer: ScrobbleSyncer?
@@ -59,6 +60,11 @@ public final class VerodromeKit: ObservableObject {
             .appendingPathComponent("VerodromePlayables", isDirectory: true)
         let cache = FilePlayableCache(root: cacheRoot)
         self.playableCache = cache
+
+        let lyricsRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("VerodromeLyrics", isDirectory: true)
+        let lyrics = LyricsCache(root: lyricsRoot)
+        self.lyricsCache = lyrics
 
         let urlProvider = BackendURLProvider(backend: backendProxy)
         let downloader = DownloadManager(urlProvider: urlProvider, cache: cache, isOffline: settings.offlineModeEnabled)

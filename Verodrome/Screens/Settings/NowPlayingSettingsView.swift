@@ -22,10 +22,16 @@ struct NowPlayingSettingsView: View {
                     .onChange(of: settings.showLyricsInPlayer) { _, _ in settings.save() }
                 Toggle("Load Lyrics When Available", isOn: $settings.showMiniLyrics)
                     .onChange(of: settings.showMiniLyrics) { _, _ in settings.save() }
+                Picker("Hold Artwork Before Lyrics", selection: $settings.lyricsArtworkHold) {
+                    ForEach(LyricsArtworkHold.allCases) { hold in
+                        Text(hold.label).tag(hold)
+                    }
+                }
+                .onChange(of: settings.lyricsArtworkHold) { _, _ in settings.save() }
             } header: {
                 Text("Lyrics")
             } footer: {
-                Text("Turning off Load Lyrics When Available stops Verodrome from asking the server for lyrics at all.")
+                Text("Turning off Load Lyrics When Available stops Verodrome from asking the server for lyrics at all. Hold Artwork keeps the cover visible briefly on each track before lyrics fade in.")
             }
 
             Section {

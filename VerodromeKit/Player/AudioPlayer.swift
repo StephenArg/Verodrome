@@ -156,15 +156,18 @@ public final class AudioPlayer: ObservableObject {
         }
         // Don't hold first-audio behind lyrics / scrobble / gapless preload.
         // Parked (paused) loads skip scrobble/preload — user hasn't started playback.
+        // Local lyrics (disk / ID3) load immediately so offline covers aren't blank;
+        // the network pass stays deferred with the rest of the post-play work.
+        applyLocalLyricsIfAvailable(for: item)
         guard !paused else {
             deferredWorkTask?.cancel()
-            if user.showLyricsWhenAvailable {
-                Task { await fetchLyrics(for: item) }
+            if user.showLyricsWhenAvailable, lyrics.isEmpty {
+                Task { await fetchLyrics(for: item, allowNetwork: true) }
             }
             return
         }
         let showLyrics = user.showLyricsWhenAvailable
-        scheduleDeferredWork(for: item, showLyrics: showLyrics)
+        scheduleDeferredWork(for: item, showLyrics: showLyrics && lyrics.isEmpty)
     }
 
     /// Post-play work shared by `playCurrent()` and `handleEngineAdvance()`: cache
@@ -194,7 +197,7 @@ public final class AudioPlayer: ObservableObject {
             await self.refreshSongUserState(for: item)
             PlayTrace.mark("refreshSongUserState done")
             if showLyrics {
-                await self.fetchLyrics(for: item)
+                await self.fetchLyrics(for: item, allowNetwork: true)
                 PlayTrace.mark("fetchLyrics done", details: "len=\(self.lyrics.count)")
             }
         }
@@ -399,7 +402,9 @@ public final class AudioPlayer: ObservableObject {
         preloadInvalidationTask?.cancel()
         preloadedNextItemId = nil
         backend.adoptEngineAdvancedTrack(duration: item.isLiveStream ? 0 : item.duration)
-        scheduleDeferredWork(for: item)
+        applyLocalLyricsIfAvailable(for: item)
+        let showLyrics = settings().showLyricsWhenAvailable && lyrics.isEmpty
+        scheduleDeferredWork(for: item, showLyrics: showLyrics)
     }
 
     /// Keep engine-level loop / gapless in sync when the user toggles repeat mid-track.
@@ -606,10 +611,30 @@ public final class AudioPlayer: ObservableObject {
     /// works even when the automatic lookup is disabled or hasn't run yet.
     public func requestLyrics() {
         guard let item = nowPlaying, lyrics.isEmpty, !lyricsLoaded else { return }
-        Task { await fetchLyrics(for: item) }
+        Task { await fetchLyrics(for: item, allowNetwork: true) }
     }
 
-    private func fetchLyrics(for item: QueueItem) async {
+    /// Disk / ID3 only — no network — so a cached track can show lyrics without waiting
+    /// on the deferred post-play timer.
+    private func applyLocalLyricsIfAvailable(for item: QueueItem) {
+        guard !item.isLiveStream else { return }
+        let text = LyricsLookup.resolveLocal(
+            playableId: item.playableId,
+            cache: VerodromeKit.shared.lyricsCache,
+            embeddedLyrics: {
+                guard let cache = VerodromeKit.shared.playableCache,
+                      let fileURL = cache.fileURL(forPlayableId: item.playableId, kind: item.kind)
+                else { return nil }
+                return EmbeddedTagExtractor.lyrics(from: fileURL)
+            }
+        )
+        if let text {
+            lyrics = text
+            lyricsLoaded = true
+        }
+    }
+
+    private func fetchLyrics(for item: QueueItem, allowNetwork: Bool) async {
         guard !item.isLiveStream else {
             lyricsLoaded = true
             return
@@ -618,17 +643,22 @@ public final class AudioPlayer: ObservableObject {
         lyricsFetchItemId = item.playableId
         defer { if lyricsFetchItemId == item.playableId { lyricsFetchItemId = nil } }
 
-        var text: String?
-        // Prefer any pending lyrics from the syncer; otherwise keep empty placeholder.
-        if let syncer = VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding) {
-            text = try? await syncer.fetchLyrics(playableId: item.playableId)
-        }
-        // Fallback: embedded ID3 lyrics from a downloaded file.
-        if text == nil,
-           let cache = VerodromeKit.shared.playableCache,
-           let fileURL = cache.fileURL(forPlayableId: item.playableId, kind: item.kind) {
-            text = EmbeddedTagExtractor.lyrics(from: fileURL)
-        }
+        let syncer = allowNetwork
+            ? VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding)
+            : nil
+        let text = await LyricsLookup.resolve(
+            playableId: item.playableId,
+            cache: VerodromeKit.shared.lyricsCache,
+            fetchFromServer: syncer.map { provider in
+                { try await provider.fetchLyrics(playableId: item.playableId) }
+            },
+            embeddedLyrics: {
+                guard let cache = VerodromeKit.shared.playableCache,
+                      let fileURL = cache.fileURL(forPlayableId: item.playableId, kind: item.kind)
+                else { return nil }
+                return EmbeddedTagExtractor.lyrics(from: fileURL)
+            }
+        )
 
         // The track may have changed while the lookup was in flight.
         guard nowPlaying?.playableId == item.playableId else { return }

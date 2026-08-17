@@ -30,6 +30,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var showMiniLyrics: Bool = true
     /// Whether the full-screen player shows lyrics in place of the artwork.
     @Published public var showLyricsInPlayer: Bool = false
+    /// How long artwork stays visible before the lyrics crossfade on each track.
+    @Published public var lyricsArtworkHold: LyricsArtworkHold = .default
     /// Whether the full-screen player is washed with the current cover's color.
     @Published public var changingColorsInPlayer: Bool = true
     @Published public var showRatingStars: Bool = true
@@ -67,6 +69,7 @@ public final class SettingsStore: ObservableObject {
         var songsDownloadedOnly: Bool
         var showMiniLyrics: Bool
         var showLyricsInPlayer: Bool
+        var lyricsArtworkHold: LyricsArtworkHold
         var changingColorsInPlayer: Bool
         var showRatingStars: Bool
         var showSongInfo: Bool
@@ -101,6 +104,7 @@ public final class SettingsStore: ObservableObject {
             songsDownloadedOnly: Bool,
             showMiniLyrics: Bool,
             showLyricsInPlayer: Bool,
+            lyricsArtworkHold: LyricsArtworkHold,
             changingColorsInPlayer: Bool,
             showRatingStars: Bool,
             showSongInfo: Bool,
@@ -134,6 +138,7 @@ public final class SettingsStore: ObservableObject {
             self.songsDownloadedOnly = songsDownloadedOnly
             self.showMiniLyrics = showMiniLyrics
             self.showLyricsInPlayer = showLyricsInPlayer
+            self.lyricsArtworkHold = lyricsArtworkHold
             self.changingColorsInPlayer = changingColorsInPlayer
             self.showRatingStars = showRatingStars
             self.showSongInfo = showSongInfo
@@ -169,6 +174,7 @@ public final class SettingsStore: ObservableObject {
             case songsDownloadedOnly
             case showMiniLyrics
             case showLyricsInPlayer
+            case lyricsArtworkHold
             case changingColorsInPlayer
             case showRatingStars
             case showSongInfo
@@ -206,6 +212,7 @@ public final class SettingsStore: ObservableObject {
             songsDownloadedOnly = try c.decodeIfPresent(Bool.self, forKey: .songsDownloadedOnly) ?? false
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
             showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
+            lyricsArtworkHold = try c.decodeIfPresent(LyricsArtworkHold.self, forKey: .lyricsArtworkHold) ?? .default
             changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
             showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
@@ -252,6 +259,7 @@ public final class SettingsStore: ObservableObject {
             try c.encode(songsDownloadedOnly, forKey: .songsDownloadedOnly)
             try c.encode(showMiniLyrics, forKey: .showMiniLyrics)
             try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
+            try c.encode(lyricsArtworkHold, forKey: .lyricsArtworkHold)
             try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
             try c.encode(showRatingStars, forKey: .showRatingStars)
             try c.encode(showSongInfo, forKey: .showSongInfo)
@@ -308,6 +316,7 @@ public final class SettingsStore: ObservableObject {
             songsDownloadedOnly: songsDownloadedOnly,
             showMiniLyrics: showMiniLyrics,
             showLyricsInPlayer: showLyricsInPlayer,
+            lyricsArtworkHold: lyricsArtworkHold,
             changingColorsInPlayer: changingColorsInPlayer,
             showRatingStars: showRatingStars,
             showSongInfo: showSongInfo,
@@ -372,6 +381,7 @@ public final class SettingsStore: ObservableObject {
         user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer
+        user.lyricsArtworkHold = lyricsArtworkHold
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
@@ -396,6 +406,7 @@ public final class SettingsStore: ObservableObject {
         hapticsEnabled = settings.hapticsEnabled
         showMiniLyrics = settings.showLyricsWhenAvailable
         showLyricsInPlayer = settings.showLyricsInPlayer
+        lyricsArtworkHold = settings.lyricsArtworkHold
         changingColorsInPlayer = settings.changingColorsInPlayer
         showRatingStars = settings.showRatingStars
         showSongInfo = settings.showSongInfo
@@ -431,6 +442,7 @@ public final class SettingsStore: ObservableObject {
             songsDownloadedOnly = snapshot.songsDownloadedOnly
             showMiniLyrics = snapshot.showMiniLyrics
             showLyricsInPlayer = snapshot.showLyricsInPlayer
+            lyricsArtworkHold = snapshot.lyricsArtworkHold
             changingColorsInPlayer = snapshot.changingColorsInPlayer
             showRatingStars = snapshot.showRatingStars
             showSongInfo = snapshot.showSongInfo
@@ -477,6 +489,7 @@ public final class SettingsStore: ObservableObject {
         hapticsEnabled = user.hapticsEnabled
         showMiniLyrics = user.showLyricsWhenAvailable
         showLyricsInPlayer = user.showLyricsInPlayer
+        lyricsArtworkHold = user.lyricsArtworkHold
         changingColorsInPlayer = user.changingColorsInPlayer
         showRatingStars = user.showRatingStars
         showSongInfo = user.showSongInfo
@@ -504,6 +517,7 @@ public final class SettingsStore: ObservableObject {
         user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
         user.showLyricsInPlayer = showLyricsInPlayer
+        user.lyricsArtworkHold = lyricsArtworkHold
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
