@@ -49,6 +49,9 @@ public final class AudioPlayer: ObservableObject {
     /// before `playbackEpoch` moved on are ignored even if they already passed the
     /// backend's URL guard.
     private var activePlaybackEpoch = 0
+    /// Bumped on every `playCurrent` so a rapid skip can abandon an in-flight URL
+    /// resolve instead of hard-starting a track the user already left.
+    private var playLoadID = 0
 
     public init(queueHandler: PlayQueueHandler, backend: BackendAudioPlayer, settings: @escaping () -> UserSettings) {
         self.queueHandler = queueHandler
@@ -112,6 +115,8 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         PlayTrace.mark("AudioPlayer.playCurrent enter", details: "\(item.title) id=\(item.playableId) startAt=\(Int(startAt)) paused=\(paused)")
+        playLoadID += 1
+        let loadID = playLoadID
         nowPlaying = item
         lyrics = ""
         lyricsLoaded = false
@@ -137,10 +142,18 @@ public final class AudioPlayer: ObservableObject {
         PlayTrace.mark("backend.configure done")
         let epoch = playbackEpoch
         do {
-            try await backend.play(item: item, maxBitrate: bitrate, format: format, startAt: startAt, startPaused: paused)
-            // A newer `play(items:)` may have abandoned this load while the URL was in flight.
-            guard epoch == playbackEpoch else {
-                PlayTrace.mark("playCurrent discarded — playback epoch moved on")
+            try await backend.play(
+                item: item,
+                maxBitrate: bitrate,
+                format: format,
+                startAt: startAt,
+                startPaused: paused,
+                isStillCurrent: { [weak self] in self?.playLoadID == loadID }
+            )
+            // A newer skip or `play(items:)` may have abandoned this load while the URL
+            // was in flight.
+            guard loadID == playLoadID, epoch == playbackEpoch else {
+                PlayTrace.mark("playCurrent discarded — superseded")
                 return
             }
             activePlaybackEpoch = epoch

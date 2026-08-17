@@ -55,7 +55,14 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     private static let stallTimeout: TimeInterval = 12
     /// Shorter window used when connectivity returns and we can act early.
     private static let silentStuckGrace: TimeInterval = 2
+    private static let startRampDuration: TimeInterval = 0.08
+    private static let startRampPollInterval: TimeInterval = 0.03
+    private static let progressPollInterval: TimeInterval = 0.25
     private var stallDetector = PlaybackStallDetector(timeout: BackendAudioPlayer.stallTimeout)
+    /// True until the new entry has produced real progress, so we can fade in and hide
+    /// the click some files have in their first encoded samples.
+    private var wantsStartRamp = false
+    private var volumeFadeTimer: Timer?
 
     private static let bandFrequencies: [Float] = [
         32, 64, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000
@@ -193,9 +200,20 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         maxBitrate: Int?,
         format: StreamFormat,
         startAt: TimeInterval = 0,
-        startPaused: Bool = false
+        startPaused: Bool = false,
+        isStillCurrent: () -> Bool = { true }
     ) async throws {
         PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
+        // Mute the outgoing cut immediately. The fade-in waits for first progress so a
+        // stream that is still buffering does not become audible at full volume.
+        cancelVolumeFade()
+        if startPaused {
+            wantsStartRamp = false
+            streamingPlayer.volume = 1
+        } else {
+            wantsStartRamp = true
+            streamingPlayer.volume = 0
+        }
         let quality = AudioTranscodeQuality.from(format: format, maxBitrate: maxBitrate)
         let url: URL
         var source = "stream"
@@ -205,18 +223,27 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             source = "direct"
             PlayTrace.mark("URL resolved (direct)", details: url.absoluteString)
         } else {
-            let local = try await localPlaybackURL(
-                for: item,
-                quality: quality,
-                maxBitrate: maxBitrate,
-                format: format
-            )
-            url = local.url
-            source = local.source
-            if local.fromCache {
-                cachedPlayable = (item.playableId, item.kind)
+            do {
+                let local = try await localPlaybackURL(
+                    for: item,
+                    quality: quality,
+                    maxBitrate: maxBitrate,
+                    format: format
+                )
+                url = local.url
+                source = local.source
+                if local.fromCache {
+                    cachedPlayable = (item.playableId, item.kind)
+                }
+                PlayTrace.mark("URL resolved (\(source))", details: url.lastPathComponent)
+            } catch {
+                restoreVolumeAfterFailedStart()
+                throw error
             }
-            PlayTrace.mark("URL resolved (\(source))", details: url.lastPathComponent)
+        }
+        guard isStillCurrent() else {
+            PlayTrace.mark("BackendAudioPlayer.play discarded — superseded")
+            return
         }
         // A queued next URL from the previous track would auto-advance after this one
         // ends (gapless / crossfade). Jumping mid-queue must drop it; otherwise the
@@ -225,7 +252,6 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         // pre-queued entry, so route through `clearPendingNext()` like reorder does.
         clearPendingNext()
         preferPaused = startPaused
-        streamingPlayer.volume = 1
         // Live streams have no meaningful position to restore.
         pendingSeek = (startAt > 1 && !item.isLiveStream) ? startAt : nil
         // Mark the intended entry before replacing audio so the previous track's
@@ -325,6 +351,11 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     }
 
     public func pause() {
+        if wantsStartRamp {
+            wantsStartRamp = false
+            cancelVolumeFade()
+            streamingPlayer.volume = 1
+        }
         streamingPlayer.pause()
         isPlaying = false
     }
@@ -343,6 +374,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     public func stop() {
         ignoreFinishCallbacks = true
         preferPaused = false
+        wantsStartRamp = false
+        cancelVolumeFade()
+        streamingPlayer.volume = 1
         clearPendingNext()
         currentPlayURL = ""
         streamingPlayer.stop()
@@ -440,8 +474,10 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         stopProgressTimer()
         // Target-action on the main run loop ticks even when Swift concurrency is
         // backed up — `Task { @MainActor }` was leaving the clock frozen at 0:00.
+        // Poll faster while waiting for first audio so the start ramp can begin
+        // on the first real samples instead of a quarter-second later.
         let timer = Timer(
-            timeInterval: 0.25,
+            timeInterval: wantsStartRamp ? Self.startRampPollInterval : Self.progressPollInterval,
             target: self,
             selector: #selector(handleProgressTimer),
             userInfo: nil,
@@ -476,6 +512,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         }
         onProgress?(currentTime, duration)
         checkForStall(progress: progress)
+        if wantsStartRamp, stallDetector.hasStartedAudio {
+            beginStartRamp()
+        }
         maybeStartCrossfade()
     }
 
@@ -503,6 +542,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         pendingSeek = nil
         clearPendingNext()
         stallDetector.reset()
+        wantsStartRamp = false
+        cancelVolumeFade()
+        streamingPlayer.volume = 1
         // Preserve the position so the retry can pick up where the audio died.
         currentTime = position
         onPlaybackError?(.dataNotFound)
@@ -524,24 +566,47 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         }
     }
 
+    private func beginStartRamp() {
+        wantsStartRamp = false
+        fadeVolume(to: 1, duration: Self.startRampDuration, completion: nil)
+        if progressTimer != nil {
+            startProgressTimer()
+        }
+    }
+
+    private func restoreVolumeAfterFailedStart() {
+        wantsStartRamp = false
+        cancelVolumeFade()
+        streamingPlayer.volume = 1
+    }
+
+    private func cancelVolumeFade() {
+        volumeFadeTimer?.invalidate()
+        volumeFadeTimer = nil
+    }
+
     private func fadeVolume(to target: Float, duration: Double, completion: (() -> Void)?) {
-        let steps = max(Int(duration / 0.05), 1)
+        cancelVolumeFade()
+        let tick = min(0.05, max(duration / 8, 0.016))
+        let steps = max(Int((duration / tick).rounded()), 1)
         let start = streamingPlayer.volume
         let delta = (target - start) / Float(steps)
         final class StepBox { var value = 0 }
         let step = StepBox()
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
+        let timer = Timer(timeInterval: tick, repeats: true) { [weak self] timer in
             Task { @MainActor in
                 guard let self else { timer.invalidate(); return }
                 step.value += 1
                 self.streamingPlayer.volume = start + delta * Float(step.value)
                 if step.value >= steps {
                     timer.invalidate()
+                    self.volumeFadeTimer = nil
                     self.streamingPlayer.volume = target
                     completion?()
                 }
             }
         }
+        volumeFadeTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 }
@@ -654,6 +719,9 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
             self.pendingSeek = nil
             self.clearPendingNext()
             self.stallDetector.reset()
+            self.wantsStartRamp = false
+            self.cancelVolumeFade()
+            self.streamingPlayer.volume = 1
             self.currentTime = position
             self.onPlaybackError?(error)
         }

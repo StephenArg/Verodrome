@@ -28,10 +28,10 @@ struct LargeArtworkView: View {
     private let minimumSide: CGFloat = 140
 
     /// Short enough that a run of skips doesn't stack a backlog of half-finished slides.
-    private static let slideDuration: TimeInterval = 0.22
+    private static let slideDuration: TimeInterval = 0.16
     private static let axisLockSlop: CGFloat = 14
     /// High enough that a double-tap for lyrics is not stolen by the skip drag.
-    private static let dragMinimumDistance: CGFloat = 24
+    private static let dragMinimumDistance: CGFloat = 16
     private static let dismissTranslation: CGFloat = 80
 
     /// The cover currently parked in the hero slot.
@@ -58,6 +58,9 @@ struct LargeArtworkView: View {
     @State private var slideGeneration = 0
     @State private var dragAxis: ArtworkSwipeAxis?
     @State private var isInteractiveDrag = false
+    /// Added to the live translation so a new flick can pick up a cover that is
+    /// still settling from the last skip, instead of jumping or waiting.
+    @State private var dragOriginOffset: CGFloat = 0
 
     var body: some View {
         // Explicit offsets rather than `.transition(.move)`: SwiftUI latches the removal
@@ -118,6 +121,7 @@ struct LargeArtworkView: View {
             clearPeek()
             isInteractiveDrag = false
             dragAxis = nil
+            dragOriginOffset = 0
         }
         guard newID != shownTrackID else {
             shownURL = urlString
@@ -170,29 +174,51 @@ struct LargeArtworkView: View {
         }
 
         guard dragAxis == .horizontal, allowsSkipSwipe else { return }
-        // Don't steal an automatic skip-slide that is already mid-flight.
-        guard leavingTrackID == nil || isInteractiveDrag else { return }
+        if !isInteractiveDrag {
+            beginInteractiveDrag(from: value)
+        }
 
-        isInteractiveDrag = true
         let offset = ArtworkSwipeCommit.dragOffset(
             translation: value.translation.width,
             canGoPrevious: previousCover != nil,
             canGoNext: nextCover != nil
         )
-        shownOffset = offset
+        applyDragOffsets(translation: offset, width: width)
+    }
 
-        if offset < 0, let next = nextCover {
-            peekingTrackID = next.trackID
-            peekingURL = next.urlString
-            peekingSymbol = next.symbol
-            peekingOffset = width + offset
-        } else if offset > 0, let previous = previousCover {
-            peekingTrackID = previous.trackID
-            peekingURL = previous.urlString
-            peekingSymbol = previous.symbol
-            peekingOffset = -width + offset
-        } else {
-            clearPeek()
+    /// Steal an in-flight settle so the next flick is not queued behind the ease-out.
+    private func beginInteractiveDrag(from value: DragGesture.Value) {
+        slideGeneration += 1
+        leavingTrackID = nil
+        leavingURL = nil
+        leavingOffset = 0
+        // At rest, track the finger 1:1 (including the minimum-distance slop).
+        // Mid-slide, hold the current visual and add only further movement.
+        dragOriginOffset = abs(shownOffset) > 0.5
+            ? shownOffset - value.translation.width
+            : 0
+        isInteractiveDrag = true
+    }
+
+    private func applyDragOffsets(translation: CGFloat, width: CGFloat) {
+        let offset = dragOriginOffset + translation
+        var prep = Transaction()
+        prep.disablesAnimations = true
+        withTransaction(prep) {
+            shownOffset = offset
+            if offset < 0, let next = nextCover {
+                peekingTrackID = next.trackID
+                peekingURL = next.urlString
+                peekingSymbol = next.symbol
+                peekingOffset = width + offset
+            } else if offset > 0, let previous = previousCover {
+                peekingTrackID = previous.trackID
+                peekingURL = previous.urlString
+                peekingSymbol = previous.symbol
+                peekingOffset = -width + offset
+            } else {
+                clearPeek()
+            }
         }
     }
 
@@ -214,7 +240,7 @@ struct LargeArtworkView: View {
         }
 
         let decision = ArtworkSwipeCommit.decision(
-            translation: value.translation.width,
+            translation: shownOffset,
             velocity: value.velocity.width,
             width: width,
             canGoPrevious: previousCover != nil,
@@ -252,6 +278,7 @@ struct LargeArtworkView: View {
         shownSymbol = incoming.symbol
         clearPeek()
         isInteractiveDrag = false
+        dragOriginOffset = 0
 
         var prep = Transaction()
         prep.disablesAnimations = true
@@ -267,6 +294,7 @@ struct LargeArtworkView: View {
     private func cancelSwipe() {
         let peekRest = peekingTrackID == nil ? 0 : peekingOffset - shownOffset
         isInteractiveDrag = false
+        dragOriginOffset = 0
         slideGeneration += 1
         let generation = slideGeneration
         withAnimation(.easeOut(duration: Self.slideDuration)) {
