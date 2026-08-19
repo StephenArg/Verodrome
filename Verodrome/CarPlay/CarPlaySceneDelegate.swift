@@ -376,8 +376,13 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
     }
 
+    private func refreshSearchRecents() {
+        searchTab?.updateSections(catalog.searchRecentsSections())
+    }
+
     /// The term is already recorded by `CarPlayVoiceSearch.submit`, so this only has to
-    /// put the results on screen.
+    /// put the results on screen. Recents live on the Search tab underneath the
+    /// pushed list and are stale until `updateSections` runs.
     private func handleVoiceSearch(_ query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -386,6 +391,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         // which also keeps the push clear of the 5-template depth limit.
         await popToRoot()
         showSearchTab()
+        refreshSearchRecents()
         if await showSearchResults(trimmed) { return }
 
         // A push can still be refused, so fall back to the Search tab itself, where no
@@ -536,6 +542,9 @@ extension CarPlaySceneDelegate: CPTabBarTemplateDelegate {
         if selectedTemplate === homeTab || selectedTemplate === recentsTab {
             Task { await refreshHomeIfPending() }
         }
+        if selectedTemplate === searchTab {
+            refreshSearchRecents()
+        }
     }
 }
 
@@ -547,6 +556,9 @@ extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
         CarPlayLog.notice("templateDidAppear | \(String(describing: type(of: aTemplate)))")
         if aTemplate === homeTab || aTemplate === recentsTab || aTemplate is CPTabBarTemplate {
             Task { await refreshHomeIfPending() }
+        }
+        if aTemplate === searchTab {
+            refreshSearchRecents()
         }
     }
 
