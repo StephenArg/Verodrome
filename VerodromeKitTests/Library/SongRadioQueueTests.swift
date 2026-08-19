@@ -183,4 +183,32 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertEqual(QueueOrigin.artist("Radiohead").radioSectionTitle, "Radiohead radio")
         XCTAssertEqual(QueueOrigin.song("").radioSectionTitle, "Radio")
     }
+
+    func testQueueOriginSupportsShuffleOnlyForAlbumAndPlaylist() {
+        XCTAssertTrue(QueueOrigin.album("Abbey Road").supportsShuffle)
+        XCTAssertTrue(QueueOrigin.playlist("Favorites").supportsShuffle)
+        XCTAssertFalse(QueueOrigin.artist("Radiohead").supportsShuffle)
+        XCTAssertFalse(QueueOrigin.song("Karma Police").supportsShuffle)
+        XCTAssertFalse(QueueOrigin.genre("Rock").supportsShuffle)
+    }
+
+    func testQueueOriginSupportsRepeatAllOnlyForAlbumAndPlaylist() {
+        XCTAssertTrue(QueueOrigin.album("Abbey Road").supportsRepeatAll)
+        XCTAssertTrue(QueueOrigin.playlist("Favorites").supportsRepeatAll)
+        XCTAssertFalse(QueueOrigin.artist("Radiohead").supportsRepeatAll)
+        XCTAssertFalse(QueueOrigin.song("Karma Police").supportsRepeatAll)
+        XCTAssertFalse(QueueOrigin.genre("Rock").supportsRepeatAll)
+    }
+
+    func testRepeatModeNextAllowsRepeatAll() {
+        XCTAssertEqual(RepeatMode.off.next(allowsRepeatAll: true), .all)
+        XCTAssertEqual(RepeatMode.all.next(allowsRepeatAll: true), .one)
+        XCTAssertEqual(RepeatMode.one.next(allowsRepeatAll: true), .off)
+    }
+
+    func testRepeatModeNextWithoutRepeatAll() {
+        XCTAssertEqual(RepeatMode.off.next(allowsRepeatAll: false), .one)
+        XCTAssertEqual(RepeatMode.one.next(allowsRepeatAll: false), .off)
+        XCTAssertEqual(RepeatMode.all.next(allowsRepeatAll: false), .off)
+    }
 }

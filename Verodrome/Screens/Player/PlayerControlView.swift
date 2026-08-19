@@ -60,7 +60,13 @@ struct PlayerControlView: View {
             }
 
             HStack(spacing: controlSpacing) {
-                shuffleButton
+                if player.canShuffleQueue {
+                    shuffleButton
+                } else {
+                    Color.clear
+                        .frame(width: sideIconSize + 16, height: playDiameter)
+                        .accessibilityHidden(true)
+                }
                 skipButton(
                     direction: .backward,
                     onTap: player.skipBackward,

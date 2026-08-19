@@ -97,11 +97,15 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
 
     let sections: [LibraryRowSection<Item>]
     var playingId: String?
-    /// Set while `sections` holds only the first screenful of a two-phase load.
+    /// Set while `sections` holds only the first screenful of a two-phase load,
+    /// or before that head page has landed at all.
     var isPartial: Bool = false
     /// False when the rows are ordered by something other than title, which makes
     /// letter headers and the A–Z scrubber meaningless.
     var isSectioned: Bool = true
+    /// Full A–Z (plus symbols) drawn inactive while `isPartial`. Empty keeps the
+    /// scrubber hidden until the complete list lands.
+    var placeholderIndexTitles: [String] = []
     /// Bumps when `DownloadCenter` changes so album download badges reconfigure live.
     var downloadRevision: Int = 0
     var onSelect: (Item, [Item]) -> Void
@@ -118,6 +122,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         playingId: String? = nil,
         isPartial: Bool = false,
         isSectioned: Bool = true,
+        placeholderIndexTitles: [String] = [],
         downloadRevision: Int = 0,
         onSelect: @escaping (Item, [Item]) -> Void,
         makeContextMenu: ((Item) -> UIMenu?)? = nil,
@@ -128,6 +133,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         self.playingId = playingId
         self.isPartial = isPartial
         self.isSectioned = isSectioned
+        self.placeholderIndexTitles = placeholderIndexTitles
         self.downloadRevision = downloadRevision
         self.onSelect = onSelect
         self.makeContextMenu = makeContextMenu
@@ -158,7 +164,8 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
             sections: sections,
             playingId: playingId,
             isPartial: isPartial,
-            isSectioned: isSectioned
+            isSectioned: isSectioned,
+            placeholderIndexTitles: placeholderIndexTitles
         )
     }
 }
@@ -179,6 +186,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     private var playingId: String?
     private var isPartial = false
     private var isSectioned = true
+    private var placeholderIndexTitles: [String] = []
     private var flatItems: [Item] = []
     private var appliedFingerprint = ""
     private var appliedDownloadRevision = 0
@@ -196,7 +204,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         tableView.prefetchDataSource = self
         tableView.rowHeight = 60
         tableView.register(EntityTableCell.self, forCellReuseIdentifier: EntityTableCell.reuseID)
-        tableView.sectionIndexColor = .secondaryLabel
+        tableView.sectionIndexColor = Self.activeIndexColor
         tableView.sectionIndexBackgroundColor = .clear
         tableView.tintColor = accentUIColor
         view.addSubview(tableView)
@@ -293,16 +301,19 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         sections: [LibraryRowSection<Item>],
         playingId: String?,
         isPartial: Bool,
-        isSectioned: Bool
+        isSectioned: Bool,
+        placeholderIndexTitles: [String]
     ) {
         // Structure alone is not enough: playlist song counts and artwork change without
         // the row ids or list length moving, and those updates have to reach the cells.
         let fingerprint = Self.fingerprint(sections: sections, isSectioned: isSectioned)
         let playingChanged = self.playingId != playingId
         let partialChanged = self.isPartial != isPartial
+        let placeholderChanged = self.placeholderIndexTitles != placeholderIndexTitles
         self.playingId = playingId
         self.isPartial = isPartial
         self.isSectioned = isSectioned
+        self.placeholderIndexTitles = placeholderIndexTitles
 
         if fingerprint != appliedFingerprint {
             appliedFingerprint = fingerprint
@@ -313,6 +324,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             // Padding is reserved per section even where the header itself is empty, so
             // it has to come off with the headers or short lists get unexplained gaps.
             tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
+            tableView.sectionIndexColor = sectionIndexColor
             tableView.tintColor = accentUIColor
             cancelAllPrefetchTasks()
             tableView.reloadData()
@@ -320,11 +332,13 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         }
         // A head page that already held every row leaves the content identical, but
         // letter headers can still appear or disappear with the partial→full flip
-        // (single-letter head that turns out to be the whole library).
-        if partialChanged {
+        // (single-letter head that turns out to be the whole library). The placeholder
+        // A–Z bar also swaps for the real one on that same flip.
+        if partialChanged || placeholderChanged {
             appliedDownloadRevision = downloadRevision
             appliedAccentRevision = accentRevision
             tableView.sectionHeaderTopPadding = showsLetterSections ? 4 : 0
+            tableView.sectionIndexColor = sectionIndexColor
             tableView.tintColor = accentUIColor
             tableView.reloadData()
             return
@@ -414,6 +428,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     /// Below this, both the headers and the A–Z scrubber are clutter.
     private static var letterSectionRowThreshold: Int { 100 }
 
+    private static var activeIndexColor: UIColor { .secondaryLabel }
+    private static var inactiveIndexColor: UIColor { .tertiaryLabel }
+
     private var showsLetterSections: Bool {
         guard isSectioned, flatItems.count >= Self.letterSectionRowThreshold else { return false }
         // A cold-start head page is often one leading letter (e.g. 150 songs under "A").
@@ -422,28 +439,52 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         return isPartial || sections.count > 1
     }
 
-    func numberOfSections(in tableView: UITableView) -> Int { sections.count }
+    /// Full A–Z drawn before the complete list is known, so the scrubber is already
+    /// on screen when the real letters replace it.
+    private var showsPlaceholderIndex: Bool {
+        isPartial && isSectioned && !placeholderIndexTitles.isEmpty
+    }
+
+    private var showsActiveIndex: Bool {
+        showsLetterSections && !isPartial
+    }
+
+    private var showsSectionIndex: Bool { showsPlaceholderIndex || showsActiveIndex }
+
+    private var sectionIndexColor: UIColor {
+        showsPlaceholderIndex ? Self.inactiveIndexColor : Self.activeIndexColor
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int {
+        // UITableView hides the scrubber when it has no sections; keep one empty
+        // bucket so the placeholder A–Z bar can appear before any rows land.
+        if sections.isEmpty && showsPlaceholderIndex { return 1 }
+        return sections.count
+    }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        sections[section].items.count
+        guard sections.indices.contains(section) else { return 0 }
+        return sections[section].items.count
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        guard showsLetterSections else { return nil }
+        guard showsLetterSections, sections.indices.contains(section) else { return nil }
         return sections[section].letter
     }
 
     func sectionIndexTitles(for tableView: UITableView) -> [String]? {
-        // A head page holds only the leading letters, so wait for the full list rather
-        // than showing a scrubber that grows from two entries to the whole alphabet.
-        // Headers don't need the same wait: the head page is a prefix, so the headers it
-        // shows are the ones that stay.
-        guard showsLetterSections, !isPartial else { return nil }
+        if showsPlaceholderIndex { return placeholderIndexTitles }
+        guard showsActiveIndex else { return nil }
         return sections.map(\.letter)
     }
 
     func tableView(_ tableView: UITableView, sectionForSectionIndexTitle title: String, at index: Int) -> Int {
-        index
+        // Placeholder letters don't map onto the head page, so leave the scroll
+        // where it is until the real scrubber takes over.
+        if showsPlaceholderIndex {
+            return tableView.indexPathsForVisibleRows?.first?.section ?? 0
+        }
+        return index
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -451,7 +492,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         let item = sections[indexPath.section].items[indexPath.row]
         // Only pad for the scrubber while it's actually on screen — a permanent -28pt
         // inset made playlist song-count subtitles look truncated early on short lists.
-        cell.setReservesSectionIndexSpace(showsLetterSections && !isPartial)
+        cell.setReservesSectionIndexSpace(showsSectionIndex)
         cell.configure(
             title: item.title,
             subtitle: item.subtitle,

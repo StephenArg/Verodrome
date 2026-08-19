@@ -450,7 +450,13 @@ struct HomeView: View {
                 return
             }
             let items = songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
-            await VerodromeKit.shared.player?.play(items: items, startAt: 0)
+            RecentQueueStore.shared.record(album: album)
+            await VerodromeKit.shared.player?.play(
+                items: items,
+                startAt: 0,
+                shuffle: nil,
+                origin: .album(album.title)
+            )
         }
     }
 }

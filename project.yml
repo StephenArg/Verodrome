@@ -64,6 +64,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Verodrome/Resources/Verodrome.entitlements
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
     dependencies:
       - target: VerodromeKit
       - package: Alamofire
@@ -86,7 +87,8 @@ targets:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
             CPTemplateApplicationSceneSessionRoleApplication:
-              - UISceneConfigurationName: CarPlay
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: CarPlay
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         LSRequiresIPhoneOS: true
         NSAppTransportSecurity:
@@ -124,3 +126,5 @@ schemes:
         - VerodromeKitTests
     run:
       config: Debug
+      environmentVariables:
+        OS_ACTIVITY_DT_MODE: YES

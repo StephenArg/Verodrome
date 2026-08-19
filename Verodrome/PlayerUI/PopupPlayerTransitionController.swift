@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import VerodromeKit
+import os
 
 enum PopupPlayerTransitionController {
     static func configureSheet(_ controller: UIViewController) {
@@ -23,39 +24,61 @@ enum PopupPlayerTransitionController {
 /// Shuffle hit that path most often from Library → list → detail → album.
 @MainActor
 enum PopupPlayerPresenter {
+    private static let log = Logger(subsystem: "com.verodrome", category: "PopupPlayer")
+    private static let retryDelay: TimeInterval = 0.05
+    /// ~1s of retries, enough to outlast a push or sheet animation.
+    private static let maxAttempts = 20
+
     static func present(_ view: some View, onDismissed: @escaping () -> Void) {
         if existingHost() != nil { return }
-        guard let presenter = topViewController() else { return }
 
         let host = PopupPlayerHostController(rootView: AnyView(view))
         host.onDismissed = onDismissed
         PopupPlayerTransitionController.configureSheet(host)
-
-        if presenter.transitionCoordinator != nil {
-            presenter.transitionCoordinator?.animate(alongsideTransition: nil) { _ in
-                present(host, from: topViewController() ?? presenter)
-            }
-            return
-        }
-        present(host, from: presenter)
+        attemptPresent(host, attempt: 0)
     }
 
     static func dismiss() {
         existingHost()?.dismiss(animated: true)
     }
 
-    private static func present(_ host: UIViewController, from presenter: UIViewController) {
-        guard presenter.presentedViewController == nil else {
-            presenter.presentedViewController?.present(host, animated: true)
+    /// Retries instead of hanging the presentation off `transitionCoordinator`'s
+    /// completion: that block is dropped outright when the coordinator can no longer
+    /// queue animations, which loses the player with no error and leaves
+    /// `showFullPlayer` stuck at `true`.
+    private static func attemptPresent(_ host: PopupPlayerHostController, attempt: Int) {
+        if existingHost() != nil { return }
+        guard let presenter = readyPresenter() else {
+            guard attempt < maxAttempts else {
+                log.error("Gave up presenting the player: no controller ready to present")
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
+                attemptPresent(host, attempt: attempt + 1)
+            }
             return
         }
         presenter.present(host, animated: true)
     }
 
+    /// A controller that is mid-transition silently discards `present`, so wait it out.
+    private static func readyPresenter() -> UIViewController? {
+        guard let top = topViewController() else { return nil }
+        guard top.transitionCoordinator == nil,
+              !top.isBeingPresented,
+              !top.isBeingDismissed,
+              top.presentedViewController == nil
+        else { return nil }
+        return top
+    }
+
     private static func existingHost() -> UIViewController? {
         var current = topViewController()
         while let controller = current {
-            if controller is PopupPlayerHostController { return controller }
+            // A host on its way out is not a reason to skip presenting a new one.
+            if let host = controller as? PopupPlayerHostController, !host.isBeingDismissed {
+                return host
+            }
             current = controller.presentingViewController
         }
         return nil

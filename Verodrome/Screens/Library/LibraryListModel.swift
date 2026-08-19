@@ -114,7 +114,9 @@ final class LibraryListModel<Item: LibraryRow> {
 
     private(set) var sections: [LibraryRowSection<Item>] = []
     private(set) var rowCount = 0
-    /// True while only the head page is on screen.
+    /// True from the start of a two-phase load until the full fetch lands — an empty
+    /// first paint or the head page. The table keeps the A–Z scrubber in its
+    /// placeholder state while this is set.
     private(set) var isPartial = false
     /// The ordering the rows on screen were fetched with, which lags the user's
     /// selection until the new rows land. Section headers key off this so they don't
@@ -175,6 +177,11 @@ final class LibraryListModel<Item: LibraryRow> {
            supportsHeadPage,
            sort.supportsHeadPage,
            search.isEmpty {
+            // Raise this before the head fetch so the inactive A–Z bar is already on
+            // screen when the first rows arrive, instead of popping in after the full list.
+            if sections.isEmpty {
+                isPartial = true
+            }
             let request = LibraryFetchRequest(
                 search: search,
                 sort: sort,

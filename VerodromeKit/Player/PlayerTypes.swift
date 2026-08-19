@@ -10,6 +10,22 @@ public enum RepeatMode: Int, Codable, CaseIterable, Sendable {
     case off = 0
     case all = 1
     case one = 2
+
+    /// Album / playlist queues wrap the whole list (`all`). Shuffle All and similar
+    /// contexts only loop the current track (`one`) or play through once (`off`).
+    public func next(allowsRepeatAll: Bool) -> RepeatMode {
+        if allowsRepeatAll {
+            switch self {
+            case .off: return .all
+            case .all: return .one
+            case .one: return .off
+            }
+        }
+        switch self {
+        case .off: return .one
+        case .one, .all: return .off
+        }
+    }
 }
 
 public enum ShuffleMode: Int, Codable, CaseIterable, Sendable {
@@ -42,6 +58,25 @@ public enum QueueOrigin: Codable, Sendable, Equatable {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "Radio" }
         return "\(trimmed) radio"
+    }
+
+    /// Finite album/playlist contexts can wrap the whole queue. Endless contexts
+    /// (Shuffle All, a song tap) only offer repeat-one.
+    public var supportsRepeatAll: Bool {
+        switch self {
+        case .album, .playlist: return true
+        case .artist, .song, .genre: return false
+        }
+    }
+
+    /// Album and playlist queues have an original order to restore. Shuffle All, a
+    /// song tap, artist radio, and similar contexts do not — the shuffle control
+    /// should not appear for those.
+    public var supportsShuffle: Bool {
+        switch self {
+        case .album, .playlist: return true
+        case .artist, .song, .genre: return false
+        }
     }
 }
 

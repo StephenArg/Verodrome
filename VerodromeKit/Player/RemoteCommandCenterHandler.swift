@@ -22,6 +22,8 @@ public final class RemoteCommandCenterHandler {
         center.seekBackwardCommand.removeTarget(nil)
         center.changePlaybackPositionCommand.removeTarget(nil)
         center.changePlaybackRateCommand.removeTarget(nil)
+        center.changeShuffleModeCommand.removeTarget(nil)
+        center.changeRepeatModeCommand.removeTarget(nil)
 
         center.playCommand.isEnabled = true
         center.pauseCommand.isEnabled = true
@@ -37,6 +39,8 @@ public final class RemoteCommandCenterHandler {
         center.changePlaybackRateCommand.isEnabled = true
         center.changePlaybackRateCommand.supportedPlaybackRates =
             PlaybackSpeed.options.map { NSNumber(value: $0) }
+        center.changeShuffleModeCommand.isEnabled = true
+        center.changeRepeatModeCommand.isEnabled = true
 
         // Remote command callbacks are not guaranteed to be on the main queue.
         // Use dedicated play/pause (not toggle) so lock-screen buttons stay correct.
@@ -85,6 +89,42 @@ public final class RemoteCommandCenterHandler {
             }
             return Self.performOnMain {
                 self?.applySessionRate(Float(event.playbackRate))
+            }
+        }
+        center.changeShuffleModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeShuffleModeCommandEvent else {
+                return .commandFailed
+            }
+            return Self.performOnMain {
+                switch event.shuffleType {
+                case .off:
+                    self?.player?.setShuffleMode(.off)
+                case .items, .collections:
+                    self?.player?.setShuffleMode(.on)
+                @unknown default:
+                    break
+                }
+            }
+        }
+        center.changeRepeatModeCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangeRepeatModeCommandEvent else {
+                return .commandFailed
+            }
+            return Self.performOnMain {
+                switch event.repeatType {
+                case .off:
+                    self?.player?.setRepeatMode(.off)
+                case .one:
+                    self?.player?.setRepeatMode(.one)
+                case .all:
+                    if self?.player?.canRepeatAll == true {
+                        self?.player?.setRepeatMode(.all)
+                    } else {
+                        self?.player?.toggleRepeat()
+                    }
+                @unknown default:
+                    break
+                }
             }
         }
     }

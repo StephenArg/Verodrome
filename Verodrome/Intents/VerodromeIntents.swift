@@ -186,7 +186,15 @@ enum IntentLibraryPlayback {
         }
         let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
         let items = songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
-        Task { await VerodromeKit.shared.player?.play(items: items, startAt: 0) }
+        RecentQueueStore.shared.record(album: album)
+        Task {
+            await VerodromeKit.shared.player?.play(
+                items: items,
+                startAt: 0,
+                shuffle: nil,
+                origin: .album(album.title)
+            )
+        }
     }
 
     static func playPlaylist(named name: String) throws {
@@ -202,7 +210,15 @@ enum IntentLibraryPlayback {
             throw IntentPlaybackError.notFound(trimmed)
         }
         let songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
-        Task { await VerodromeKit.shared.player?.play(items: songs.map(QueueItem.from), startAt: 0) }
+        RecentQueueStore.shared.record(playlist: playlist)
+        Task {
+            await VerodromeKit.shared.player?.play(
+                items: songs.map(QueueItem.from),
+                startAt: 0,
+                shuffle: nil,
+                origin: .playlist(playlist.name)
+            )
+        }
     }
 
     static func playArtist(named name: String) throws {

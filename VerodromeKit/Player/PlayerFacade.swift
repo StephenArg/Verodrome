@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import MediaPlayer
 import UIKit
 
 @MainActor
@@ -48,6 +49,7 @@ public protocol PlayerControlling: AnyObject {
     func clearQueue()
     func toggleShuffle()
     func setShuffleMode(_ mode: ShuffleMode)
+    func toggleRepeat()
     func setRepeatMode(_ mode: RepeatMode)
     func requestLyrics()
 }
@@ -171,6 +173,12 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.$statusMessage
             .receive(on: DispatchQueue.main)
             .assign(to: &$statusMessage)
+        audioPlayer.queueHandler.$queueGeneration
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$queueGeneration)
+        audioPlayer.queueHandler.$repeatMode
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$reportedRepeatMode)
         refreshPublished()
     }
 
@@ -181,6 +189,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func attachArtworkResolver(_ resolver: ArtworkResolver) {
         artworkResolver = resolver
+        pushNowPlaying(reloadArtwork: true)
     }
 
     public var queue: [QueueItem] { audioPlayer.queueHandler.activeQueue }
@@ -188,6 +197,14 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public var userQueuedRange: Range<Int> { audioPlayer.queueHandler.userQueuedRange }
     public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
     public var queueOrigin: QueueOrigin? { audioPlayer.queueHandler.queueOrigin }
+    /// Album / playlist queues can restore their original order. Shuffle All and
+    /// similar contexts cannot, so the shuffle control is omitted.
+    public var canShuffleQueue: Bool { queueOrigin?.supportsShuffle == true }
+    /// Album / playlist queues can wrap. Shuffle All and similar only offer repeat-one.
+    public var canRepeatAll: Bool { queueOrigin?.supportsRepeatAll == true }
+    /// Bumps when the queue is replaced, shuffled, or edited so observers can refresh.
+    @Published public private(set) var queueGeneration: Int = 0
+    @Published public private(set) var reportedRepeatMode: RepeatMode = .off
 
     /// Test seam for session-speed coverage without playing audio.
     var test_queueHandler: PlayQueueHandler { audioPlayer.queueHandler }
@@ -206,10 +223,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     }
     public var repeatMode: RepeatMode {
         get { audioPlayer.queueHandler.repeatMode }
-        set {
-            audioPlayer.queueHandler.setRepeat(newValue)
-            audioPlayer.applyRepeatMode(newValue)
-        }
+        set { setRepeatMode(newValue) }
     }
     public var shuffleMode: ShuffleMode { audioPlayer.queueHandler.shuffleMode }
 
@@ -226,8 +240,14 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?, origin: QueueOrigin?) async {
         PlayTrace.mark("PlayerFacade.play", details: "count=\(items.count) startAt=\(startAt)")
-        if let shuffle {
+        if origin?.supportsShuffle != true {
+            // Shuffle All / song / artist queues have no restorable order.
+            audioPlayer.queueHandler.setShuffle(.off, reorder: false)
+        } else if let shuffle {
             audioPlayer.queueHandler.setShuffle(shuffle, reorder: false)
+        }
+        if origin?.supportsRepeatAll != true, audioPlayer.queueHandler.repeatMode == .all {
+            audioPlayer.queueHandler.setRepeat(.off)
         }
         await audioPlayer.play(items: items, startAt: startAt, origin: origin)
         PlayTrace.mark("PlayerFacade.play — audioPlayer returned; refreshPublished")
@@ -426,16 +446,40 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         lastPersistedPosition = 0
         refreshPublished()
     }
-    public func toggleShuffle() { audioPlayer.queueHandler.toggleShuffle() }
+    public func toggleShuffle() {
+        guard canShuffleQueue else { return }
+        audioPlayer.queueHandler.toggleShuffle()
+        pushNowPlaying(reloadArtwork: false)
+    }
+    public func toggleRepeat() {
+        setRepeatMode(repeatMode.next(allowsRepeatAll: canRepeatAll))
+    }
     public func setRepeatMode(_ mode: RepeatMode) {
-        audioPlayer.queueHandler.setRepeat(mode)
-        audioPlayer.applyRepeatMode(mode)
+        let resolved = (mode == .all && !canRepeatAll) ? RepeatMode.one : mode
+        audioPlayer.queueHandler.setRepeat(resolved)
+        audioPlayer.applyRepeatMode(resolved)
+        pushNowPlaying(reloadArtwork: false)
     }
     public func setShuffleMode(_ mode: ShuffleMode) {
+        guard canShuffleQueue else { return }
         audioPlayer.queueHandler.setShuffle(mode)
+        pushNowPlaying(reloadArtwork: false)
     }
 
     public func requestLyrics() { audioPlayer.requestLyrics() }
+
+    private func syncRemoteShuffleRepeat() {
+        let center = MPRemoteCommandCenter.shared()
+        let canShuffle = canShuffleQueue
+        center.changeShuffleModeCommand.isEnabled = canShuffle
+        center.changeShuffleModeCommand.currentShuffleType =
+            canShuffle && shuffleMode == .on ? .items : .off
+        switch repeatMode {
+        case .off: center.changeRepeatModeCommand.currentRepeatType = .off
+        case .one: center.changeRepeatModeCommand.currentRepeatType = .one
+        case .all: center.changeRepeatModeCommand.currentRepeatType = .all
+        }
+    }
 
     public func setEqualizerBands(_ bands: [Float]) {
         audioPlayer.applyEqualizerBands(bands)
@@ -486,17 +530,33 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
             item: currentItem,
             isPlaying: isPlaying,
             elapsed: currentTime,
-            duration: duration,
+            duration: duration > 0 ? duration : (currentItem?.duration ?? 0),
             rate: rate
         )
+        syncRemoteShuffleRepeat()
         guard reloadArtwork,
               let artworkId = currentItem?.artworkId,
+              !artworkId.isEmpty,
               let resolver = artworkResolver
         else { return }
 
         let itemId = currentItem?.id
         Task {
-            guard let image = await resolver.managerImage(for: artworkId) else { return }
+            let size = ArtworkDownloadManager.largestRequestedSize
+            if let quick = await resolver.downgradedImage(for: artworkId, size: size) {
+                guard self.currentItem?.id == itemId else { return }
+                self.nowPlayingHandler?.update(
+                    item: self.currentItem,
+                    isPlaying: self.isPlaying,
+                    elapsed: self.currentTime,
+                    duration: self.duration,
+                    rate: self.audioPlayer.backend.playbackRate,
+                    artwork: quick
+                )
+            }
+            guard let image = await resolver.loadImage(for: artworkId, kind: .album, size: size) else {
+                return
+            }
             guard self.currentItem?.id == itemId else { return }
             self.lastArtworkLoadedItemId = itemId
             self.nowPlayingHandler?.update(
@@ -508,23 +568,5 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
                 artwork: image
             )
         }
-    }
-}
-
-extension ArtworkResolver {
-    public func managerImage(for token: String) async -> UIImage? {
-        if let url = await resolvedURL(
-            for: token,
-            kind: .album,
-            size: ArtworkDownloadManager.largestRequestedSize
-        ) {
-            if url.isFileURL {
-                return UIImage(contentsOfFile: url.path)
-            }
-            if let (data, _) = try? await URLSession.shared.data(from: url) {
-                return UIImage(data: data)
-            }
-        }
-        return nil
     }
 }

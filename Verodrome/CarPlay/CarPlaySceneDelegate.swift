@@ -1,222 +1,471 @@
 import CarPlay
+import Combine
+import MediaPlayer
 import UIKit
 import VerodromeKit
+import os
 
+/// Xcode's console often hides `os.Logger` from a second scene unless you filter by
+/// category. `print` / `NSLog` always show next to PlayTrace when the debugger is attached.
+enum CarPlayLog {
+    private static let logger = Logger(subsystem: "com.verodrome", category: "CarPlay")
+
+    static func notice(_ message: String) {
+        print("🚗 CARPLAY \(message)")
+        NSLog("🚗 CARPLAY %@", message)
+        logger.notice("\(message, privacy: .public)")
+    }
+
+    static func error(_ message: String) {
+        print("🚗 CARPLAY ERROR \(message)")
+        NSLog("🚗 CARPLAY ERROR %@", message)
+        logger.error("\(message, privacy: .public)")
+    }
+}
+
+/// CarPlay's ObjC selectors are `didConnectInterfaceController:` / `didDisconnectInterfaceController:`.
+/// The 3-argument window variants are renamed to `didConnect:to:` / `didDisconnect:from:`.
+/// Implementing only `didConnect` leaves the scene with no root template; tapping the dock
+/// icon while Now Playing is visible then throws and kills the app.
 @available(iOS 14.0, *)
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private weak var interfaceController: CPInterfaceController?
+    private let catalog = CarPlayCatalog()
+    private lazy var searchController = CarPlaySearchController(catalog: catalog)
+    private var cancellables = Set<AnyCancellable>()
+    private var tabBar: CPTabBarTemplate?
+    private var homeTab: CPListTemplate?
+    private var recentsTab: CPListTemplate?
+    private var searchTab: CPListTemplate?
+    private var libraryTab: CPListTemplate?
+    private var isConnected = false
+    /// Pushing `CPNowPlayingTemplate.shared` twice is rejected, so serialize attempts.
+    private var isPresentingNowPlaying = false
+    /// Recents are recorded immediately, but Home is only redrawn when it is on screen
+    /// so an in-place section update cannot pop Now Playing.
+    private var pendingHomeRefresh = false
+
+    /// Audio apps may stack at most 5 templates; pushing past that is rejected.
+    private static let templateDepthLimit = 5
+
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        CarPlayLog.notice(
+            "scene willConnect | role=\(session.role.rawValue) type=\(String(describing: type(of: scene)))"
+        )
+        guard let scene = scene as? CPTemplateApplicationScene else {
+            CarPlayLog.error("willConnect skipped: scene is not CPTemplateApplicationScene")
+            return
+        }
+        handleConnect(scene.interfaceController)
+    }
+
+    func templateApplicationScene(
+        _ templateApplicationScene: CPTemplateApplicationScene,
+        didConnectInterfaceController interfaceController: CPInterfaceController
+    ) {
+        CarPlayLog.notice("didConnectInterfaceController")
+        handleConnect(interfaceController)
+    }
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
-        self.interfaceController = interfaceController
-        Task { @MainActor in
-            _ = try? await VerodromeKit.shared.ensureActiveLibrarySyncer()
-            do {
-                try await interfaceController.setRootTemplate(makeRootTemplate(), animated: true)
-            } catch {
-                // CarPlay connection can race; ignore template set failures.
-            }
-        }
+        CarPlayLog.notice("didConnect")
+        handleConnect(interfaceController)
+    }
+
+    func templateApplicationScene(
+        _ templateApplicationScene: CPTemplateApplicationScene,
+        didConnect interfaceController: CPInterfaceController,
+        to window: CPWindow
+    ) {
+        CarPlayLog.notice("didConnect:to window")
+        handleConnect(interfaceController)
+    }
+
+    func templateApplicationScene(
+        _ templateApplicationScene: CPTemplateApplicationScene,
+        didDisconnectInterfaceController interfaceController: CPInterfaceController
+    ) {
+        handleDisconnect()
     }
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didDisconnect interfaceController: CPInterfaceController
     ) {
-        self.interfaceController = nil
+        handleDisconnect()
     }
 
-    @MainActor
-    private func makeRootTemplate() -> CPListTemplate {
-        let playlists = CPListItem(text: "Playlists", detailText: "Your playlists")
-        playlists.handler = { [weak self] _, completion in
-            Task { @MainActor in
-                self?.pushPlaylists()
-                completion()
-            }
-        }
-
-        let albums = CPListItem(text: "Albums", detailText: "Browse albums")
-        albums.handler = { [weak self] _, completion in
-            Task { @MainActor in
-                self?.pushAlbums()
-                completion()
-            }
-        }
-
-        let artists = CPListItem(text: "Artists", detailText: "Browse artists")
-        artists.handler = { [weak self] _, completion in
-            Task { @MainActor in
-                self?.pushArtists()
-                completion()
-            }
-        }
-
-        let downloads = CPListItem(text: "Downloads", detailText: "Offline songs")
-        downloads.handler = { [weak self] _, completion in
-            Task { @MainActor in
-                self?.pushDownloads()
-                completion()
-            }
-        }
-
-        let section = CPListSection(items: [playlists, albums, artists, downloads])
-        return CPListTemplate(title: "Verodrome", sections: [section])
+    func templateApplicationScene(
+        _ templateApplicationScene: CPTemplateApplicationScene,
+        didDisconnect interfaceController: CPInterfaceController,
+        from window: CPWindow
+    ) {
+        handleDisconnect()
     }
 
-    @MainActor
-    private func pushPlaylists() {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let playlists = try? VerodromeKit.shared.repository()?.fetchPlaylists(account: account) else {
-            pushEmpty(title: "Playlists")
-            return
-        }
-        let items: [CPListItem] = playlists.map { playlist in
-            let item = CPListItem(text: playlist.name, detailText: "\(playlist.songCount) songs")
-            let playlistID = playlist.compoundRemoteId
-            item.handler = { [weak self] _, completion in
-                Task { @MainActor in
-                    self?.playPlaylist(compoundRemoteId: playlistID)
-                    completion()
-                }
-            }
-            return item
-        }
-        pushList(title: "Playlists", items: items)
-    }
-
-    @MainActor
-    private func pushAlbums() {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let albums = try? VerodromeKit.shared.repository()?.fetchAlbums(account: account) else {
-            pushEmpty(title: "Albums")
-            return
-        }
-        let items: [CPListItem] = albums.prefix(200).map { album in
-            let item = CPListItem(text: album.title, detailText: album.artist?.name)
-            let albumID = album.compoundRemoteId
-            item.handler = { [weak self] _, completion in
-                Task { @MainActor in
-                    self?.playAlbum(compoundRemoteId: albumID)
-                    completion()
-                }
-            }
-            return item
-        }
-        pushList(title: "Albums", items: Array(items))
-    }
-
-    @MainActor
-    private func pushArtists() {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let artists = try? VerodromeKit.shared.repository()?.fetchArtists(account: account) else {
-            pushEmpty(title: "Artists")
-            return
-        }
-        let items: [CPListItem] = artists.prefix(200).map { artist in
-            let item = CPListItem(text: artist.name, detailText: "\(artist.albumCount) albums")
-            let artistID = artist.compoundRemoteId
-            item.handler = { [weak self] _, completion in
-                Task { @MainActor in
-                    self?.playArtist(compoundRemoteId: artistID)
-                    completion()
-                }
-            }
-            return item
-        }
-        pushList(title: "Artists", items: Array(items))
-    }
-
-    @MainActor
-    private func pushDownloads() {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let songs = try? VerodromeKit.shared.repository()?.fetchSongs(account: account, cachedOnly: false) else {
-            pushEmpty(title: "Downloads")
-            return
-        }
-        let downloads = songs.filter(\.isDownloadedLocally)
-        let items: [CPListItem] = downloads.prefix(200).map { song in
-            let item = CPListItem(text: song.title, detailText: song.artistName ?? song.artist?.name)
-            let songID = song.compoundRemoteId
-            item.handler = { [weak self] _, completion in
-                Task { @MainActor in
-                    self?.playSong(compoundRemoteId: songID, among: downloads)
-                    completion()
-                }
-            }
-            return item
-        }
-        pushList(title: "Downloads", items: Array(items))
-    }
-
-    @MainActor
-    private func playPlaylist(compoundRemoteId: String) {
-        guard let playlist = try? VerodromeKit.shared.repository()?.fetchPlaylist(compoundRemoteId: compoundRemoteId) else { return }
-        let songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
-        play(songs.map(QueueItem.from))
-    }
-
-    @MainActor
-    private func playAlbum(compoundRemoteId: String) {
-        guard let album = try? VerodromeKit.shared.repository()?.fetchAlbum(compoundRemoteId: compoundRemoteId) else { return }
-        let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-        play(
-            songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) },
-            origin: .album(album.title)
+    private func handleConnect(_ interfaceController: CPInterfaceController) {
+        CarPlayLog.notice(
+            "scene connected | alreadyConnected=\(self.isConnected) maximumTabCount=\(CPTabBarTemplate.maximumTabCount)"
         )
+        self.interfaceController = interfaceController
+        interfaceController.delegate = self
+        catalog.interfaceController = interfaceController
+        catalog.onDidStartPlayback = { [weak self] in
+            self?.presentNowPlaying()
+        }
+        catalog.onOpenSearch = { [weak self] in
+            self?.showSearchTab()
+        }
+        catalog.onSearchQuery = { [weak self] query in
+            self?.pushSearchResults(query)
+        }
+        catalog.onOpenNowPlaying = { [weak self] in
+            self?.presentNowPlaying()
+        }
+        configureNowPlaying()
+        installRootIfNeeded(interfaceController)
+
+        let alreadyConnected = isConnected
+        isConnected = true
+        if alreadyConnected {
+            presentNowPlayingIfAudioIsPlaying()
+            return
+        }
+
+        Task { @MainActor in
+            await VerodromeKit.shared.initialize()
+            _ = try? await VerodromeKit.shared.ensureActiveLibrarySyncer()
+            observePlayer()
+            refreshNowPlayingButtons()
+            VerodromeKit.shared.player?.syncPublishedState()
+            presentNowPlayingIfAudioIsPlaying()
+            await refreshHomeTab()
+        }
+    }
+
+    private func handleDisconnect() {
+        CarPlayLog.notice("scene disconnected")
+        CPNowPlayingTemplate.shared.remove(self)
+        interfaceController = nil
+        catalog.interfaceController = nil
+        catalog.onDidStartPlayback = nil
+        catalog.onOpenSearch = nil
+        catalog.onSearchQuery = nil
+        catalog.onOpenNowPlaying = nil
+        tabBar = nil
+        homeTab = nil
+        recentsTab = nil
+        searchTab = nil
+        libraryTab = nil
+        isConnected = false
+        isPresentingNowPlaying = false
+        pendingHomeRefresh = false
+        cancellables.removeAll()
+    }
+
+    /// CarPlay requires a root template before `didConnect` returns. Artwork is
+    /// filled in afterward by updating the existing list sections — replacing the
+    /// tab bar with `updateTemplates` pops any pushed Now Playing screen.
+    private func installRootIfNeeded(_ interfaceController: CPInterfaceController) {
+        if tabBar != nil { return }
+
+        let home = catalog.makeHomeTemplateSync()
+        let recents = catalog.makeRecentsTemplate()
+        let search = catalog.makeSearchTabTemplate()
+        let library = catalog.makeLibraryTemplate()
+        homeTab = home
+        recentsTab = recents
+        searchTab = search
+        libraryTab = library
+
+        // Audio apps may only host list/grid templates in the tab bar.
+        var tabs: [CPTemplate] = [home, recents, search, library]
+        let maxTabs = CPTabBarTemplate.maximumTabCount
+        if tabs.count > maxTabs {
+            tabs = Array(tabs.prefix(maxTabs))
+        }
+        let bar = CPTabBarTemplate(templates: tabs)
+        bar.delegate = self
+        tabBar = bar
+        CarPlayLog.notice("installing root tab bar | tabs=\(tabs.count) max=\(maxTabs)")
+        // Completion is required: a failed presentation without one throws.
+        interfaceController.setRootTemplate(bar, animated: false) { [weak self] success, error in
+            Self.logIfFailed("setRootTemplate", success: success, error: error)
+            guard success else { return }
+            CarPlayLog.notice("setRootTemplate succeeded")
+            Task { @MainActor in
+                self?.presentNowPlayingIfAudioIsPlaying()
+            }
+        }
     }
 
     @MainActor
-    private func playArtist(compoundRemoteId: String) {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let songs = try? VerodromeKit.shared.repository()?.fetchSongs(account: account) else { return }
-        let artistSongs = songs.filter {
-            $0.artist?.compoundRemoteId == compoundRemoteId
-                || $0.album?.artist?.compoundRemoteId == compoundRemoteId
+    private func refreshHomeTab() async {
+        guard let homeTab, let recentsTab else { return }
+        if isNowPlayingInStack {
+            pendingHomeRefresh = true
+            CarPlayLog.notice("deferring home refresh; Now Playing is in the stack")
+            return
         }
-        let name = artistSongs.first?.artistName
-            ?? artistSongs.first?.album?.artist?.name
-        play(
-            artistSongs.map(QueueItem.from),
-            origin: name.map { .artist($0) }
+        pendingHomeRefresh = false
+        CarPlayLog.notice("refreshing Home/Recents sections in place")
+        homeTab.updateSections(await catalog.makeHomeSectionsLoaded())
+        recentsTab.updateSections(catalog.recentsSections())
+    }
+
+    /// Apply a queued recents update now that Home (or Recents) is visible again.
+    @MainActor
+    private func refreshHomeIfPending() async {
+        guard pendingHomeRefresh else { return }
+        await refreshHomeTab()
+    }
+
+    private var isNowPlayingInStack: Bool {
+        interfaceController?.templates.contains { $0 is CPNowPlayingTemplate } == true
+    }
+
+    // MARK: - Now Playing
+
+    private func configureNowPlaying() {
+        let template = CPNowPlayingTemplate.shared
+        template.remove(self)
+        template.add(self)
+        template.isUpNextButtonEnabled = true
+        template.upNextTitle = "Queue"
+        template.isAlbumArtistButtonEnabled = true
+        if #available(iOS 18.4, *) {
+            template.nowPlayingMode = .default
+        }
+        refreshNowPlayingButtons()
+    }
+
+    private func observePlayer() {
+        cancellables.removeAll()
+        if let player = VerodromeKit.shared.player {
+            player.$currentItem
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshNowPlayingButtons()
+                }
+                .store(in: &cancellables)
+            player.$queueGeneration
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshNowPlayingButtons()
+                    self?.catalog.refreshQueueIfPresented()
+                }
+                .store(in: &cancellables)
+        }
+
+        PlaylistMembershipIndex.shared.$version
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshNowPlayingButtons()
+                self?.catalog.refreshPlaylistMembershipIfPresented()
+            }
+            .store(in: &cancellables)
+
+        RecentQueueStore.shared.$entries
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.pendingHomeRefresh = true
+                Task { await self?.refreshHomeIfPending() }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshNowPlayingButtons() {
+        var buttons: [CPNowPlayingButton] = []
+        if isCurrentItemSong {
+            let inPlaylist = isCurrentSongInAnyPlaylist
+            let add = CPNowPlayingImageButton(
+                image: CarPlayArtwork.nowPlayingPlaylistSymbol(isInPlaylist: inPlaylist)
+            ) { [weak self] _ in
+                self?.catalog.pushPlaylistMembership()
+            }
+            add.isSelected = inPlaylist
+            buttons.append(add)
+        }
+        if VerodromeKit.shared.player?.canShuffleQueue == true {
+            // Handler (not the no-arg initializer): CarPlay does not reliably send
+            // `changeShuffleModeCommand` for third-party audio apps.
+            buttons.append(CPNowPlayingShuffleButton { [weak self] _ in
+                VerodromeKit.shared.player?.toggleShuffle()
+                self?.catalog.refreshQueueIfPresented()
+            })
+        }
+        buttons.append(CPNowPlayingRepeatButton { [weak self] _ in
+            VerodromeKit.shared.player?.toggleRepeat()
+            self?.refreshNowPlayingButtons()
+        })
+        CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
+    }
+
+    private var isCurrentItemSong: Bool {
+        VerodromeKit.shared.player?.currentItem?.kind == .song
+    }
+
+    private var isCurrentSongInAnyPlaylist: Bool {
+        guard let playableId = VerodromeKit.shared.player?.currentItem?.playableId,
+              isCurrentItemSong else { return false }
+        return PlaylistMembershipIndex.shared.isInAnyPlaylist(songId: playableId)
+    }
+
+    private func showSearchTab() {
+        guard let tabBar, let searchTab else { return }
+        if #available(iOS 17.0, *) {
+            tabBar.select(searchTab)
+        }
+    }
+
+    /// iOS 26 audio CarPlay rejects `CPSearchTemplate` on `pushTemplate` (crash).
+    /// Results go in a list, which is allowed.
+    private func pushSearchResults(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            showSearchTab()
+            return
+        }
+        CarPlayLog.notice("pushSearchResults(\(trimmed))")
+        catalog.pushList(title: trimmed, items: catalog.songSearchItems(query: trimmed))
+    }
+
+    /// When CarPlay connects while Verodrome is already playing, land on Now Playing
+    /// instead of Home. The system may also launch this scene for the Now Playing
+    /// widget; the shared template must already be configured (see `configureNowPlaying`).
+    private func presentNowPlayingIfAudioIsPlaying() {
+        let player = VerodromeKit.shared.player
+        let infoPlaying = MPNowPlayingInfoCenter.default().playbackState == .playing
+        let rate = (MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double) ?? 0
+        let isPlaying = player?.isPlaying == true || infoPlaying || rate > 0
+        guard isPlaying else { return }
+        CarPlayLog.notice("audio is playing on connect — presenting Now Playing")
+        presentNowPlaying()
+    }
+
+    private func presentNowPlaying() {
+        guard let interfaceController else {
+            CarPlayLog.error("presentNowPlaying dropped: no interface controller")
+            return
+        }
+        VerodromeKit.shared.player?.syncPublishedState()
+
+        let nowPlaying = CPNowPlayingTemplate.shared
+        let stack = interfaceController.templates
+        CarPlayLog.notice(
+            "presentNowPlaying | depth=\(stack.count) topIsNowPlaying=\(stack.last === nowPlaying) inStack=\(stack.contains { $0 === nowPlaying })"
         )
+        if stack.last === nowPlaying { return }
+
+        // Reading `templates` is an IPC round trip, so two taps in quick succession can
+        // both see a stack without Now Playing and both try to push it. The second push
+        // is then rejected outright.
+        guard !isPresentingNowPlaying else {
+            CarPlayLog.notice("presentNowPlaying skipped: a push is already in flight")
+            return
+        }
+
+        // CarPlay refuses to push a template instance that is already in the stack.
+        // That is the normal state whenever Queue or the album list sits on top of
+        // Now Playing, so walk back down to it instead of pushing a duplicate.
+        if stack.contains(where: { $0 === nowPlaying }) {
+            popToNowPlaying()
+            return
+        }
+
+        guard stack.count < Self.templateDepthLimit else {
+            interfaceController.popToRootTemplate(animated: false) { [weak self] success, error in
+                Self.logIfFailed("popToRootTemplate", success: success, error: error)
+                Task { @MainActor in self?.pushNowPlaying() }
+            }
+            return
+        }
+        pushNowPlaying()
     }
 
-    @MainActor
-    private func playSong(compoundRemoteId: String, among songs: [Song]) {
-        let items = songs.map(QueueItem.from)
-        let index = songs.firstIndex(where: { $0.compoundRemoteId == compoundRemoteId }) ?? 0
-        let seed = items.indices.contains(index) ? items[index] : items.first
-        play(items, startAt: index, origin: seed.map { .song($0.title) })
-    }
-
-    @MainActor
-    private func play(_ items: [QueueItem], startAt index: Int = 0, origin: QueueOrigin? = nil) {
-        guard !items.isEmpty else { return }
-        Task {
-            await VerodromeKit.shared.player?.play(
-                items: items,
-                startAt: index,
-                shuffle: nil,
-                origin: origin
-            )
+    private func pushNowPlaying() {
+        guard let interfaceController else { return }
+        isPresentingNowPlaying = true
+        interfaceController.pushTemplate(CPNowPlayingTemplate.shared, animated: true) { [weak self] success, error in
+            Task { @MainActor in
+                self?.isPresentingNowPlaying = false
+                guard !success else {
+                    VerodromeKit.shared.player?.syncPublishedState()
+                    return
+                }
+                Self.logIfFailed("pushTemplate(NowPlaying)", success: success, error: error)
+                // CarPlay's own bookkeeping outranks our `templates` snapshot: if it says
+                // the instance is already pushed, the screen we want is down the stack.
+                self?.popToNowPlaying()
+            }
         }
     }
 
-    @MainActor
-    private func pushList(title: String, items: [CPListItem]) {
-        let template = CPListTemplate(title: title, sections: [CPListSection(items: items)])
-        Task {
-            try? await interfaceController?.pushTemplate(template, animated: true)
+    /// Terminal on purpose — never re-push from here, or a genuine rejection loops.
+    private func popToNowPlaying() {
+        guard let interfaceController else { return }
+        interfaceController.pop(to: CPNowPlayingTemplate.shared, animated: true) { success, error in
+            Self.logIfFailed("pop(to: NowPlaying)", success: success, error: error)
+            if success {
+                Task { @MainActor in
+                    VerodromeKit.shared.player?.syncPublishedState()
+                }
+            }
         }
     }
 
-    @MainActor
-    private func pushEmpty(title: String) {
-        let item = CPListItem(text: "Nothing here yet", detailText: nil)
-        item.handler = { _, completion in completion() }
-        pushList(title: title, items: [item])
+    private static func logIfFailed(_ operation: String, success: Bool, error: Error?) {
+        guard !success else { return }
+        CarPlayLog.error("\(operation) failed: \(error?.localizedDescription ?? "unknown error")")
+    }
+}
+
+@available(iOS 14.0, *)
+extension CarPlaySceneDelegate: CPTabBarTemplateDelegate {
+    func tabBarTemplate(_ tabBarTemplate: CPTabBarTemplate, didSelect selectedTemplate: CPTemplate) {
+        CarPlayLog.notice("tab selected | \(String(describing: type(of: selectedTemplate)))")
+        if selectedTemplate === homeTab || selectedTemplate === recentsTab {
+            Task { await refreshHomeIfPending() }
+        }
+    }
+}
+
+/// Reports what CarPlay actually put on screen, which is the only way to tell a
+/// rejected template apart from one that was accepted but drew empty.
+@available(iOS 14.0, *)
+extension CarPlaySceneDelegate: CPInterfaceControllerDelegate {
+    func templateDidAppear(_ aTemplate: CPTemplate, animated: Bool) {
+        CarPlayLog.notice("templateDidAppear | \(String(describing: type(of: aTemplate)))")
+        if aTemplate === homeTab || aTemplate === recentsTab || aTemplate is CPTabBarTemplate {
+            Task { await refreshHomeIfPending() }
+        }
+    }
+
+    func templateDidDisappear(_ aTemplate: CPTemplate, animated: Bool) {
+        CarPlayLog.notice("templateDidDisappear | \(String(describing: type(of: aTemplate)))")
+        if aTemplate is CPNowPlayingTemplate {
+            Task { await refreshHomeIfPending() }
+        }
+    }
+}
+
+@available(iOS 14.0, *)
+extension CarPlaySceneDelegate: CPNowPlayingTemplateObserver {
+    func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
+        catalog.pushQueue()
+    }
+
+    func nowPlayingTemplateAlbumArtistButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
+        catalog.pushPlayingAlbumOrPlaylist()
     }
 }

@@ -40,6 +40,9 @@ struct SongsView: View {
                 playingId: nowPlaying.currentItem?.playableId,
                 isPartial: model.isPartial,
                 isSectioned: model.isSectioned,
+                placeholderIndexTitles: sort.isAlphabetical
+                    ? AlphabetSectioning.sectionOrder(for: sort)
+                    : [],
                 onSelect: play,
                 // Same actions as the queue row ellipsis menu.
                 makeContextMenu: songContextMenu(for:),

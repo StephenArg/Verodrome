@@ -1,0 +1,613 @@
+
+Showing Recent Issues
+
+Build target Verodrome of project Verodrome with configuration Debug
+
+SwiftCompile normal arm64 Compiling\ AboutSettingsView.swift,\ AccountMenuView.swift,\ ActionToast.swift,\ AlbumDetailView.swift,\ AlbumGridCell.swift,\ AlbumsGridView.swift,\ AlbumsView.swift,\ AlphabetIndex.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/AboutSettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/AccountMenuView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/ActionToast.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Detail/AlbumDetailView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/AlbumGridCell.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsGridView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/AlphabetIndex.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:318:29: warning: call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+                    sortBy: sortDescriptors(for: request.sort),
+                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:369:25: note: calls to static method 'sortDescriptors(for:)' from outside of its actor context are implicitly asynchronous
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Album>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:369:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Album>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:320:31: warning: call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+                    matching: predicate(for: request)
+                              ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:390:25: note: calls to static method 'predicate(for:)' from outside of its actor context are implicitly asynchronous
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Album>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:390:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Album>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:348:25: warning: call to main actor-isolated static method 'stableHash(_:seed:)' in a synchronous nonisolated context
+                        stableHash($0.id, seed: seed) < stableHash($1.id, seed: seed)
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:362:25: note: calls to static method 'stableHash(_:seed:)' from outside of its actor context are implicitly asynchronous
+    private static func stableHash(_ value: String, seed: Int) -> Int {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:362:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func stableHash(_ value: String, seed: Int) -> Int {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:348:57: warning: call to main actor-isolated static method 'stableHash(_:seed:)' in a synchronous nonisolated context
+                        stableHash($0.id, seed: seed) < stableHash($1.id, seed: seed)
+                                                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:362:25: note: calls to static method 'stableHash(_:seed:)' from outside of its actor context are implicitly asynchronous
+    private static func stableHash(_ value: String, seed: Int) -> Int {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:362:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func stableHash(_ value: String, seed: Int) -> Int {
+                        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:318:29: Call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:320:31: Call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:348:25: Call to main actor-isolated static method 'stableHash(_:seed:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/AlbumsView.swift:348:57: Call to main actor-isolated static method 'stableHash(_:seed:)' in a synchronous nonisolated context
+
+SwiftCompile normal arm64 Compiling\ AppDelegate.swift,\ AppIconSettingsView.swift,\ AppRouter.swift,\ AppearanceSettingsView.swift,\ ArtistDetailView.swift,\ ArtistsView.swift,\ ArtworkTintedBackground.swift,\ ArtworkView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/AppDelegate.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/AppIconSettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/AppRouter.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/AppearanceSettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Detail/ArtistDetailView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/ArtworkTintedBackground.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/ArtworkView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:150:29: warning: call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+                    sortBy: sortDescriptors(for: request.sort),
+                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:174:25: note: calls to static method 'sortDescriptors(for:)' from outside of its actor context are implicitly asynchronous
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Artist>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:174:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Artist>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:152:31: warning: call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+                    matching: predicate(for: request)
+                              ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:183:25: note: calls to static method 'predicate(for:)' from outside of its actor context are implicitly asynchronous
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Artist>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:183:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Artist>? {
+                        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:150:29: Call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/ArtistsView.swift:152:31: Call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+
+SwiftCompile normal arm64 Compiling\ GenresView.swift,\ Haptics.swift,\ HoldableButton.swift,\ HomeCollectionView.swift,\ HomeEditorView.swift,\ HomeView.swift,\ IndexedEntityTableView.swift,\ IndexedSongTableView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/Haptics.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/PlayerUI/HoldableButton.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Home/HomeCollectionView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Home/HomeEditorView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Home/HomeView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/IndexedEntityTableView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/IndexedSongTableView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:66:29: warning: call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+                    sortBy: sortDescriptors(for: request.sort),
+                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:98:25: note: calls to static method 'sortDescriptors(for:)' from outside of its actor context are implicitly asynchronous
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Genre>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:98:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Genre>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:68:31: warning: call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+                    matching: predicate(for: request)
+                              ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:92:25: note: calls to static method 'predicate(for:)' from outside of its actor context are implicitly asynchronous
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Genre>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:92:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Genre>? {
+                        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:66:29: Call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/GenresView.swift:68:31: Call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+
+SwiftCompile normal arm64 Compiling\ CarPlaySceneDelegate.swift,\ DebouncedSearch.swift,\ DeepLinkHandler.swift,\ DetailHeader.swift,\ DeveloperSettingsView.swift,\ DirectoriesView.swift,\ DominantColorExtractor.swift,\ DownloadStatusView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/DebouncedSearch.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/DeepLinkHandler.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/DetailHeader.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/DeveloperSettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/DirectoriesView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/DominantColorExtractor.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/DownloadStatusView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: warning: instance method 'templateApplicationScene(_:didDisconnect:)' nearly matches optional requirement 'templateApplicationScene(_:didSelect:)' of protocol 'CPTemplateApplicationSceneDelegate'
+    func templateApplicationScene(
+         ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: note: move 'templateApplicationScene(_:didDisconnect:)' to an extension to silence this warning
+    func templateApplicationScene(
+         ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: note: make 'templateApplicationScene(_:didDisconnect:)' private to silence this warning
+    func templateApplicationScene(
+         ^
+    private 
+CarPlay.CPTemplateApplicationSceneDelegate.templateApplicationScene:2:15: note: requirement 'templateApplicationScene(_:didSelect:)' declared here
+optional func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene, didSelect navigationAlert: CPNavigationAlert)}
+              ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: Instance method 'templateApplicationScene(_:didDisconnect:)' nearly matches optional requirement 'templateApplicationScene(_:didSelect:)' of protocol 'CPTemplateApplicationSceneDelegate'
+
+SwiftCompile normal arm64 Compiling\ LibrarySettingsView.swift,\ LibraryShuffleCountBar.swift,\ LibrarySortMenu.swift,\ LibrarySyncProgressBar.swift,\ LoginView.swift,\ LyricsView.swift,\ MainContainerView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/LibrarySettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/LibraryShuffleCountBar.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/LibrarySortMenu.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Sync/LibrarySyncProgressBar.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Login/LoginView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/LyricsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Root/MainContainerView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/LibrarySortMenu.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/LibrarySortMenu.swift:84:20: warning: immutable value 'onToggleDownloaded' was never used; consider replacing with '_' or removing it
+            if let onToggleDownloaded, let downloadedOnly {
+               ~~~~^~~~~~~~~~~~~~~~~~
+               _
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/LibrarySortMenu.swift:84:20: Immutable value 'onToggleDownloaded' was never used; consider replacing with '_' or removing it
+
+SwiftCompile normal arm64 Compiling\ PopupPlayerView.swift,\ QueueRowMenu.swift,\ QueueView.swift,\ RadioContinuationCoordinator.swift,\ RadiosView.swift,\ RatingStarsView.swift,\ RootLaunchView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/PopupPlayerView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueRowMenu.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/RadioContinuationCoordinator.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/RadiosView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/RatingStarsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/RootLaunchView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:66: warning: assuming you mean 'Optional<DownloadStatus>.none'; did you mean 'DownloadStatus.none' instead?
+                    next[item.playableId] = hasFile ? .cached : .none
+                                                                 ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:65: note: explicitly specify 'Optional' to silence this warning
+                    next[item.playableId] = hasFile ? .cached : .none
+                                                                ^
+                                                                Optional
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:65: note: use 'DownloadStatus.none' instead
+                    next[item.playableId] = hasFile ? .cached : .none
+                                                                ^
+                                                                DownloadStatus
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:65: note: explicitly specify 'Optional' to silence this warning
+                    next[item.playableId] = hasFile ? .cached : .none
+                                                                ^
+                                                                Optional
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:65: note: use 'DownloadStatus.none' instead
+                    next[item.playableId] = hasFile ? .cached : .none
+                                                                ^
+                                                                DownloadStatus
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:62: warning: assuming you mean 'Optional<DownloadStatus>.none'; did you mean 'DownloadStatus.none' instead?
+                next[item.playableId] = hasFile ? .cached : .none
+                                                             ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:61: note: explicitly specify 'Optional' to silence this warning
+                next[item.playableId] = hasFile ? .cached : .none
+                                                            ^
+                                                            Optional
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:61: note: use 'DownloadStatus.none' instead
+                next[item.playableId] = hasFile ? .cached : .none
+                                                            ^
+                                                            DownloadStatus
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:61: note: explicitly specify 'Optional' to silence this warning
+                next[item.playableId] = hasFile ? .cached : .none
+                                                            ^
+                                                            Optional
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:61: note: use 'DownloadStatus.none' instead
+                next[item.playableId] = hasFile ? .cached : .none
+                                                            ^
+                                                            DownloadStatus
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:428:66: Assuming you mean 'Optional<DownloadStatus>.none'; did you mean 'DownloadStatus.none' instead?
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/QueueView.swift:431:62: Assuming you mean 'Optional<DownloadStatus>.none'; did you mean 'DownloadStatus.none' instead?
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Verodrome (in target 'Verodrome' from project 'Verodrome')
+
+EmitSwiftModule normal arm64 (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: warning: instance method 'templateApplicationScene(_:didDisconnect:)' nearly matches optional requirement 'templateApplicationScene(_:didSelect:)' of protocol 'CPTemplateApplicationSceneDelegate'
+    func templateApplicationScene(
+         ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: note: move 'templateApplicationScene(_:didDisconnect:)' to an extension to silence this warning
+    func templateApplicationScene(
+         ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: note: make 'templateApplicationScene(_:didDisconnect:)' private to silence this warning
+    func templateApplicationScene(
+         ^
+    private 
+CarPlay.CPTemplateApplicationSceneDelegate.templateApplicationScene:2:15: note: requirement 'templateApplicationScene(_:didSelect:)' declared here
+optional func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene, didSelect navigationAlert: CPNavigationAlert)}
+              ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/CarPlay/CarPlaySceneDelegate.swift:24:10: Instance method 'templateApplicationScene(_:didDisconnect:)' nearly matches optional requirement 'templateApplicationScene(_:didSelect:)' of protocol 'CPTemplateApplicationSceneDelegate'
+
+SwiftCompile normal arm64 Compiling\ ShareComposerView.swift,\ SharedView.swift,\ ShuffleAllCoordinator.swift,\ SongActionsModifier.swift,\ SongsView.swift,\ StorageSettingsView.swift,\ SyncView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Share/ShareComposerView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SharedView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/ShuffleAllCoordinator.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/SongActionsModifier.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/StorageSettingsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Sync/SyncView.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:253:29: warning: call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+                    sortBy: sortDescriptors(for: request.sort),
+                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:281:25: note: calls to static method 'sortDescriptors(for:)' from outside of its actor context are implicitly asynchronous
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Song>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:281:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Song>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:255:31: warning: call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+                    matching: predicate(for: request)
+                              ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:305:25: note: calls to static method 'predicate(for:)' from outside of its actor context are implicitly asynchronous
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Song>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:305:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Song>? {
+                        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:253:29: Call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/SongsView.swift:255:31: Call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+
+SwiftCompile normal arm64 Compiling\ PlaylistEditView.swift,\ PlaylistMembershipView.swift,\ PlaylistSelectorView.swift,\ PlaylistsView.swift,\ PodcastDetailView.swift,\ PodcastsView.swift,\ PopupPlayerTransitionController.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Playlist/PlaylistEditView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Playlist/PlaylistMembershipView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Playlist/PlaylistSelectorView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Detail/PodcastDetailView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PodcastsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/PlayerUI/PopupPlayerTransitionController.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:112:29: warning: call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+                    sortBy: sortDescriptors(for: request.sort),
+                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:146:25: note: calls to static method 'sortDescriptors(for:)' from outside of its actor context are implicitly asynchronous
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Playlist>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:146:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Playlist>] {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:114:31: warning: call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+                    matching: predicate(for: request)
+                              ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:156:25: note: calls to static method 'predicate(for:)' from outside of its actor context are implicitly asynchronous
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Playlist>? {
+                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:156:25: note: main actor isolation inferred from conformance to protocol 'View'
+    private static func predicate(for request: LibraryFetchRequest) -> Predicate<Playlist>? {
+                        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:112:29: Call to main actor-isolated static method 'sortDescriptors(for:)' in a synchronous nonisolated context
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Library/PlaylistsView.swift:114:31: Call to main actor-isolated static method 'predicate(for:)' in a synchronous nonisolated context
+
+SwiftCompile normal arm64 Compiling\ SyncedLyricsView.swift,\ TabBarEditorView.swift,\ Theme.swift,\ VerodromeApp.swift,\ VerodromeIntents.swift,\ VerodromeListChrome.swift,\ GeneratedAssetSymbols.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Player/SyncedLyricsView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Settings/TabBarEditorView.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/Theme.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/App/VerodromeApp.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Screens/Common/VerodromeListChrome.swift /Users/vero/Library/Developer/Xcode/DerivedData/Verodrome-hboebwmrjoyzyybnzpbflkajvzry/Build/Intermediates.noindex/Verodrome.build/Debug-iphonesimulator/Verodrome.build/DerivedSources/GeneratedAssetSymbols.swift (in target 'Verodrome' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift (in target 'Verodrome' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:35:41: warning: conditional downcast from 'PlayerFacadeImpl?' to 'PlayerFacadeImpl' does nothing
+            (VerodromeKit.shared.player as? PlayerFacadeImpl)?.setShuffleMode(enable ? .on : .off)
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+                                       
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:252:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: PlayPauseIntent(), phrases: ["\(.applicationName) play pause", "Play or pause \(.applicationName)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:253:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: ToggleOfflineIntent(), phrases: ["\(.applicationName) offline mode", "Toggle offline in \(.applicationName)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:254:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: ShufflePlayIntent(), phrases: ["\(.applicationName) shuffle", "Shuffle with \(.applicationName)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:255:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: PlayAlbumIntent(), phrases: ["Play album \(\.$album) in \(.applicationName)", "\(.applicationName) play album \(\.$album)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:256:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: PlayPlaylistIntent(), phrases: ["Play playlist \(\.$playlist) in \(.applicationName)", "\(.applicationName) play playlist \(\.$playlist)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:257:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: PlayArtistIntent(), phrases: ["Play artist \(\.$artist) in \(.applicationName)", "\(.applicationName) play artist \(\.$artist)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:258:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: NextTrackIntent(), phrases: ["\(.applicationName) next", "Next track in \(.applicationName)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:259:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: PreviousTrackIntent(), phrases: ["\(.applicationName) previous", "Previous track in \(.applicationName)"])
+        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:260:9: warning: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+        AppShortcut(intent: FavoriteCurrentIntent(), phrases: ["Favorite this song in \(.applicationName)", "\(.applicationName) favorite current"])
+        ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:35:41: Conditional downcast from 'PlayerFacadeImpl?' to 'PlayerFacadeImpl' does nothing
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:252:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:253:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:254:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:255:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:256:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:257:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:258:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:259:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/Verodrome/Intents/VerodromeIntents.swift:260:9: 'init(intent:phrases:shortTitle:systemImageName:)' was deprecated in iOS 17.0: Please provide a shortTitle and systemImageName
+
+
+Build target VerodromeKit of project Verodrome with configuration Debug
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ VerodromeKit (in target 'VerodromeKit' from project 'Verodrome')
+
+EmitSwiftModule normal arm64 (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:336:50: warning: main actor-isolated static property 'nextKeepCount' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        lookAhead: Int = QueueCachePolicyManager.nextKeepCount,
+                                                 ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift:6:23: note: static property declared here
+    public static let nextKeepCount = UserSettings.defaultSongsAhead
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:621:17: warning: capture of 'step' with non-Sendable type 'StepBox' in a '@Sendable' closure
+                step.value += 1
+                ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:616:21: note: class 'StepBox' does not conform to the 'Sendable' protocol
+        final class StepBox { var value = 0 }
+                    ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift:22:36: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        monitor: NetworkMonitor = .shared,
+                                   ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/NetworkMonitor.swift:7:23: note: static property declared here
+    public static let shared = NetworkMonitor()
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:6:16: warning: stored property 'duplicates' of 'Sendable'-conforming generic struct 'DuplicateGroup' contains non-Sendable type 'T'; this is an error in the Swift 6 language mode
+    public let duplicates: [T]
+               ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:4:30: note: consider making generic parameter 'T' conform to the 'Sendable' protocol
+public struct DuplicateGroup<T: PersistentModel>: Sendable {
+                             ^
+                                                & Sendable
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:4:16: warning: stored property 'item' of 'Sendable'-conforming generic struct 'FuzzySearchResult' has non-Sendable type 'Item'; this is an error in the Swift 6 language mode
+    public let item: Item
+               ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:3:33: note: consider making generic parameter 'Item' conform to the 'Sendable' protocol
+public struct FuzzySearchResult<Item>: Sendable {
+                                ^
+                                    : Sendable
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift:22:36: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        monitor: NetworkMonitor = .shared,
+                                   ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/NetworkMonitor.swift:7:23: note: static property declared here
+    public static let shared = NetworkMonitor()
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift:64:61: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+    public func activeManager(accountStore: AccountStore = .shared) -> MetaManager? {
+                                                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/AccountStore.swift:16:23: note: static property declared here
+    public static let shared = AccountStore()
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+    public init(store: SettingsStore = .shared, accountKey: AccountInfo.Key? = nil) {
+                                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/SettingsStore.swift:7:23: note: static property declared here
+    public static let shared = SettingsStore()
+                      ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:336:50: Main actor-isolated static property 'nextKeepCount' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:621:17: Capture of 'step' with non-Sendable type 'StepBox' in a '@Sendable' closure
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift:22:36: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:6:16: Stored property 'duplicates' of 'Sendable'-conforming generic struct 'DuplicateGroup' contains non-Sendable type 'T'; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:4:16: Stored property 'item' of 'Sendable'-conforming generic struct 'FuzzySearchResult' has non-Sendable type 'Item'; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift:22:36: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift:64:61: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ SwiftDataLibraryIngester.swift,\ UIPerfDiagnostics.swift,\ UserSettings.swift,\ VerodromeKit.swift,\ VerodromeModel.swift,\ XmlParseError.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/SwiftDataLibraryIngester.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/UIPerfDiagnostics.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/UserSettings.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/VerodromeKit.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/VerodromeModel.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/Xml/XmlParseError.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/VerodromeKit.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+    public init(store: SettingsStore = .shared, accountKey: AccountInfo.Key? = nil) {
+                                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/SettingsStore.swift:7:23: note: static property declared here
+    public static let shared = SettingsStore()
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/VerodromeKit.swift:323:19: warning: value 'storage' was defined but never used; consider replacing with boolean test
+        guard let storage else { throw BackendError.unsupported }
+              ~~~~^
+                          != nil
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/VerodromeKit.swift:323:19: Value 'storage' was defined but never used; consider replacing with boolean test
+
+SwiftCompile normal arm64 Compiling\ ObservableSettings.swift,\ PerfTrace.swift,\ PersistentStorage.swift,\ ArtworkSwipeCommit.swift,\ PlayQueueHandler.swift,\ PlayTrace.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/PerfTrace.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/PersistentStorage.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/ArtworkSwipeCommit.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/PlayQueueHandler.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/PlayTrace.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+    public init(store: SettingsStore = .shared, accountKey: AccountInfo.Key? = nil) {
+                                        ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/SettingsStore.swift:7:23: note: static property declared here
+    public static let shared = SettingsStore()
+                      ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/ObservableSettings.swift:14:41: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ LibraryMutationSyncer.swift,\ LibraryPruner.swift,\ LibraryRepository+Ingest.swift,\ LibraryRepository.swift,\ LibrarySyncCoordinator.swift,\ LibrarySyncer.swift,\ LoginCredentials.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/LibraryPruner.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/LibraryRepository+Ingest.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/LibraryRepository.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Sync/LibrarySyncCoordinator.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/LibrarySyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/LoginCredentials.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift:22:36: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        monitor: NetworkMonitor = .shared,
+                                   ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/NetworkMonitor.swift:7:23: note: static property declared here
+    public static let shared = NetworkMonitor()
+                      ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationSyncer.swift:22:36: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ PlaylistMembershipIndex.swift,\ ProgressDownloadSession.swift,\ QueryController.swift,\ QueueCachePolicyManager.swift,\ RandomSongProviding.swift,\ RemoteCommandCenterHandler.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/PlaylistMembershipIndex.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/ProgressDownloadSession.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/ResultController/QueryController.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/RandomSongProviding.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/RemoteCommandCenterHandler.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift:382:32: warning: no calls to throwing functions occur within 'try' expression
+              let repository = try? VerodromeKit.shared.repository(),
+                               ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift:382:32: No calls to throwing functions occur within 'try' expression
+
+SwiftCompile normal arm64 Compiling\ FilePlayerQueueStore.swift,\ FuzzySearcher.swift,\ GenericXmlParser.swift,\ LibraryActions.swift,\ LibraryIngesting.swift,\ LibraryModels.swift,\ LibraryMutationOutbox.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/FilePlayerQueueStore.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/Xml/GenericXmlParser.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryActions.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/LibraryIngesting.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryModels.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/LibraryMutationOutbox.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:4:16: warning: stored property 'item' of 'Sendable'-conforming generic struct 'FuzzySearchResult' has non-Sendable type 'Item'; this is an error in the Swift 6 language mode
+    public let item: Item
+               ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:3:33: note: consider making generic parameter 'Item' conform to the 'Sendable' protocol
+public struct FuzzySearchResult<Item>: Sendable {
+                                ^
+                                    : Sendable
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/FuzzySearcher.swift:4:16: Stored property 'item' of 'Sendable'-conforming generic struct 'FuzzySearchResult' has non-Sendable type 'Item'; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ LyricsCache.swift,\ CommonLibrarySyncer.swift,\ CryptoHelpers.swift,\ DeepLinkRouter.swift,\ DownloadCenter.swift,\ DownloadManager.swift,\ DownloadNetworkPolicy.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/LyricsCache.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/CommonLibrarySyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/CryptoHelpers.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/DeepLinkRouter.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadCenter.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift:22:36: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        monitor: NetworkMonitor = .shared,
+                                   ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/NetworkMonitor.swift:7:23: note: static property declared here
+    public static let shared = NetworkMonitor()
+                      ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadNetworkPolicy.swift:22:36: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ LyricsParser.swift,\ MetaManager.swift,\ Models.swift,\ NavidromeNativeApi.swift,\ NetworkMonitor.swift,\ Notifications.swift,\ NowPlayingInfoCenterHandler.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/LyricsParser.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/Models.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/Navidrome/NavidromeNativeApi.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/NetworkMonitor.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/Notifications.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/NowPlayingInfoCenterHandler.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift:64:61: warning: main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+    public func activeManager(accountStore: AccountStore = .shared) -> MetaManager? {
+                                                            ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/AccountStore.swift:16:23: note: static property declared here
+    public static let shared = AccountStore()
+                      ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Account/MetaManager.swift:64:61: Main actor-isolated static property 'shared' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+SwiftCompile normal arm64 Compiling\ ApiModels.swift,\ ApiType.swift,\ AppSettings.swift,\ ArtworkDownloadManager.swift,\ AudioPlayer.swift,\ AudioSessionHandler.swift,\ AutoDownloadSyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/ApiModels.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/ApiType.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Settings/AppSettings.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/ArtworkDownloadManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Sync/AutoDownloadSyncer.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:336:50: warning: main actor-isolated static property 'nextKeepCount' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+        lookAhead: Int = QueueCachePolicyManager.nextKeepCount,
+                                                 ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/QueueCachePolicyManager.swift:6:23: note: static property declared here
+    public static let nextKeepCount = UserSettings.defaultSongsAhead
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:588:32: warning: no calls to throwing functions occur within 'try' expression
+              let repository = try? VerodromeKit.shared.repository(),
+                               ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:336:50: Main actor-isolated static property 'nextKeepCount' can not be referenced from a nonisolated context; this is an error in the Swift 6 language mode
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioPlayer.swift:588:32: No calls to throwing functions occur within 'try' expression
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:20:23: warning: main actor-isolated property 'onInterrupt' can not be referenced from a Sendable closure
+                self?.onInterrupt?(true)
+                      ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:7:16: note: property declared here
+    public var onInterrupt: ((Bool) -> Void)?
+               ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:23:69: warning: main actor-isolated property 'onInterrupt' can not be referenced from a Sendable closure
+                if options?.contains(.shouldResume) == true { self?.onInterrupt?(false) }
+                                                                    ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:7:16: note: property declared here
+    public var onInterrupt: ((Bool) -> Void)?
+               ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:20:23: Main actor-isolated property 'onInterrupt' can not be referenced from a Sendable closure
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/AudioSessionHandler.swift:23:69: Main actor-isolated property 'onInterrupt' can not be referenced from a Sendable closure
+
+SwiftCompile normal arm64 Compiling\ BackendApi.swift,\ BackendApiType.swift,\ BackendAudioPlayer.swift,\ BackendProxy.swift,\ BackgroundFetchSyncer.swift,\ BackgroundLibrarySyncer.swift,\ CacheFileManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/BackendApi.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/BackendApiType.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Api/BackendProxy.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Sync/BackgroundFetchSyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Sync/BackgroundLibrarySyncer.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/CacheFileManager.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:621:17: warning: capture of 'step' with non-Sendable type 'StepBox' in a '@Sendable' closure
+                step.value += 1
+                ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:616:21: note: class 'StepBox' does not conform to the 'Sendable' protocol
+        final class StepBox { var value = 0 }
+                    ^
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Player/BackendAudioPlayer.swift:621:17: Capture of 'step' with non-Sendable type 'StepBox' in a '@Sendable' closure
+
+SwiftCompile normal arm64 Compiling\ DownloadProtocols.swift,\ DownloadRequestManager.swift,\ DownloadedShuffleSession.swift,\ DuplicateMaintenance.swift,\ DuplicateResolver.swift,\ EmbeddedTagExtractor.swift,\ EventLogger.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Download/DownloadProtocols.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Library/DownloadedShuffleSession.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateMaintenance.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/EmbeddedTagExtractor.swift /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Common/EventLogger.swift (in target 'VerodromeKit' from project 'Verodrome')
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift:63:13: warning: variable 'descriptor' was never mutated; consider changing to 'let' constant
+        var descriptor = FetchDescriptor<DownloadRecord>(
+        ~~~ ^
+        let
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift:75:13: warning: variable 'descriptor' was never mutated; consider changing to 'let' constant
+        var descriptor = FetchDescriptor<DownloadRecord>(
+        ~~~ ^
+        let
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift:63:13: Variable 'descriptor' was never mutated; consider changing to 'let' constant
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DownloadRequestManager.swift:75:13: Variable 'descriptor' was never mutated; consider changing to 'let' constant
+
+SwiftCompile normal arm64 /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift (in target 'VerodromeKit' from project 'Verodrome')
+    cd /Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome
+    
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:6:16: warning: stored property 'duplicates' of 'Sendable'-conforming generic struct 'DuplicateGroup' contains non-Sendable type 'T'; this is an error in the Swift 6 language mode
+    public let duplicates: [T]
+               ^
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:4:30: note: consider making generic parameter 'T' conform to the 'Sendable' protocol
+public struct DuplicateGroup<T: PersistentModel>: Sendable {
+                             ^
+                                                & Sendable
+
+/Users/vero/Shared/M4-Macbook-Alto/Projects/Verodrome/VerodromeKit/Storage/DuplicateResolver.swift:6:16: Stored property 'duplicates' of 'Sendable'-conforming generic struct 'DuplicateGroup' contains non-Sendable type 'T'; this is an error in the Swift 6 language mode
+
+
+
+Build succeeded    8/18/26, 11:38 AM    13.0 seconds

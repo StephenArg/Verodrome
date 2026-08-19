@@ -187,6 +187,26 @@ final class PlayerViewModel: ObservableObject {
             self.repeatMode = impl.repeatMode
             self.shuffleMode = impl.shuffleMode
         }.store(in: &cancellables)
+        impl.$queueGeneration.receive(on: DispatchQueue.main).sink { [weak self] _ in
+            guard let self else { return }
+            self.syncQueue()
+            self.shuffleMode = impl.shuffleMode
+            if self.queue.indices.contains(self.currentIndex) {
+                let item = self.queue[self.currentIndex]
+                self.currentItem = item
+                self.nowPlaying.currentItem = item
+            }
+        }.store(in: &cancellables)
+        impl.$reportedRepeatMode.receive(on: DispatchQueue.main).sink { [weak self] mode in
+            guard let self else { return }
+            self.repeatMode = mode
+            self.queueList.apply(
+                queue: self.queue,
+                currentIndex: self.currentIndex,
+                origin: self.queueOrigin,
+                repeatMode: mode
+            )
+        }.store(in: &cancellables)
         impl.$currentTime.receive(on: DispatchQueue.main).sink { [weak self] time in
             guard let self else { return }
             // Avoid redundant publishes that thrash SwiftUI (slider/tab gestures).
@@ -490,6 +510,9 @@ final class PlayerViewModel: ObservableObject {
         queueArrivedShuffled = true
     }
 
+    /// Album and playlist queues can shuffle back to their original order.
+    var canShuffleQueue: Bool { queueOrigin?.supportsShuffle == true }
+
     /// Any non-empty queue can be rearranged. An ordered album / playlist is not sacred —
     /// playing it again rebuilds the queue from the source.
     var isQueueReorderable: Bool { !queue.isEmpty }
@@ -550,12 +573,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func toggleRepeat() {
-        switch repeatMode {
-        case .off: repeatMode = .all
-        case .all: repeatMode = .one
-        case .one: repeatMode = .off
-        }
-        facade?.setRepeatMode(repeatMode)
+        facade?.toggleRepeat()
+        repeatMode = facade?.repeatMode ?? repeatMode
         queueList.apply(
             queue: queue,
             currentIndex: currentIndex,
@@ -565,6 +584,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func toggleShuffle() {
+        guard canShuffleQueue else { return }
         facade?.toggleShuffle()
         shuffleMode = facade?.shuffleMode ?? shuffleMode
         syncQueue()
