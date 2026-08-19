@@ -31,7 +31,6 @@ enum CarPlayLog {
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private weak var interfaceController: CPInterfaceController?
     private let catalog = CarPlayCatalog()
-    private lazy var searchController = CarPlaySearchController(catalog: catalog)
     private var cancellables = Set<AnyCancellable>()
     private var tabBar: CPTabBarTemplate?
     private var homeTab: CPListTemplate?
@@ -44,6 +43,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// Recents are recorded immediately, but Home is only redrawn when it is on screen
     /// so an in-place section update cannot pop Now Playing.
     private var pendingHomeRefresh = false
+    /// Shuffle / repeat selected state is reported via `MPRemoteCommandCenter`, not by
+    /// replacing the buttons. Rebuilding the row on every tap is the blink.
+    private var nowPlayingButtonLayout: NowPlayingButtonLayout?
 
     /// Audio apps may stack at most 5 templates; pushing past that is rejected.
     private static let templateDepthLimit = 5
@@ -124,11 +126,14 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             self?.showSearchTab()
         }
         catalog.onSearchQuery = { [weak self] query in
-            self?.pushSearchResults(query)
+            Task { @MainActor in
+                await self?.showSearchResults(query)
+            }
         }
         catalog.onOpenNowPlaying = { [weak self] in
             self?.presentNowPlaying()
         }
+        CarPlayConnection.isActive = true
         configureNowPlaying()
         installRootIfNeeded(interfaceController)
 
@@ -145,13 +150,23 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             observePlayer()
             refreshNowPlayingButtons()
             VerodromeKit.shared.player?.syncPublishedState()
-            presentNowPlayingIfAudioIsPlaying()
-            await refreshHomeTab()
+            resumePausedQueueOnConnect()
+            presentNowPlayingIfQueueActive()
+            if let homeTab, let recentsTab, !isNowPlayingInStack {
+                homeTab.updateSections(catalog.makeHomeSectionsFromCache())
+                recentsTab.updateSections(catalog.recentsSections())
+            }
+            CarPlayArtworkWarmer.shared.start(catalog: catalog) { [weak self] in
+                await self?.refreshHomeTab()
+            }
         }
     }
 
     private func handleDisconnect() {
         CarPlayLog.notice("scene disconnected")
+        CarPlayConnection.isActive = false
+        VerodromeKit.shared.player?.endIntervalHold()
+        CarPlayArtworkWarmer.shared.stop()
         CPNowPlayingTemplate.shared.remove(self)
         interfaceController = nil
         catalog.interfaceController = nil
@@ -167,6 +182,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         isConnected = false
         isPresentingNowPlaying = false
         pendingHomeRefresh = false
+        nowPlayingButtonLayout = nil
         cancellables.removeAll()
     }
 
@@ -250,16 +266,18 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         cancellables.removeAll()
         if let player = VerodromeKit.shared.player {
             player.$currentItem
+                .map { item in (item?.playableId, item?.kind == .song) }
+                .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.refreshNowPlayingButtons()
+                    self?.catalog.refreshQueueIfPresented()
                 }
                 .store(in: &cancellables)
             player.$queueGeneration
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
-                    self?.refreshNowPlayingButtons()
                     self?.catalog.refreshQueueIfPresented()
                 }
                 .store(in: &cancellables)
@@ -285,20 +303,27 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     private func refreshNowPlayingButtons() {
+        let layout = NowPlayingButtonLayout(
+            showPlaylist: isCurrentItemSong,
+            inPlaylist: isCurrentSongInAnyPlaylist,
+            showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true
+        )
+        guard layout != nowPlayingButtonLayout else { return }
+        nowPlayingButtonLayout = layout
+
         var buttons: [CPNowPlayingButton] = []
-        if isCurrentItemSong {
-            let inPlaylist = isCurrentSongInAnyPlaylist
+        if layout.showPlaylist {
             let add = CPNowPlayingImageButton(
-                image: CarPlayArtwork.nowPlayingPlaylistSymbol(isInPlaylist: inPlaylist)
+                image: CarPlayArtwork.nowPlayingPlaylistSymbol(isInPlaylist: layout.inPlaylist)
             ) { [weak self] _ in
                 self?.catalog.pushPlaylistMembership()
             }
-            add.isSelected = inPlaylist
             buttons.append(add)
         }
-        if VerodromeKit.shared.player?.canShuffleQueue == true {
+        if layout.showShuffle {
             // Handler (not the no-arg initializer): CarPlay does not reliably send
-            // `changeShuffleModeCommand` for third-party audio apps.
+            // `changeShuffleModeCommand` for third-party audio apps. Selected state
+            // still comes from `currentShuffleType` — do not rebuild this row on tap.
             buttons.append(CPNowPlayingShuffleButton { [weak self] _ in
                 VerodromeKit.shared.player?.toggleShuffle()
                 self?.catalog.refreshQueueIfPresented()
@@ -306,9 +331,14 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         buttons.append(CPNowPlayingRepeatButton { [weak self] _ in
             VerodromeKit.shared.player?.toggleRepeat()
-            self?.refreshNowPlayingButtons()
         })
         CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
+    }
+
+    private struct NowPlayingButtonLayout: Equatable {
+        var showPlaylist: Bool
+        var inPlaylist: Bool
+        var showShuffle: Bool
     }
 
     private var isCurrentItemSong: Bool {
@@ -329,20 +359,36 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     /// iOS 26 audio CarPlay rejects `CPSearchTemplate` on `pushTemplate` (crash).
-    /// Results go in a list, which is allowed.
-    private func pushSearchResults(_ query: String) {
+    /// A recent term opens a pushed Artists / Albums / Songs list instead.
+    private func showSearchResults(_ query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             showSearchTab()
             return
         }
-        CarPlayLog.notice("pushSearchResults(\(trimmed))")
-        catalog.pushList(title: trimmed, items: catalog.songSearchItems(query: trimmed))
+        CarPlayLog.notice("showSearchResults(\(trimmed))")
+        await catalog.pushSearchResults(query: trimmed)
     }
 
     /// When CarPlay connects while Verodrome is already playing, land on Now Playing
     /// instead of Home. The system may also launch this scene for the Now Playing
     /// widget; the shared template must already be configured (see `configureNowPlaying`).
+    private func resumePausedQueueOnConnect() {
+        guard let player = VerodromeKit.shared.player else { return }
+        guard player.resumeIfPausedWithQueue() else { return }
+        CarPlayLog.notice("paused queue on connect — resuming")
+    }
+
+    private func presentNowPlayingIfQueueActive() {
+        let player = VerodromeKit.shared.player
+        guard player.map({ !$0.queue.isEmpty && $0.currentItem != nil }) == true else {
+            presentNowPlayingIfAudioIsPlaying()
+            return
+        }
+        CarPlayLog.notice("active queue on connect — presenting Now Playing")
+        presentNowPlaying()
+    }
+
     private func presentNowPlayingIfAudioIsPlaying() {
         let player = VerodromeKit.shared.player
         let infoPlaying = MPNowPlayingInfoCenter.default().playbackState == .playing

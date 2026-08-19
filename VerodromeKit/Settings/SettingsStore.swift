@@ -39,6 +39,9 @@ public final class SettingsStore: ObservableObject {
     /// Skip buttons jump by `miniSkipInterval` instead of changing tracks.
     @Published public var miniSkipEnabled: Bool = true
     @Published public var miniSkipInterval: MiniSkipInterval = .default
+    /// CarPlay Next/Previous hold: interval jumps instead of 2× / 0.5×.
+    @Published public var carPlayMiniSkipEnabled: Bool = false
+    @Published public var carPlayMiniSkipInterval: MiniSkipInterval = .default
     @Published public var streamingQualityWifi: AudioTranscodeQuality = .original
     @Published public var streamingQualityCellular: AudioTranscodeQuality = .original
     @Published public var downloadTranscodeQuality: AudioTranscodeQuality = .original
@@ -80,6 +83,8 @@ public final class SettingsStore: ObservableObject {
         var showSongInfo: Bool
         var miniSkipEnabled: Bool
         var miniSkipInterval: MiniSkipInterval
+        var carPlayMiniSkipEnabled: Bool
+        var carPlayMiniSkipInterval: MiniSkipInterval
         var streamingQualityWifi: AudioTranscodeQuality
         var streamingQualityCellular: AudioTranscodeQuality
         var downloadTranscodeQuality: AudioTranscodeQuality
@@ -119,6 +124,8 @@ public final class SettingsStore: ObservableObject {
             showSongInfo: Bool,
             miniSkipEnabled: Bool,
             miniSkipInterval: MiniSkipInterval,
+            carPlayMiniSkipEnabled: Bool,
+            carPlayMiniSkipInterval: MiniSkipInterval,
             streamingQualityWifi: AudioTranscodeQuality,
             streamingQualityCellular: AudioTranscodeQuality,
             downloadTranscodeQuality: AudioTranscodeQuality,
@@ -157,6 +164,8 @@ public final class SettingsStore: ObservableObject {
             self.showSongInfo = showSongInfo
             self.miniSkipEnabled = miniSkipEnabled
             self.miniSkipInterval = miniSkipInterval
+            self.carPlayMiniSkipEnabled = carPlayMiniSkipEnabled
+            self.carPlayMiniSkipInterval = carPlayMiniSkipInterval
             self.streamingQualityWifi = streamingQualityWifi
             self.streamingQualityCellular = streamingQualityCellular
             self.downloadTranscodeQuality = downloadTranscodeQuality
@@ -197,6 +206,8 @@ public final class SettingsStore: ObservableObject {
             case showSongInfo
             case miniSkipEnabled
             case miniSkipInterval
+            case carPlayMiniSkipEnabled
+            case carPlayMiniSkipInterval
             case streamingQualityWifi
             case streamingQualityCellular
             case downloadTranscodeQuality
@@ -239,6 +250,9 @@ public final class SettingsStore: ObservableObject {
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
             miniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .miniSkipEnabled) ?? true
             miniSkipInterval = try c.decodeIfPresent(MiniSkipInterval.self, forKey: .miniSkipInterval) ?? .default
+            carPlayMiniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .carPlayMiniSkipEnabled) ?? false
+            carPlayMiniSkipInterval = try c.decodeIfPresent(MiniSkipInterval.self, forKey: .carPlayMiniSkipInterval)
+                ?? miniSkipInterval
             let legacyFormat = try c.decodeIfPresent(StreamFormatPreference.self, forKey: .streamFormat)
             let migrated = legacyFormat?.asTranscodeQuality ?? .original
             streamingQualityWifi = try c.decodeIfPresent(AudioTranscodeQuality.self, forKey: .streamingQualityWifi) ?? migrated
@@ -294,6 +308,8 @@ public final class SettingsStore: ObservableObject {
             try c.encode(showSongInfo, forKey: .showSongInfo)
             try c.encode(miniSkipEnabled, forKey: .miniSkipEnabled)
             try c.encode(miniSkipInterval, forKey: .miniSkipInterval)
+            try c.encode(carPlayMiniSkipEnabled, forKey: .carPlayMiniSkipEnabled)
+            try c.encode(carPlayMiniSkipInterval, forKey: .carPlayMiniSkipInterval)
             try c.encode(streamingQualityWifi, forKey: .streamingQualityWifi)
             try c.encode(streamingQualityCellular, forKey: .streamingQualityCellular)
             try c.encode(downloadTranscodeQuality, forKey: .downloadTranscodeQuality)
@@ -355,6 +371,8 @@ public final class SettingsStore: ObservableObject {
             showSongInfo: showSongInfo,
             miniSkipEnabled: miniSkipEnabled,
             miniSkipInterval: miniSkipInterval,
+            carPlayMiniSkipEnabled: carPlayMiniSkipEnabled,
+            carPlayMiniSkipInterval: carPlayMiniSkipInterval,
             streamingQualityWifi: streamingQualityWifi,
             streamingQualityCellular: streamingQualityCellular,
             downloadTranscodeQuality: downloadTranscodeQuality,
@@ -489,6 +507,8 @@ public final class SettingsStore: ObservableObject {
             showSongInfo = snapshot.showSongInfo
             miniSkipEnabled = snapshot.miniSkipEnabled
             miniSkipInterval = snapshot.miniSkipInterval
+            carPlayMiniSkipEnabled = snapshot.carPlayMiniSkipEnabled
+            carPlayMiniSkipInterval = snapshot.carPlayMiniSkipInterval
             streamingQualityWifi = snapshot.streamingQualityWifi
             streamingQualityCellular = snapshot.streamingQualityCellular
             downloadTranscodeQuality = snapshot.downloadTranscodeQuality

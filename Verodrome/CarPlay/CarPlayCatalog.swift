@@ -1,4 +1,5 @@
 import CarPlay
+import SwiftData
 import UIKit
 import VerodromeKit
 
@@ -24,49 +25,34 @@ final class CarPlayCatalog {
 
     // MARK: - Tabs
 
-    /// Same columns as the finished Home, with placeholder art so the tab never
-    /// flashes Library-style shortcut rows while covers load.
+    /// Same columns as the finished Home. Cached covers attach immediately; missing
+    /// tiles get a square placeholder so the tab never flashes Library-style rows.
     func makeHomeTemplateSync() -> CPListTemplate {
-        homeTemplate(sections: makeHomeSections { _, _ in CarPlayArtwork.tilePlaceholder() })
+        homeTemplate(sections: makeHomeSectionsFromCache())
     }
 
     func makeHomeTemplate() async -> CPListTemplate {
         homeTemplate(sections: await makeHomeSectionsLoaded())
     }
 
+    func makeHomeSectionsFromCache() -> [CPListSection] {
+        makeHomeSections { token, _ in
+            CarPlayArtwork.cachedOrPlaceholder(token: token, size: ArtworkPixelSize.grid)
+        }
+    }
+
     func makeHomeSectionsLoaded() async -> [CPListSection] {
         let recents = recentsHomeTiles()
-        var recentsArt: [UIImage] = []
-        recentsArt.reserveCapacity(recents.count)
-        for tile in recents {
-            recentsArt.append(
-                await CarPlayArtwork.loadOrPlaceholder(
-                    token: tile.artworkToken,
-                    kind: tile.artworkKind,
-                    size: 450
-                )
-            )
-        }
         let added = Array(newestAlbums().prefix(homeStripCap))
-        var addedArt: [UIImage] = []
-        addedArt.reserveCapacity(added.count)
-        for album in added {
-            addedArt.append(
-                await CarPlayArtwork.loadOrPlaceholder(token: album.artworkToken, kind: .album, size: 450)
-            )
-        }
         let playlists = homePlaylists()
-        var playlistArt: [UIImage] = []
-        playlistArt.reserveCapacity(playlists.count)
-        for playlist in playlists {
-            playlistArt.append(
-                await CarPlayArtwork.loadOrPlaceholder(
-                    token: playlist.displayArtworkToken,
-                    kind: .playlist,
-                    size: 450
-                )
-            )
-        }
+        var requests: [(token: String?, kind: ArtworkKind)] = []
+        requests.append(contentsOf: recents.map { ($0.artworkToken, $0.artworkKind) })
+        requests.append(contentsOf: added.map { ($0.artworkToken, .album) })
+        requests.append(contentsOf: playlists.map { ($0.displayArtworkToken, .playlist) })
+        let images = await CarPlayArtwork.loadCovers(requests, size: ArtworkPixelSize.grid)
+        let recentsArt = Array(images.prefix(recents.count))
+        let addedArt = Array(images.dropFirst(recents.count).prefix(added.count))
+        let playlistArt = Array(images.dropFirst(recents.count + added.count))
         return makeHomeSections(
             recents: recents,
             recentsArt: recentsArt,
@@ -75,6 +61,31 @@ final class CarPlayCatalog {
             playlists: playlists,
             playlistArt: playlistArt
         )
+    }
+
+    /// Home tiles at grid size, Recents rows at thumbnail — the windows CarPlay shows.
+    func artworkWarmRequests() -> [CarPlayArtworkRequest] {
+        var seen = Set<String>()
+        var requests: [CarPlayArtworkRequest] = []
+        func add(_ token: String?, kind: ArtworkKind, size: Int) {
+            guard let token, !token.isEmpty else { return }
+            let key = "\(token)|s\(size)"
+            guard seen.insert(key).inserted else { return }
+            requests.append(CarPlayArtworkRequest(token: token, kind: kind, size: size))
+        }
+        for tile in recentsHomeTiles() {
+            add(tile.artworkToken, kind: tile.artworkKind, size: ArtworkPixelSize.grid)
+        }
+        for album in newestAlbums().prefix(homeStripCap) {
+            add(album.artworkToken, kind: .album, size: ArtworkPixelSize.grid)
+        }
+        for playlist in homePlaylists() {
+            add(playlist.displayArtworkToken, kind: .playlist, size: ArtworkPixelSize.grid)
+        }
+        for recent in resolvedRecents() {
+            add(recent.artworkToken, kind: recent.artworkKind, size: ArtworkPixelSize.thumbnail)
+        }
+        return requests
     }
 
     /// Tab roots take no page title and no Now Playing button: the tab strip replaces
@@ -170,35 +181,38 @@ final class CarPlayCatalog {
     }
 
     /// List tab (allowed in the tab bar). iOS 26 audio CarPlay cannot push
-    /// `CPSearchTemplate`, so recent terms open a results list instead.
+    /// `CPSearchTemplate`, so recent terms push a results list instead.
     /// Do not set `assistantCellConfiguration`: CarPlay then requires
     /// `INPlayMediaIntent` (`audio.playAudio`) and kills the app if it's missing.
     func makeSearchTabTemplate() -> CPListTemplate {
-        var items: [CPListItem] = []
-        let recents = (UserDefaults.standard.array(forKey: "search.recentTerms") as? [String]) ?? []
-        for term in recents.prefix(8) {
-            let item = CPListItem(
-                text: term,
-                detailText: "Recent search",
-                image: CarPlayArtwork.symbol("clock")
-            )
-            item.handler = { [weak self] _, completion in
-                // Finish the row selection before pushing. Pushing from inside the
-                // handler crashes CarPlay on iOS 26.
-                completion()
-                DispatchQueue.main.async {
-                    self?.onSearchQuery?(term)
-                }
-            }
-            items.append(item)
-        }
-
-        let template = CPListTemplate(title: nil, sections: [CPListSection(items: items)])
+        let template = CPListTemplate(title: nil, sections: searchRecentsSections())
         template.tabTitle = "Search"
         template.tabImage = CarPlayArtwork.symbol("magnifyingglass")
         template.emptyViewTitleVariants = ["Search"]
         template.emptyViewSubtitleVariants = ["Recent searches appear here"]
         return template
+    }
+
+    private func searchRecentsSections() -> [CPListSection] {
+        let recents = (UserDefaults.standard.array(forKey: "search.recentTerms") as? [String]) ?? []
+        var items: [CPListItem] = []
+        for term in recents.prefix(8) {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let item = CPListItem(
+                text: Self.truncated(trimmed, limit: 40) ?? trimmed,
+                detailText: "Recent search",
+                image: CarPlayArtwork.libraryRowIcon("clock")
+            )
+            item.handler = { [weak self] _, completion in
+                completion()
+                Task { @MainActor in
+                    self?.onSearchQuery?(trimmed)
+                }
+            }
+            items.append(item)
+        }
+        return [CPListSection(items: items)]
     }
 
     func makeLibraryTemplate() -> CPListTemplate {
@@ -213,17 +227,19 @@ final class CarPlayCatalog {
         let search = CPListItem(
             text: "Search",
             detailText: "Songs, albums, artists, playlists",
-            image: CarPlayArtwork.symbol("magnifyingglass")
+            image: CarPlayArtwork.libraryRowIcon("magnifyingglass")
         )
         search.handler = { [weak self] _, completion in
-            self?.onOpenSearch?()
             completion()
+            Task { @MainActor in
+                self?.onOpenSearch?()
+            }
         }
         let items: [CPListItem] = [search, makeShuffleAllItem()] + categories.map { category, title in
             let item = CPListItem(
                 text: title,
                 detailText: nil,
-                image: CarPlayArtwork.symbol(category.systemImage)
+                image: CarPlayArtwork.libraryCategoryIcon(category)
             )
             item.handler = { [weak self] _, completion in
                 Task { @MainActor in
@@ -259,7 +275,7 @@ final class CarPlayCatalog {
         let shuffle = CPListItem(
             text: "Shuffle All",
             detailText: "Play the library",
-            image: CarPlayArtwork.symbol("shuffle")
+            image: CarPlayArtwork.libraryRowIcon("shuffle")
         )
         shuffle.handler = { [weak self] _, completion in
             Task { @MainActor in
@@ -473,7 +489,7 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { item.setImage(await CarPlayArtwork.load(token: token, kind: .playlist)) }
+            applyListArtwork(item, token: token, kind: .playlist)
             return item
         }
         pushList(title: "Playlists", items: Array(items))
@@ -504,7 +520,7 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { item.setImage(await CarPlayArtwork.load(token: token, kind: .artist)) }
+            applyListArtwork(item, token: token, kind: .artist)
             return item
         }
         pushList(title: "Artists", items: Array(items))
@@ -545,19 +561,14 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { item.setImage(await CarPlayArtwork.load(token: token, kind: .podcast)) }
+            applyListArtwork(item, token: token, kind: .podcast)
             return item
         }
         pushList(title: "Podcasts", items: Array(items))
     }
 
     func pushQueue() {
-        let items = makeQueueItems()
-        let template = listTemplate(
-            title: "Queue",
-            items: items.isEmpty ? [emptyItem()] : items,
-            showsNowPlayingButton: false
-        )
+        let template = CPListTemplate(title: "Queue", sections: makeQueueSections())
         queueTemplate = template
         guard let interfaceController else {
             CarPlayLog.error("pushList(Queue) dropped: no interface controller")
@@ -577,8 +588,7 @@ final class CarPlayCatalog {
               let interfaceController,
               interfaceController.templates.contains(where: { $0 === queueTemplate })
         else { return }
-        let items = makeQueueItems()
-        queueTemplate.updateSections([CPListSection(items: items.isEmpty ? [emptyItem()] : items)])
+        queueTemplate.updateSections(makeQueueSections())
     }
 
     /// Non-smart playlists for the playing song. Membership is the trailing circle.
@@ -691,12 +701,46 @@ final class CarPlayCatalog {
         }
     }
 
+    private func makeQueueSections() -> [CPListSection] {
+        let items = makeQueueItems()
+        guard !items.isEmpty else {
+            return [CPListSection(items: [emptyItem()])]
+        }
+        let current = Array(items.prefix(1))
+        let upcoming = Array(items.dropFirst())
+        var sections = [
+            CPListSection(items: current, header: "Now Playing", sectionIndexTitle: nil)
+        ]
+        if !upcoming.isEmpty {
+            sections.append(CPListSection(items: upcoming, header: "Up Next", sectionIndexTitle: nil))
+        }
+        return sections
+    }
+
+    /// Current track first so it is on screen at the top. CarPlay has no scroll-to-row
+    /// API and no persistent tap-selection; `isPlaying` is the supported highlight.
     private func makeQueueItems() -> [CPListItem] {
         guard let player = VerodromeKit.shared.player, !player.queue.isEmpty else { return [] }
-        let current = player.currentIndex
-        return player.queue.prefix(itemCap).enumerated().map { index, queueItem in
+        let queue = player.queue
+        let start = max(0, min(player.currentIndex, queue.count - 1))
+        let take = min(itemCap, queue.count)
+        let progress: CGFloat? = {
+            guard player.duration > 0 else { return nil }
+            return CGFloat(min(max(player.currentTime / player.duration, 0), 1))
+        }()
+        return (0..<take).map { offset in
+            let index = (start + offset) % queue.count
+            let queueItem = queue[index]
             let item = CPListItem(text: queueItem.title, detailText: queueItem.artistName)
-            item.isPlaying = index == current
+            if offset == 0 {
+                item.isPlaying = true
+                item.playingIndicatorLocation = .trailing
+                if let progress {
+                    item.playbackProgress = progress
+                }
+            }
+            let kind: ArtworkKind = queueItem.kind == .podcastEpisode ? .podcast : .album
+            applyListArtwork(item, token: queueItem.artworkId, kind: kind)
             item.handler = { _, completion in
                 Task { @MainActor in
                     VerodromeKit.shared.player?.jump(to: index)
@@ -775,26 +819,164 @@ final class CarPlayCatalog {
         play(items, startAt: index, origin: seed.map { .song($0.title) })
     }
 
-    /// Songs matching `query`, capped at the list template limit. Titles and artist
-    /// names are copied off the models so the list does not fault SwiftData later.
-    func songSearchItems(query: String) -> [CPListItem] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.count >= 1, let account = catalogAccount() else { return [] }
-        let songs = (try? catalogRepository().searchSongs(account: account, query: query)) ?? []
-        let slice = Array(songs.prefix(CPListTemplate.maximumItemCount))
-        let queue = slice.map(QueueItem.from)
-        return slice.enumerated().map { index, song in
-            let title = song.title
-            let artist = song.artistName
-            let item = CPListItem(text: title, detailText: artist)
-            item.handler = { [weak self] _, completion in
-                completion()
-                Task { @MainActor in
-                    self?.play(queue, startAt: index, origin: .song(title))
-                }
-            }
-            return item
+    /// Artists, albums, and songs matching `query`. Snapshot is taken on the
+    /// background actor so the CarPlay main actor never holds live SwiftData
+    /// models, and matching uses the same `localizedCaseInsensitiveContains`
+    /// rules as the phone Search screen.
+    func pushSearchResults(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let snapshot = await fetchSearchSnapshot(query: trimmed)
+        let sections = makeSearchResultSections(snapshot)
+        let template = withNowPlayingButton(CPListTemplate(title: trimmed, sections: sections))
+        guard let interfaceController else {
+            CarPlayLog.error("pushSearchResults(\(trimmed)) dropped: no interface controller")
+            return
         }
+        let depth = interfaceController.templates.count
+        interfaceController.pushTemplate(template, animated: true) { success, error in
+            guard !success else { return }
+            CarPlayLog.error(
+                "pushSearchResults(\(trimmed)) failed at depth \(depth): \(error?.localizedDescription ?? "unknown error")"
+            )
+        }
+    }
+
+    private func fetchSearchSnapshot(query: String) async -> CarPlaySearchSnapshot {
+        guard let accountID = catalogAccount()?.persistentModelID else {
+            return CarPlaySearchSnapshot(artists: [], albums: [], songs: [])
+        }
+        let cap = itemCap
+        let artistCap = min(12, cap)
+        let albumCap = min(20, cap)
+        do {
+            return try await PersistentStorage.shared.backgroundActor.perform { context in
+                let artists = try context.fetch(FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.name)]))
+                    .filter {
+                        $0.account?.persistentModelID == accountID
+                            && $0.name.localizedCaseInsensitiveContains(query)
+                    }
+                    .prefix(artistCap)
+                    .map {
+                        CarPlaySearchHit(
+                            compoundRemoteId: $0.compoundRemoteId,
+                            title: $0.name,
+                            subtitle: "Artist",
+                            artworkToken: $0.artworkToken
+                        )
+                    }
+
+                let remainingAfterArtists = max(0, cap - artists.count)
+                let albums = try context.fetch(FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.title)]))
+                    .filter {
+                        $0.account?.persistentModelID == accountID
+                            && ($0.title.localizedCaseInsensitiveContains(query)
+                                || $0.displayArtist.localizedCaseInsensitiveContains(query))
+                    }
+                    .prefix(min(albumCap, remainingAfterArtists))
+                    .map {
+                        CarPlaySearchHit(
+                            compoundRemoteId: $0.compoundRemoteId,
+                            title: $0.title,
+                            subtitle: $0.displayArtist,
+                            artworkToken: $0.artworkToken
+                        )
+                    }
+
+                let songCap = max(0, cap - artists.count - albums.count)
+                let songs = try context.fetch(FetchDescriptor<Song>(sortBy: [SortDescriptor(\Song.title)]))
+                    .filter {
+                        $0.account?.persistentModelID == accountID
+                            && ($0.title.localizedCaseInsensitiveContains(query)
+                                || $0.displayArtist.localizedCaseInsensitiveContains(query))
+                    }
+                    .prefix(songCap)
+                    .map { song in
+                        CarPlaySearchSongHit(
+                            title: song.title,
+                            subtitle: song.displayArtist,
+                            artworkToken: song.displayArtworkToken,
+                            queueItem: QueueItem(
+                                playableId: song.remoteId,
+                                kind: .song,
+                                title: song.title,
+                                artistName: song.artistName,
+                                albumName: song.albumTitle,
+                                duration: song.playDuration,
+                                artworkId: song.displayArtworkToken
+                            )
+                        )
+                    }
+
+                return CarPlaySearchSnapshot(
+                    artists: Array(artists),
+                    albums: Array(albums),
+                    songs: Array(songs)
+                )
+            }
+        } catch {
+            return CarPlaySearchSnapshot(artists: [], albums: [], songs: [])
+        }
+    }
+
+    private func makeSearchResultSections(_ snapshot: CarPlaySearchSnapshot) -> [CPListSection] {
+        var sections: [CPListSection] = []
+        if !snapshot.artists.isEmpty {
+            let items = snapshot.artists.map { hit in
+                searchResultItem(
+                    hit: hit,
+                    kind: .artist,
+                    play: { catalog in catalog.playArtist(compoundRemoteId: hit.compoundRemoteId) }
+                )
+            }
+            sections.append(CPListSection(items: items, header: "Artists", sectionIndexTitle: nil))
+        }
+        if !snapshot.albums.isEmpty {
+            let items = snapshot.albums.map { hit in
+                searchResultItem(
+                    hit: hit,
+                    kind: .album,
+                    play: { catalog in catalog.playAlbum(compoundRemoteId: hit.compoundRemoteId) }
+                )
+            }
+            sections.append(CPListSection(items: items, header: "Albums", sectionIndexTitle: nil))
+        }
+        if !snapshot.songs.isEmpty {
+            let queue = snapshot.songs.map(\.queueItem)
+            let items = snapshot.songs.enumerated().map { index, hit in
+                let item = CPListItem(text: hit.title, detailText: hit.subtitle)
+                item.handler = { [weak self] _, completion in
+                    completion()
+                    Task { @MainActor in
+                        self?.play(queue, startAt: index, origin: .song(hit.title))
+                    }
+                }
+                applyListArtwork(item, token: hit.artworkToken, kind: .album)
+                return item
+            }
+            sections.append(CPListSection(items: items, header: "Songs", sectionIndexTitle: nil))
+        }
+        if sections.isEmpty {
+            return [CPListSection(items: [emptyItem()])]
+        }
+        return sections
+    }
+
+    private func searchResultItem(
+        hit: CarPlaySearchHit,
+        kind: ArtworkKind,
+        play: @escaping (CarPlayCatalog) -> Void
+    ) -> CPListItem {
+        let item = CPListItem(text: hit.title, detailText: hit.subtitle)
+        item.handler = { [weak self] _, completion in
+            completion()
+            Task { @MainActor in
+                guard let self else { return }
+                play(self)
+            }
+        }
+        applyListArtwork(item, token: hit.artworkToken, kind: kind)
+        return item
     }
 
     func playPodcast(compoundRemoteId: String) {
@@ -882,7 +1064,7 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { row.setImage(await CarPlayArtwork.load(token: token, kind: item.artworkKind)) }
+            applyListArtwork(row, token: token, kind: item.artworkKind)
             return row
         }
     }
@@ -923,7 +1105,7 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { item.setImage(await CarPlayArtwork.load(token: token, kind: .album)) }
+            applyListArtwork(item, token: token, kind: .album)
             return item
         }
     }
@@ -945,8 +1127,21 @@ final class CarPlayCatalog {
                     completion()
                 }
             }
-            Task { item.setImage(await CarPlayArtwork.load(token: token, kind: .album)) }
+            applyListArtwork(item, token: token, kind: .album)
             return item
+        }
+    }
+
+    /// Always attach a square so rows without art keep the same leading inset
+    /// as rows with covers. A cache miss still shows the placeholder first.
+    private func applyListArtwork(_ item: CPListItem, token: String?, kind: ArtworkKind) {
+        item.setImage(CarPlayArtwork.cachedOrPlaceholder(token: token, size: ArtworkPixelSize.thumbnail))
+        guard CarPlayArtwork.cachedImage(token: token, size: ArtworkPixelSize.thumbnail) == nil,
+              let token, !token.isEmpty else { return }
+        Task {
+            if let image = await CarPlayArtwork.load(token: token, kind: kind) {
+                item.setImage(image)
+            }
         }
     }
 
@@ -1006,6 +1201,26 @@ final class CarPlayCatalog {
         item.handler = { _, completion in completion() }
         return item
     }
+}
+
+private struct CarPlaySearchHit: Sendable {
+    let compoundRemoteId: String
+    let title: String
+    let subtitle: String?
+    let artworkToken: String?
+}
+
+private struct CarPlaySearchSongHit: Sendable {
+    let title: String
+    let subtitle: String?
+    let artworkToken: String?
+    let queueItem: QueueItem
+}
+
+private struct CarPlaySearchSnapshot: Sendable {
+    let artists: [CarPlaySearchHit]
+    let albums: [CarPlaySearchHit]
+    let songs: [CarPlaySearchSongHit]
 }
 
 private struct ResolvedRecent {

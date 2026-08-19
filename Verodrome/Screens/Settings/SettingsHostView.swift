@@ -39,6 +39,12 @@ struct SettingsHostView: View {
                 }
             }
 
+            Section("CarPlay") {
+                NavigationLink { CarPlaySettingsView() } label: {
+                    settingsLabel("CarPlay", systemImage: "car")
+                }
+            }
+
             Section("Library") {
                 NavigationLink { LibrarySettingsView() } label: {
                     settingsLabel("Library", systemImage: "books.vertical")

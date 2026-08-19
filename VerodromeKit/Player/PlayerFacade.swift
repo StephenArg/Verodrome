@@ -93,6 +93,9 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     private static let positionPersistInterval: TimeInterval = 5
     private var lastPersistedPosition: TimeInterval = 0
     private var sleepTimer: Timer?
+    /// Repeats a mini-skip while CarPlay (or lock-screen) Next/Previous is held.
+    private var intervalHoldTask: Task<Void, Never>?
+    private static let intervalHoldPreviewNanoseconds: UInt64 = 1_050_000_000
 
     public init(audioPlayer: AudioPlayer) {
         self.audioPlayer = audioPlayer
@@ -263,7 +266,16 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         }
     }
 
+    /// CarPlay connect / car-audio plug-in: start the current track if a queue is sitting paused.
+    @discardableResult
+    public func resumeIfPausedWithQueue() -> Bool {
+        guard !queue.isEmpty, currentItem != nil, !isPlaying else { return false }
+        play()
+        return true
+    }
+
     public func pause() {
+        endIntervalHold()
         if isPlaying {
             audioPlayer.toggle()
             isPlaying = audioPlayer.backend.isPlaying
@@ -323,6 +335,34 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
 
     public func restoreFullVolume() {
         audioPlayer.backend.restoreFullVolume()
+    }
+
+    /// Hold skip: jump by `delta`, play a snippet, jump again until `endIntervalHold()`.
+    public func beginIntervalHold(_ delta: TimeInterval) {
+        guard currentItem?.isLiveStream != true else { return }
+        endIntervalHold()
+        if !isPlaying { play() }
+        intervalHoldTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.seekByIntervalWithRamp(delta)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.intervalHoldPreviewNanoseconds)
+                guard !Task.isCancelled else { break }
+                await self.seekByIntervalWithRamp(delta)
+            }
+        }
+    }
+
+    public func endIntervalHold() {
+        intervalHoldTask?.cancel()
+        intervalHoldTask = nil
+        restoreFullVolume()
+    }
+
+    private func seekByIntervalWithRamp(_ delta: TimeInterval) async {
+        guard currentItem?.isLiveStream != true else { return }
+        let target = MiniSkipSeek.target(current: currentTime, duration: duration, delta: delta)
+        await seekWithRamp(to: target)
     }
 
     /// Temporarily change engine rate (e.g. hold skip = 2× / hold previous = 0.5×).
@@ -449,7 +489,9 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public func toggleShuffle() {
         guard canShuffleQueue else { return }
         audioPlayer.queueHandler.toggleShuffle()
-        pushNowPlaying(reloadArtwork: false)
+        // Shuffle/repeat selected state is `currentShuffleType` / `currentRepeatType`.
+        // Rewriting now-playing info or replacing CarPlay buttons on each tap flashes them.
+        syncRemoteShuffleRepeat()
     }
     public func toggleRepeat() {
         setRepeatMode(repeatMode.next(allowsRepeatAll: canRepeatAll))
@@ -458,12 +500,12 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         let resolved = (mode == .all && !canRepeatAll) ? RepeatMode.one : mode
         audioPlayer.queueHandler.setRepeat(resolved)
         audioPlayer.applyRepeatMode(resolved)
-        pushNowPlaying(reloadArtwork: false)
+        syncRemoteShuffleRepeat()
     }
     public func setShuffleMode(_ mode: ShuffleMode) {
         guard canShuffleQueue else { return }
         audioPlayer.queueHandler.setShuffle(mode)
-        pushNowPlaying(reloadArtwork: false)
+        syncRemoteShuffleRepeat()
     }
 
     public func requestLyrics() { audioPlayer.requestLyrics() }

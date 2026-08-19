@@ -67,7 +67,7 @@ public enum FuzzySearcher {
                 matched += 1
                 if lastWasMatch { consecutiveBonus += 1 }
                 lastWasMatch = true
-                queryIndex = candidate.index(after: queryIndex)
+                queryIndex = query.index(after: queryIndex)
             } else {
                 lastWasMatch = false
             }

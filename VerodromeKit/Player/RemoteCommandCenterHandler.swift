@@ -59,12 +59,14 @@ public final class RemoteCommandCenterHandler {
         center.nextTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
                 // Leave temporary hold-speed behind; keep the sticky session rate.
+                self?.player?.endIntervalHold()
                 self?.player?.restoreSessionPlaybackRate()
                 self?.player?.next()
             }
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
+                self?.player?.endIntervalHold()
                 self?.player?.restoreSessionPlaybackRate()
                 self?.player?.previous()
             }
@@ -129,7 +131,8 @@ public final class RemoteCommandCenterHandler {
         }
     }
 
-    /// Hold next → 2×, hold previous → 0.5×; release → session rate.
+    /// Hold next → interval jumps or 2×; hold previous → interval jumps or 0.5×.
+    /// CarPlay Mini Skips (when connected) uses the interval; otherwise this is speed.
     nonisolated private static func handleSeekEvent(
         _ event: MPRemoteCommandEvent,
         rate: Float,
@@ -142,16 +145,24 @@ public final class RemoteCommandCenterHandler {
             guard let player else { return }
             // Live streams have nothing useful to speed through.
             if player.currentItem?.isLiveStream == true {
+                player.endIntervalHold()
                 player.restoreSessionPlaybackRate()
                 return
             }
             switch event.type {
             case .beginSeeking:
-                if !player.isPlaying {
-                    player.play()
+                if CarPlayConnection.isActive, SettingsStore.shared.carPlayMiniSkipEnabled {
+                    let delta = SettingsStore.shared.carPlayMiniSkipInterval.timeInterval
+                    player.beginIntervalHold(rate >= 1 ? delta : -delta)
+                } else {
+                    player.endIntervalHold()
+                    if !player.isPlaying {
+                        player.play()
+                    }
+                    player.setPlaybackRate(rate)
                 }
-                player.setPlaybackRate(rate)
             case .endSeeking:
+                player.endIntervalHold()
                 player.restoreSessionPlaybackRate()
             @unknown default:
                 break
@@ -179,4 +190,10 @@ public final class RemoteCommandCenterHandler {
         }
         return status
     }
+}
+
+/// Set by the CarPlay scene so remote Next/Previous hold can use CarPlay skip settings.
+@MainActor
+public enum CarPlayConnection {
+    public static var isActive = false
 }

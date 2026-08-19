@@ -107,10 +107,6 @@ struct AppIconSettingsView: View {
     }
 
     private func select(_ option: AppIconOption) {
-        guard UIApplication.shared.supportsAlternateIcons else {
-            errorMessage = "Alternate icons aren’t supported on this device."
-            return
-        }
         guard option.id != selectedID else { return }
 
         let previous = selectedID

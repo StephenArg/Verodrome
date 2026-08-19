@@ -88,16 +88,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             $0.portType == .carAudio
         }
         guard onCar else { return }
-        CarPlayLog.notice("audio route is CarPlay")
+        let previous = notification.userInfo?[AVAudioSessionRouteChangePreviousRouteKey]
+            as? AVAudioSessionRouteDescription
+        let wasOnCar = previous?.outputs.contains { $0.portType == .carAudio } ?? false
+        let pluggedIn = !wasOnCar
+        CarPlayLog.notice("audio route is CarPlay | pluggedIn=\(pluggedIn)")
         Task { @MainActor in
+            if pluggedIn, VerodromeKit.shared.player?.resumeIfPausedWithQueue() == true {
+                CarPlayLog.notice("paused queue on CarPlay route — resuming")
+            }
             VerodromeKit.shared.player?.syncPublishedState()
-            Self.activateCarPlaySceneIfPlaying()
+            Self.activateCarPlaySceneIfPlaying(alsoWhenQueued: pluggedIn)
         }
     }
 
     @MainActor
-    private static func activateCarPlaySceneIfPlaying() {
-        guard VerodromeKit.shared.player?.isPlaying == true else { return }
+    private static func activateCarPlaySceneIfPlaying(alsoWhenQueued: Bool = false) {
+        let player = VerodromeKit.shared.player
+        let hasQueue = player.map { !$0.queue.isEmpty && $0.currentItem != nil } ?? false
+        guard player?.isPlaying == true || (alsoWhenQueued && hasQueue) else { return }
         let carRole = UISceneSession.Role.carTemplateApplication
         let session = UIApplication.shared.openSessions.first {
             $0.role == carRole
