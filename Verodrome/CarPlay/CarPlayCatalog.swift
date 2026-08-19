@@ -182,18 +182,23 @@ final class CarPlayCatalog {
 
     /// List tab (allowed in the tab bar). iOS 26 audio CarPlay cannot push
     /// `CPSearchTemplate`, so recent terms push a results list instead.
-    /// Do not set `assistantCellConfiguration`: CarPlay then requires
-    /// `INPlayMediaIntent` (`audio.playAudio`) and kills the app if it's missing.
+    /// The assistant cell is the system “Ask Siri to Play Audio” row; spoken
+    /// names are handled as search queries via `INPlayMediaIntent`.
     func makeSearchTabTemplate() -> CPListTemplate {
         let template = CPListTemplate(title: nil, sections: searchRecentsSections())
         template.tabTitle = "Search"
         template.tabImage = CarPlayArtwork.symbol("magnifyingglass")
         template.emptyViewTitleVariants = ["Search"]
         template.emptyViewSubtitleVariants = ["Recent searches appear here"]
+        template.assistantCellConfiguration = CPAssistantCellConfiguration(
+            position: .top,
+            visibility: .always,
+            assistantAction: .playMedia
+        )
         return template
     }
 
-    private func searchRecentsSections() -> [CPListSection] {
+    func searchRecentsSections() -> [CPListSection] {
         let recents = (UserDefaults.standard.array(forKey: "search.recentTerms") as? [String]) ?? []
         var items: [CPListItem] = []
         for term in recents.prefix(8) {
@@ -823,23 +828,47 @@ final class CarPlayCatalog {
     /// background actor so the CarPlay main actor never holds live SwiftData
     /// models, and matching uses the same `localizedCaseInsensitiveContains`
     /// rules as the phone Search screen.
-    func pushSearchResults(query: String) async {
+    func searchResultSections(query: String) async -> [CPListSection] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let snapshot = await fetchSearchSnapshot(query: trimmed)
-        let sections = makeSearchResultSections(snapshot)
+        guard !trimmed.isEmpty else { return [] }
+        return makeSearchResultSections(await fetchSearchSnapshot(query: trimmed))
+    }
+
+    /// Reports whether CarPlay actually presented the list, so a caller can fall back
+    /// to an in-place update instead of leaving the screen unchanged.
+    @discardableResult
+    func pushSearchResults(query: String) async -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let sections = await searchResultSections(query: trimmed)
         let template = withNowPlayingButton(CPListTemplate(title: trimmed, sections: sections))
         guard let interfaceController else {
             CarPlayLog.error("pushSearchResults(\(trimmed)) dropped: no interface controller")
-            return
+            return false
         }
-        let depth = interfaceController.templates.count
-        interfaceController.pushTemplate(template, animated: true) { success, error in
-            guard !success else { return }
-            CarPlayLog.error(
-                "pushSearchResults(\(trimmed)) failed at depth \(depth): \(error?.localizedDescription ?? "unknown error")"
-            )
+        // A voice search arrives while Siri still owns the screen, and CarPlay
+        // rejects a push underneath that overlay. Retry until it clears rather
+        // than dropping the results on the first refusal.
+        for attempt in 1...8 {
+            let depth = interfaceController.templates.count
+            let pushed = await withCheckedContinuation { continuation in
+                interfaceController.pushTemplate(template, animated: true) { success, error in
+                    if !success {
+                        CarPlayLog.error(
+                            "pushSearchResults(\(trimmed)) attempt \(attempt) failed at depth \(depth): \(error?.localizedDescription ?? "unknown error")"
+                        )
+                    }
+                    continuation.resume(returning: success)
+                }
+            }
+            if pushed {
+                CarPlayLog.notice("pushSearchResults(\(trimmed)) presented on attempt \(attempt)")
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(600))
         }
+        CarPlayLog.error("pushSearchResults(\(trimmed)) gave up after 8 attempts")
+        return false
     }
 
     private func fetchSearchSnapshot(query: String) async -> CarPlaySearchSnapshot {

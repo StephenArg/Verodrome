@@ -1,5 +1,6 @@
 import AVFoundation
 import CarPlay
+import Intents
 import MediaPlayer
 import UIKit
 import VerodromeKit
@@ -16,8 +17,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         BackgroundLibrarySyncer.register()
         BackgroundLibrarySyncer.scheduleNext()
         observeCarPlayAudioRoute()
+        requestSiriAuthorization()
         CarPlayLog.notice("AppDelegate didFinishLaunching")
         return true
+    }
+
+    /// Without this the app is never an authorized Siri target, so the CarPlay
+    /// assistant cell fails instead of delivering `INPlayMediaIntent`.
+    private func requestSiriAuthorization() {
+        guard INPreferences.siriAuthorizationStatus() == .notDetermined else { return }
+        INPreferences.requestSiriAuthorization { status in
+            CarPlayLog.notice("Siri authorization status=\(status.rawValue)")
+        }
     }
 
     /// iPhone stays portrait-only so layout width never expands into landscape.
@@ -56,6 +67,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
         CarPlayLog.notice("using default scene configuration")
         return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+    }
+
+    func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+        if intent is INPlayMediaIntent {
+            CarPlayLog.notice("handlerFor INPlayMediaIntent")
+            return PlayMediaIntentHandler()
+        }
+        return nil
+    }
+
+    /// Reached when the intent arrives via a background app launch (a donated
+    /// shortcut, or any handler that answered `handleInApp`).
+    func application(
+        _ application: UIApplication,
+        handle intent: INIntent,
+        completionHandler: @escaping (INIntentResponse) -> Void
+    ) {
+        guard let playMedia = intent as? INPlayMediaIntent else {
+            completionHandler(INPlayMediaIntentResponse(code: .failure, userActivity: nil))
+            return
+        }
+        CarPlayLog.notice("background launch handling INPlayMediaIntent")
+        PlayMediaIntentHandler().handle(intent: playMedia) { response in
+            completionHandler(response)
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

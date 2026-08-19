@@ -134,6 +134,11 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             self?.presentNowPlaying()
         }
         CarPlayConnection.isActive = true
+        CarPlayVoiceSearch.receiver = { [weak self] query in
+            Task { @MainActor in
+                await self?.handleVoiceSearch(query)
+            }
+        }
         configureNowPlaying()
         installRootIfNeeded(interfaceController)
 
@@ -141,6 +146,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         isConnected = true
         if alreadyConnected {
             presentNowPlayingIfAudioIsPlaying()
+            drainPendingVoiceSearch()
             return
         }
 
@@ -159,12 +165,24 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             CarPlayArtworkWarmer.shared.start(catalog: catalog) { [weak self] in
                 await self?.refreshHomeTab()
             }
+            drainPendingVoiceSearch()
+        }
+    }
+
+    /// A voice search that arrived before this scene was ready is replayed here, once
+    /// the library is initialized so the results are not built against an empty store.
+    private func drainPendingVoiceSearch() {
+        guard let pending = CarPlayVoiceSearch.takePending() else { return }
+        CarPlayLog.notice("draining pending voice search \(pending)")
+        Task { @MainActor in
+            await handleVoiceSearch(pending)
         }
     }
 
     private func handleDisconnect() {
         CarPlayLog.notice("scene disconnected")
         CarPlayConnection.isActive = false
+        CarPlayVoiceSearch.receiver = nil
         VerodromeKit.shared.player?.endIntervalHold()
         CarPlayArtworkWarmer.shared.stop()
         CPNowPlayingTemplate.shared.remove(self)
@@ -358,16 +376,51 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
     }
 
+    /// The term is already recorded by `CarPlayVoiceSearch.submit`, so this only has to
+    /// put the results on screen.
+    private func handleVoiceSearch(_ query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        CarPlayLog.notice("voice search \(trimmed)")
+        // Results replace whatever was on screen rather than stacking on top of it,
+        // which also keeps the push clear of the 5-template depth limit.
+        await popToRoot()
+        showSearchTab()
+        if await showSearchResults(trimmed) { return }
+
+        // A push can still be refused, so fall back to the Search tab itself, where no
+        // presentation can be rejected. Recents stay below the results.
+        CarPlayLog.notice("voice search \(trimmed) falling back to in-place results")
+        guard let searchTab else { return }
+        let sections = await catalog.searchResultSections(query: trimmed)
+        searchTab.updateSections(sections + catalog.searchRecentsSections())
+    }
+
+    private func popToRoot() async {
+        guard let interfaceController, interfaceController.templates.count > 1 else { return }
+        await withCheckedContinuation { continuation in
+            interfaceController.popToRootTemplate(animated: false) { success, error in
+                if !success {
+                    CarPlayLog.error(
+                        "popToRoot failed: \(error?.localizedDescription ?? "unknown error")"
+                    )
+                }
+                continuation.resume()
+            }
+        }
+    }
+
     /// iOS 26 audio CarPlay rejects `CPSearchTemplate` on `pushTemplate` (crash).
     /// A recent term opens a pushed Artists / Albums / Songs list instead.
-    private func showSearchResults(_ query: String) async {
+    @discardableResult
+    private func showSearchResults(_ query: String) async -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             showSearchTab()
-            return
+            return false
         }
         CarPlayLog.notice("showSearchResults(\(trimmed))")
-        await catalog.pushSearchResults(query: trimmed)
+        return await catalog.pushSearchResults(query: trimmed)
     }
 
     /// When CarPlay connects while Verodrome is already playing, land on Now Playing

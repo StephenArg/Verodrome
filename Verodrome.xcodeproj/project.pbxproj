@@ -72,6 +72,7 @@
 		4B01DA55396A4FCCC910F752 /* LibraryRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A456AF3E705777B02E8EC7F /* LibraryRepositoryTests.swift */; };
 		4B889EC86AD648FCA975A6A9 /* RootSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6412450D52FF5701ED682D41 /* RootSplitView.swift */; };
 		4C587D2CC050EA6A41FF90A5 /* VerodromeIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F1E351E001D086403B6D6B /* VerodromeIntents.swift */; };
+		C1A8E4D27B6F4C3A91D0E5F8 /* PlayMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */; };
 		501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */; };
 		50CF172EF318C532F3A6716A /* SubsonicServerApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9581EB85416D6AA0228EC528 /* SubsonicServerApi.swift */; };
 		515368D367BA06C6836ACB1F /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E89A508FC0EE0CAE006D5F18 /* LibraryModels.swift */; };
@@ -371,6 +372,7 @@
 		1FE7C4E068E03DA2655CB140 /* LibraryMutationSyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMutationSyncer.swift; sourceTree = "<group>"; };
 		1FEF7DDDB075DAA9CC94A61D /* ampache_handshake.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ampache_handshake.xml; sourceTree = "<group>"; };
 		21F1E351E001D086403B6D6B /* VerodromeIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerodromeIntents.swift; sourceTree = "<group>"; };
+		D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMediaIntentHandler.swift; sourceTree = "<group>"; };
 		2321871A9A13C811483AB629 /* RemoteCommandCenterHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCommandCenterHandler.swift; sourceTree = "<group>"; };
 		23D269C798CDF5CD2C5ECBB5 /* SongRadioQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongRadioQueue.swift; sourceTree = "<group>"; };
 		24C6AD5AF24D7BB5043491FE /* AmpacheApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmpacheApi.swift; sourceTree = "<group>"; };
@@ -795,6 +797,7 @@
 			isa = PBXGroup;
 			children = (
 				21F1E351E001D086403B6D6B /* VerodromeIntents.swift */,
+				D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */,
 			);
 			path = Intents;
 			sourceTree = "<group>";
@@ -1708,6 +1711,7 @@
 				1278D00076764045C69DA07A /* Theme.swift in Sources */,
 				B75B07C217C031E50DBC9FF9 /* VerodromeApp.swift in Sources */,
 				4C587D2CC050EA6A41FF90A5 /* VerodromeIntents.swift in Sources */,
+				C1A8E4D27B6F4C3A91D0E5F8 /* PlayMediaIntentHandler.swift in Sources */,
 				5B4F2FB00C0F8599C9B02B57 /* VerodromeListChrome.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

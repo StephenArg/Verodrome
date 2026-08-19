@@ -14,6 +14,10 @@ final class SearchHistoryStore: ObservableObject {
 
     private let defaults: UserDefaults
 
+    static func record(_ term: String) {
+        SearchHistoryStore().add(term)
+    }
+
     func add(_ term: String) {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

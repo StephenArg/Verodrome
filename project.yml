@@ -92,6 +92,15 @@ targets:
                 UISceneConfigurationName: CarPlay
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         LSRequiresIPhoneOS: true
+        INIntentsSupported:
+          - INPlayMediaIntent
+        INSupportedMediaCategories:
+          - INMediaCategoryMusic
+          - INMediaCategoryPodcasts
+          - INMediaCategoryGeneral
+        NSSiriUsageDescription: Verodrome uses Siri to search and play your library in the car.
+        NSUserActivityTypes:
+          - INPlayMediaIntent
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         CFBundleURLTypes:

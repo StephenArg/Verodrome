@@ -240,6 +240,18 @@ enum IntentLibraryPlayback {
         Task { await VerodromeKit.shared.player?.play(items: songs.map(QueueItem.from), startAt: 0) }
     }
 
+    @discardableResult
+    static func playFirstMatch(named name: String) -> Bool {
+        // Each play call dispatches into a detached task against an optional player, so
+        // without this a missing player still reports success and Siri announces
+        // playback that never starts.
+        guard VerodromeKit.shared.player != nil else { return false }
+        if (try? playAlbum(named: name)) != nil { return true }
+        if (try? playArtist(named: name)) != nil { return true }
+        if (try? playPlaylist(named: name)) != nil { return true }
+        return false
+    }
+
     static func favoriteCurrent() throws {
         guard let playableId = VerodromeKit.shared.player?.currentItem?.playableId,
               let account = try VerodromeKit.shared.activeAccount(),
