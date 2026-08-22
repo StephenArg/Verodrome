@@ -6,11 +6,32 @@ import MediaPlayer
 public final class NowPlayingInfoCenterHandler {
     private var cachedArtwork: UIImage?
     private var cachedItemId: String?
+    /// Shown instead of the cached cover (CarPlay lyrics). Does not drop `cachedArtwork`.
+    private var artworkOverride: UIImage?
     /// Own copy of the last payload. Reading `MPNowPlayingInfoCenter.nowPlayingInfo`
     /// and writing it back drops `MPMediaItemArtwork` — CarPlay then stays blank.
     private var lastInfo: [String: Any] = [:]
 
     public init() {}
+
+    /// Replace the published artwork without forgetting the real cover. Pass `nil`
+    /// to put the cached album art back on Lock Screen / CarPlay.
+    ///
+    /// `elapsed` must be the live playhead. Rewriting `nowPlayingInfo` with a stale
+    /// time makes CarPlay restart the progress bar.
+    public func setArtworkOverride(
+        _ image: UIImage?,
+        isPlaying: Bool,
+        elapsed: TimeInterval,
+        rate: Float = 1
+    ) {
+        if let image {
+            artworkOverride = Self.flattenedBitmap(image)
+        } else {
+            artworkOverride = nil
+        }
+        republishDisplayedArtwork(isPlaying: isPlaying, elapsed: elapsed, rate: rate)
+    }
 
     public func update(
         item: QueueItem?,
@@ -57,7 +78,7 @@ public final class NowPlayingInfoCenterHandler {
         info[MPNowPlayingInfoPropertyMediaType] = NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue)
         info[MPNowPlayingInfoPropertyExternalContentIdentifier] = item.id
 
-        if let cachedArtwork, let mediaArtwork = Self.mediaArtwork(from: cachedArtwork) {
+        if let displayed = displayedArtwork, let mediaArtwork = Self.mediaArtwork(from: displayed) {
             info[MPMediaItemPropertyArtwork] = mediaArtwork
         }
 
@@ -80,10 +101,31 @@ public final class NowPlayingInfoCenterHandler {
     public func clear() {
         cachedArtwork = nil
         cachedItemId = nil
+        artworkOverride = nil
         lastInfo = [:]
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = nil
         center.playbackState = .stopped
+    }
+
+    private var displayedArtwork: UIImage? { artworkOverride ?? cachedArtwork }
+
+    private func republishDisplayedArtwork(isPlaying: Bool, elapsed: TimeInterval, rate: Float) {
+        guard !lastInfo.isEmpty else { return }
+        lastInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? Double(rate) : 0.0
+        lastInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+        applyDisplayedArtwork(to: &lastInfo)
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = lastInfo
+        center.playbackState = isPlaying ? .playing : .paused
+    }
+
+    private func applyDisplayedArtwork(to info: inout [String: Any]) {
+        if let displayed = displayedArtwork, let mediaArtwork = Self.mediaArtwork(from: displayed) {
+            info[MPMediaItemPropertyArtwork] = mediaArtwork
+        } else {
+            info.removeValue(forKey: MPMediaItemPropertyArtwork)
+        }
     }
 
     /// MediaRemote asks for artwork on a background queue. A MainActor-isolated

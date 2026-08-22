@@ -98,10 +98,10 @@ enum CarPlayArtwork {
     }
 
     /// Nav-bar glyphs must be template images or CarPlay drops the button.
-    static func barSymbol(_ name: String) -> UIImage {
+    static func barSymbol(_ name: String, pointSize: CGFloat = 22) -> UIImage {
         let image = UIImage(
             systemName: name,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         ) ?? symbol(name)
         return image.withRenderingMode(.alwaysTemplate)
     }
