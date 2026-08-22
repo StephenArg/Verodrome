@@ -63,6 +63,7 @@
 		3971EE67A3B8B5620E6CCCE9 /* PlaylistDownloadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC7830ADB637364BD06F531C /* PlaylistDownloadCoordinator.swift */; };
 		39B6122404468BB6AB409224 /* PlaylistDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B564AA857B3A843B461378 /* PlaylistDetailView.swift */; };
 		3D36A53266A96A6FEDF43825 /* DownloadStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C5060BB2B6D1DA22B83556 /* DownloadStatusView.swift */; };
+		3F7C2A91D4B84E6F90A1C2D3 /* CarPlayArtworkWarmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4A1C7B29F046D3A5B8C1E4 /* CarPlayArtworkWarmer.swift */; };
 		41F40DD319B5D44665B3FA2F /* AudioSessionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8B838855F131E7176E4D53 /* AudioSessionHandler.swift */; };
 		41FA9E0E3C1FE107CE345624 /* AudioStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = 75C5F1F94A2783443EE0BCD7 /* AudioStreaming */; };
 		42B05DD5ADD0482650FE722C /* PlaybackStallDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D9F3B48D830909B70F7111 /* PlaybackStallDetectorTests.swift */; };
@@ -72,7 +73,6 @@
 		4B01DA55396A4FCCC910F752 /* LibraryRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A456AF3E705777B02E8EC7F /* LibraryRepositoryTests.swift */; };
 		4B889EC86AD648FCA975A6A9 /* RootSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6412450D52FF5701ED682D41 /* RootSplitView.swift */; };
 		4C587D2CC050EA6A41FF90A5 /* VerodromeIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F1E351E001D086403B6D6B /* VerodromeIntents.swift */; };
-		C1A8E4D27B6F4C3A91D0E5F8 /* PlayMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */; };
 		501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */; };
 		50CF172EF318C532F3A6716A /* SubsonicServerApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9581EB85416D6AA0228EC528 /* SubsonicServerApi.swift */; };
 		515368D367BA06C6836ACB1F /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E89A508FC0EE0CAE006D5F18 /* LibraryModels.swift */; };
@@ -112,6 +112,7 @@
 		6C687401BE3F8E1794470951 /* AccountMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CFCA5177816C19517420BF /* AccountMenuView.swift */; };
 		6CAAB2EECFC37BC1A35989E1 /* RandomSongProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D834623AF6E9C36BABCAABF /* RandomSongProviding.swift */; };
 		6D24742B3132586F0A7E1301 /* Collections in Frameworks */ = {isa = PBXBuildFile; productRef = BA85DE2CAA3FC7FF85714C1C /* Collections */; };
+		6E2F9A1B4C8D4E7F90A2B3C4 /* CarPlaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C1D4E27F5B4A9E8C3D1B06 /* CarPlaySettingsView.swift */; };
 		6E7D9FF261EAF17911102379 /* EventLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE86A2C710A35D85B59F3769 /* EventLogger.swift */; };
 		6EB60446E86F6A6EF398E06D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A400AC51A734F86D8636BD58 /* Assets.xcassets */; };
 		703B9AF788A1EF45352D77E0 /* FavoriteSongIngestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900BECBB3FC05714EDB91657 /* FavoriteSongIngestTests.swift */; };
@@ -171,7 +172,6 @@
 		9FFBFEE494E9894DCAF9BC29 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581F556F30F2F640396CD497 /* AppSettings.swift */; };
 		A1E60F6A2BFF10B591519145 /* VerodromeKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5037D46285BED7427F5D10CB /* VerodromeKit.framework */; };
 		A2189ACE58694CEFADC6B1AE /* NetworkMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E85A3CCADA6BDC6E1768B8 /* NetworkMonitorTests.swift */; };
-		6E2F9A1B4C8D4E7F90A2B3C4 /* CarPlaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C1D4E27F5B4A9E8C3D1B06 /* CarPlaySettingsView.swift */; };
 		A32756F63B7794D64F999D29 /* SubsonicParsers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B378342FB5E388869EB8DE31 /* SubsonicParsers.swift */; };
 		A32E4DF530E0B6610DED0044 /* CryptoHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 418518A357CF8987C22C1713 /* CryptoHelpers.swift */; };
 		A42ED8DBAA84314167ECE7C2 /* ArtworkDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E494C11C99BCCC3A0C55344E /* ArtworkDownloadManager.swift */; };
@@ -194,7 +194,6 @@
 		B1CD987BE0CF37FE5102F6B7 /* SimilarSongProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBC00BE4E17567E98CE447B3 /* SimilarSongProviding.swift */; };
 		B205CA605C2E05E05A03E24C /* HomeGridAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25BFED56C9D660AFCC2E15D7 /* HomeGridAssembler.swift */; };
 		B2213272280E6DAE6A2A57D0 /* CarPlayArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3D8A7C0B57E57EF5B1F37E /* CarPlayArtwork.swift */; };
-		3F7C2A91D4B84E6F90A1C2D3 /* CarPlayArtworkWarmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4A1C7B29F046D3A5B8C1E4 /* CarPlayArtworkWarmer.swift */; };
 		B2C5EF3F3103576642D0F918 /* BackendApiType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B00CE441FC86D0F8202031C /* BackendApiType.swift */; };
 		B308284C1F3C1F82AA93CA62 /* LibraryLayoutMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457920C92CBA44515C67150A /* LibraryLayoutMenu.swift */; };
 		B5BB2679EA5B685646BF045B /* ShuffleAllSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8257EA212A6D9065C58FCCC7 /* ShuffleAllSessionTests.swift */; };
@@ -212,6 +211,7 @@
 		C0DE158AAC39358FFAE96307 /* DownloadProtocols.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95501B74F1471B5F28DE41D4 /* DownloadProtocols.swift */; };
 		C151896D1F40D7E134B1E0EE /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B57FFE233953B8C9F45598 /* RootTabView.swift */; };
 		C178DA72B4CB4AE5C17FCC16 /* LyricsCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6101CE00C7FC611FDDFC0E1 /* LyricsCacheTests.swift */; };
+		C1A8E4D27B6F4C3A91D0E5F8 /* PlayMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */; };
 		C2A121CA7938526850E369A6 /* FilePlayerQueueStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968CFD3AA8FDC705D3EE5C95 /* FilePlayerQueueStoreTests.swift */; };
 		C2BA9AB3832BB9875F34CD17 /* DuplicateResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB552E68591C7347A009707B /* DuplicateResolver.swift */; };
 		C38DF23EA9328D5F3EEBC8E6 /* PerfAppearModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3509A3E0C514A805BEF99D51 /* PerfAppearModifier.swift */; };
@@ -334,7 +334,7 @@
 		039394D745F5B9FB4533C1BC /* ArtworkTintedBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkTintedBackground.swift; sourceTree = "<group>"; };
 		03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyTests.swift; sourceTree = "<group>"; };
 		04057A21F240E44C6F6AF9BE /* BackendApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendApi.swift; sourceTree = "<group>"; };
-		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSpeedSessionTests.swift; sourceTree = "<group>"; };
 		08B57FFE233953B8C9F45598 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		08C787639EF6EA7F8FD4B3BA /* LyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsView.swift; sourceTree = "<group>"; };
@@ -372,7 +372,6 @@
 		1FE7C4E068E03DA2655CB140 /* LibraryMutationSyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMutationSyncer.swift; sourceTree = "<group>"; };
 		1FEF7DDDB075DAA9CC94A61D /* ampache_handshake.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ampache_handshake.xml; sourceTree = "<group>"; };
 		21F1E351E001D086403B6D6B /* VerodromeIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerodromeIntents.swift; sourceTree = "<group>"; };
-		D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMediaIntentHandler.swift; sourceTree = "<group>"; };
 		2321871A9A13C811483AB629 /* RemoteCommandCenterHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCommandCenterHandler.swift; sourceTree = "<group>"; };
 		23D269C798CDF5CD2C5ECBB5 /* SongRadioQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongRadioQueue.swift; sourceTree = "<group>"; };
 		24C6AD5AF24D7BB5043491FE /* AmpacheApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmpacheApi.swift; sourceTree = "<group>"; };
@@ -406,7 +405,6 @@
 		43FAAB86E3F25E08723B105D /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		457920C92CBA44515C67150A /* LibraryLayoutMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryLayoutMenu.swift; sourceTree = "<group>"; };
 		457EFED66924895D6263ECE4 /* NowPlayingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingSettingsView.swift; sourceTree = "<group>"; };
-		A8C1D4E27F5B4A9E8C3D1B06 /* CarPlaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySettingsView.swift; sourceTree = "<group>"; };
 		45D0FCB094EF51F740603871 /* ProgressDownloadSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressDownloadSession.swift; sourceTree = "<group>"; };
 		45D74BD0C16A278CFB2CA327 /* HomeGridAssemblerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeGridAssemblerTests.swift; sourceTree = "<group>"; };
 		45EBA75EAA28849E358A5201 /* PlayerFacade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerFacade.swift; sourceTree = "<group>"; };
@@ -457,7 +455,7 @@
 		783FDE6DE5719CB832273B8C /* HoldableButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldableButton.swift; sourceTree = "<group>"; };
 		79C608D45C92BE99A40397C0 /* AboutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettingsView.swift; sourceTree = "<group>"; };
 		7B1A2DF283F636E828B51C1D /* QueueCachePolicyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyManager.swift; sourceTree = "<group>"; };
-		7B4A837E80B2C8370393876A /* VerodromeKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VerodromeKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B4A837E80B2C8370393876A /* VerodromeKitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper; path = VerodromeKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7DEA6D5BA45D76DA54613293 /* LibrarySyncProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncProgressBar.swift; sourceTree = "<group>"; };
 		7E861159C805C4329A8CF06F /* ShareParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareParserTests.swift; sourceTree = "<group>"; };
 		821EB5119FB482B485B84F47 /* MiniPlayerHostingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerHostingView.swift; sourceTree = "<group>"; };
@@ -471,6 +469,7 @@
 		8A63DC6EFB89FCA0F3A7F8AC /* ShuffleAllCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShuffleAllCoordinator.swift; sourceTree = "<group>"; };
 		8BB2531BB8D2B04230F3984D /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		8E2E869B8B33B53FF37C32B4 /* UIPerfDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIPerfDiagnostics.swift; sourceTree = "<group>"; };
+		8E4A1C7B29F046D3A5B8C1E4 /* CarPlayArtworkWarmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayArtworkWarmer.swift; sourceTree = "<group>"; };
 		900BECBB3FC05714EDB91657 /* FavoriteSongIngestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSongIngestTests.swift; sourceTree = "<group>"; };
 		907C4796EF2C179061D0B502 /* PlaybackStallDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStallDetector.swift; sourceTree = "<group>"; };
 		9089FF0EBC1FBBBA0C9A6B49 /* DuplicateMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateMaintenance.swift; sourceTree = "<group>"; };
@@ -499,6 +498,7 @@
 		A84B2BC8C7CFF93BCB7A83CC /* ArtistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistDetailView.swift; sourceTree = "<group>"; };
 		A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryShuffleCountBar.swift; sourceTree = "<group>"; };
 		A8B564AA857B3A843B461378 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
+		A8C1D4E27F5B4A9E8C3D1B06 /* CarPlaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySettingsView.swift; sourceTree = "<group>"; };
 		A9CD3677B2BC20B044B4D99E /* DownloadCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadCenter.swift; sourceTree = "<group>"; };
 		AB433FECDADD7C512A376D45 /* ApiModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiModels.swift; sourceTree = "<group>"; };
 		AB759A53D5B7B0709A7DC97D /* LargeArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeArtworkView.swift; sourceTree = "<group>"; };
@@ -537,6 +537,7 @@
 		CDE3F2BC2EF40ECD66400AE9 /* AlbumsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsView.swift; sourceTree = "<group>"; };
 		CE912E9B5A646C4A7BE068C5 /* PlayerArtworkWarmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerArtworkWarmer.swift; sourceTree = "<group>"; };
 		D044EBB70BC5F06C602B6DA3 /* SharedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedView.swift; sourceTree = "<group>"; };
+		D2B9F5E38C7A4D4B80E1F6A9 /* PlayMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMediaIntentHandler.swift; sourceTree = "<group>"; };
 		D2E0AFC27F4378CCAF048E74 /* QueryController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryController.swift; sourceTree = "<group>"; };
 		D3A468CF38A2B871104AD4AA /* UserSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSettings.swift; sourceTree = "<group>"; };
 		D4CED3821A6CB4D06162FF9C /* LibrarySyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncer.swift; sourceTree = "<group>"; };
@@ -548,7 +549,6 @@
 		DBC00BE4E17567E98CE447B3 /* SimilarSongProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarSongProviding.swift; sourceTree = "<group>"; };
 		DC7830ADB637364BD06F531C /* PlaylistDownloadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDownloadCoordinator.swift; sourceTree = "<group>"; };
 		DD3D8A7C0B57E57EF5B1F37E /* CarPlayArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayArtwork.swift; sourceTree = "<group>"; };
-		8E4A1C7B29F046D3A5B8C1E4 /* CarPlayArtworkWarmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayArtworkWarmer.swift; sourceTree = "<group>"; };
 		DDCE6A29ECA804E13B5BE804 /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
 		DE923F9322007A37D88EEB25 /* PerfTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerfTrace.swift; sourceTree = "<group>"; };
 		DF15A91F529662D6CC087810 /* NavidromeNativeApiTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavidromeNativeApiTests.swift; sourceTree = "<group>"; };
@@ -1823,6 +1823,7 @@
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Verodrome/Resources/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
@@ -1830,6 +1831,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.verodrome.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
@@ -1845,6 +1847,7 @@
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Verodrome/Resources/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
@@ -1852,6 +1855,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.verodrome.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
