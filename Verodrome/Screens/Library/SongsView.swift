@@ -16,6 +16,7 @@ struct SongsView: View {
     @State private var searchText = ""
     @State private var debouncedSearch = ""
     @State private var selectedAlbumId: String?
+    @State private var selectedArtistId: String?
     @State private var playlistTarget: Song?
     @State private var isScrolledDown = false
     @State private var model = LibraryListModel<LibrarySongRowSnapshot>(cacheKey: "songs") { request in
@@ -65,6 +66,7 @@ struct SongsView: View {
         .animation(.easeOut(duration: 0.2), value: showsFilterBar)
         .navigationTitle("Songs")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+        .navigationDestination(item: $selectedArtistId) { ArtistDetailView(artistID: $0) }
         .sheet(item: $playlistTarget) { song in
             PlaylistSelectorView { playlist in
                 Task {
@@ -147,6 +149,14 @@ struct SongsView: View {
                 image: UIImage(systemName: "square.stack")
             ) { _ in
                 selectedAlbumId = albumId
+            })
+        }
+        if let artistId = song?.artist?.compoundRemoteId {
+            secondary.append(UIAction(
+                title: "Go to Artist",
+                image: UIImage(systemName: "person.fill")
+            ) { _ in
+                selectedArtistId = artistId
             })
         }
         secondary.append(UIAction(

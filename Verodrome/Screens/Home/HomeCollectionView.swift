@@ -37,7 +37,7 @@ struct HomeStatsBarState: Equatable {
 /// Every section is one orthogonally-scrolling row of the same collection view, which is
 /// how Amperfy's `HomeVC` does it. The whole screen therefore has one scroll view and one
 /// layout system, and only the handful of tiles actually on screen exist as views.
-struct HomeCollectionView: UIViewControllerRepresentable {
+struct HomeCollectionView: UIViewControllerRepresentable, Equatable {
     let sections: [HomeSection]
     let tiles: [HomeSection: [HomeTileItem]]
     let stats: HomeStatsBarState
@@ -46,6 +46,12 @@ struct HomeCollectionView: UIViewControllerRepresentable {
     var onSeeAll: (HomeSection) -> Void
     var onShuffle: () -> Void
     var onRefresh: @MainActor () async -> Void
+
+    static func == (lhs: HomeCollectionView, rhs: HomeCollectionView) -> Bool {
+        lhs.sections == rhs.sections
+            && lhs.tiles == rhs.tiles
+            && lhs.stats == rhs.stats
+    }
 
     func makeUIViewController(context: Context) -> HomeCollectionViewController {
         let controller = HomeCollectionViewController()
@@ -68,7 +74,7 @@ struct HomeCollectionView: UIViewControllerRepresentable {
 }
 
 @MainActor
-final class HomeCollectionViewController: UICollectionViewController {
+final class HomeCollectionViewController: UIViewController, UICollectionViewDelegate {
     static let tileWidth: CGFloat = 160
 
     var onSelectTile: ((HomeSection, HomeTileItem) -> Void)?
@@ -77,6 +83,7 @@ final class HomeCollectionViewController: UICollectionViewController {
     var onShuffle: (() -> Void)?
     var onRefresh: (@MainActor () async -> Void)?
 
+    private let collectionView: UICollectionView
     private var dataSource: UICollectionViewDiffableDataSource<HomeBoardSection, HomeBoardItem>!
     private var sections: [HomeSection] = []
     private var tiles: [HomeSection: [HomeTileItem]] = [:]
@@ -87,19 +94,44 @@ final class HomeCollectionViewController: UICollectionViewController {
         isShuffleBusy: false,
         isShuffleDisabled: true
     )
+    private var isRefreshing = false
+    private var pendingApply: PendingHomeApply?
+    private var didNormalizeInitialOffset = false
+    /// Overlay spinner hosted on the navigation bar so it sits on the large title
+    /// instead of opening a gap above the stats bar. `UIRefreshControl` can't live
+    /// in the collection view — orthogonal layout passes reset its transform.
+    private let refreshIndicator = UIActivityIndicatorView(style: .medium)
+    private var refreshIndicatorConstraints: [NSLayoutConstraint] = []
+    private var hasStartedPullSpin = false
+    private var isDismissingRefresh = false
+    private let refreshPullThreshold: CGFloat = 64
+
+    private struct PendingHomeApply {
+        let visibleSections: [HomeSection]
+        let tiles: [HomeSection: [HomeTileItem]]
+        let stats: HomeStatsBarState
+        let needsSectionApply: Bool
+        let needsStatsApply: Bool
+    }
 
     init() {
-        // Real compositional layout is installed in `viewDidLoad` once the data source
-        // exists — the section provider needs to read snapshot section identifiers.
-        super.init(collectionViewLayout: UICollectionViewFlowLayout())
+        // Compositional layout is installed in `viewDidLoad` once the data source exists.
+        collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.delegate = self
         collectionView.backgroundColor = .systemBackground
-        collectionView.contentInsetAdjustmentBehavior = .scrollableAxes
+        // Match library lists: plain UIViewController + edge-pinned scroll view lets the
+        // navigation large title own inset adjustment instead of UICollectionViewController
+        // fighting it on the first scroll.
+        collectionView.contentInsetAdjustmentBehavior = .automatic
         collectionView.alwaysBounceVertical = true
         collectionView.register(
             HomeStatsCell.self,
@@ -115,9 +147,20 @@ final class HomeCollectionViewController: UICollectionViewController {
             withReuseIdentifier: HomeSectionHeaderView.reuseID
         )
 
-        let refreshControl = UIRefreshControl()
-        refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
-        collectionView.refreshControl = refreshControl
+        view.addSubview(collectionView)
+        NSLayoutConstraint.activate([
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        refreshIndicator.translatesAutoresizingMaskIntoConstraints = false
+        refreshIndicator.hidesWhenStopped = false
+        refreshIndicator.alpha = 0
+        refreshIndicator.isUserInteractionEnabled = false
+        refreshIndicator.color = .secondaryLabel
+        view.clipsToBounds = false
 
         // Tile height is absolute, so Dynamic Type changes have to re-run the section
         // provider rather than being picked up by self-sizing.
@@ -139,6 +182,59 @@ final class HomeCollectionViewController: UICollectionViewController {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        refreshIndicator.removeFromSuperview()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        attachRefreshIndicatorToTitle()
+        guard !didNormalizeInitialOffset, !isRefreshing else { return }
+        didNormalizeInitialOffset = true
+        normalizeScrollPosition(animated: false)
+    }
+
+    /// Pins the spinner to the large-title band of the navigation bar so it paints
+    /// over the title rather than between the title and the stats bar.
+    private func attachRefreshIndicatorToTitle() {
+        let host: UIView = enclosingNavigationBar() ?? view
+        if refreshIndicator.superview !== host {
+            NSLayoutConstraint.deactivate(refreshIndicatorConstraints)
+            refreshIndicatorConstraints = []
+            refreshIndicator.removeFromSuperview()
+            host.addSubview(refreshIndicator)
+        }
+        guard refreshIndicatorConstraints.isEmpty else { return }
+
+        if host is UINavigationBar {
+            refreshIndicatorConstraints = [
+                refreshIndicator.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+                refreshIndicator.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -40)
+            ]
+        } else {
+            refreshIndicatorConstraints = [
+                refreshIndicator.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+                refreshIndicator.centerYAnchor.constraint(
+                    equalTo: host.safeAreaLayoutGuide.topAnchor,
+                    constant: -36
+                )
+            ]
+        }
+        NSLayoutConstraint.activate(refreshIndicatorConstraints)
+    }
+
+    private func enclosingNavigationBar() -> UINavigationBar? {
+        var controller: UIViewController? = self
+        while let current = controller {
+            if let bar = current.navigationController?.navigationBar { return bar }
+            if let bar = (current as? UINavigationController)?.navigationBar { return bar }
+            controller = current.parent
+        }
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let nav = current as? UINavigationController { return nav.navigationBar }
+            responder = current.next
+        }
+        return nil
     }
 
     /// Visible tiles that raced ahead of cold-launch login stay on placeholders otherwise.
@@ -155,24 +251,27 @@ final class HomeCollectionViewController: UICollectionViewController {
             guard sectionIndex < ids.count else { return nil }
             switch ids[sectionIndex] {
             case .stats:
-                return Self.makeStatsSection()
+                return Self.makeStatsSection(environment: environment)
             case .carousel:
                 return Self.makeCarouselSection(environment: environment)
             }
         }
     }
 
-    private static func makeStatsSection() -> NSCollectionLayoutSection {
+    private static func makeStatsSection(
+        environment: NSCollectionLayoutEnvironment
+    ) -> NSCollectionLayoutSection {
+        let height = HomeStatsBarView.barHeight(for: environment.traitCollection)
         let item = NSCollectionLayoutItem(
             layoutSize: NSCollectionLayoutSize(
                 widthDimension: .fractionalWidth(1.0),
-                heightDimension: .estimated(44)
+                heightDimension: .absolute(height)
             )
         )
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
                 widthDimension: .fractionalWidth(1.0),
-                heightDimension: .estimated(44)
+                heightDimension: .absolute(height)
             ),
             subitems: [item]
         )
@@ -293,6 +392,38 @@ final class HomeCollectionViewController: UICollectionViewController {
         let statsChanged = self.stats != stats
         guard sectionsChanged || statsChanged else { return }
 
+        if isRefreshing {
+            let needsSection = (pendingApply?.needsSectionApply ?? false) || sectionsChanged
+            let needsStats = (pendingApply?.needsStatsApply ?? false) || statsChanged
+            pendingApply = PendingHomeApply(
+                visibleSections: visibleSections,
+                tiles: tiles,
+                stats: stats,
+                needsSectionApply: needsSection,
+                needsStatsApply: needsStats
+            )
+            self.sections = visibleSections
+            self.tiles = tiles
+            self.stats = stats
+            return
+        }
+
+        commitApply(
+            visibleSections: visibleSections,
+            tiles: tiles,
+            stats: stats,
+            sectionsChanged: sectionsChanged,
+            statsChanged: statsChanged
+        )
+    }
+
+    private func commitApply(
+        visibleSections: [HomeSection],
+        tiles: [HomeSection: [HomeTileItem]],
+        stats: HomeStatsBarState,
+        sectionsChanged: Bool,
+        statsChanged: Bool
+    ) {
         self.sections = visibleSections
         self.tiles = tiles
         self.stats = stats
@@ -310,33 +441,138 @@ final class HomeCollectionViewController: UICollectionViewController {
                 }
                 snapshot.appendItems(entries, toSection: board)
             }
-            // `animatingDifferences: false` on the main queue applies synchronously, and this
-            // layout has one orthogonal scroll view per section — so this call is a plausible
-            // home for main-thread stalls and is worth timing separately from the fetch.
             let token = PerfTrace.begin("Home.applySnapshot")
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             dataSource.apply(snapshot, animatingDifferences: false)
+            CATransaction.commit()
             PerfTrace.end(
                 token,
                 details: "sections=\(visibleSections.count) items=\(snapshot.numberOfItems)"
             )
         } else if statsChanged {
-            var snapshot = dataSource.snapshot()
-            snapshot.reconfigureItems([.stats])
-            dataSource.apply(snapshot, animatingDifferences: false)
+            if collectionView.visibleCells.contains(where: { $0 is HomeStatsCell }) {
+                refreshVisibleStatsCell()
+            } else {
+                var snapshot = dataSource.snapshot()
+                snapshot.reconfigureItems([.stats])
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                dataSource.apply(snapshot, animatingDifferences: false)
+                CATransaction.commit()
+            }
         }
     }
 
-    @objc private func handleRefresh() {
-        Task { @MainActor in
-            await onRefresh?()
-            collectionView.refreshControl?.endRefreshing()
+    private func refreshVisibleStatsCell() {
+        for case let cell as HomeStatsCell in collectionView.visibleCells {
+            cell.configure(
+                albumCount: stats.albumCount,
+                songCount: stats.songCount,
+                isCountProvisional: stats.isCountProvisional,
+                isShuffleBusy: stats.isShuffleBusy,
+                isShuffleDisabled: stats.isShuffleDisabled,
+                onShuffle: { [weak self] in self?.onShuffle?() }
+            )
         }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateRefreshIndicator(for: scrollView)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if isRefreshing { return }
+        if pullDistance(in: scrollView) >= refreshPullThreshold {
+            startRefresh()
+            return
+        }
+        guard !decelerate else { return }
+        normalizeScrollPosition(animated: true)
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard !isRefreshing else { return }
+        normalizeScrollPosition(animated: true)
+    }
+
+    private func pullDistance(in scrollView: UIScrollView) -> CGFloat {
+        -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+    }
+
+    private func updateRefreshIndicator(for scrollView: UIScrollView) {
+        if isDismissingRefresh { return }
+        if isRefreshing {
+            refreshIndicator.alpha = 1
+            return
+        }
+        let pulled = pullDistance(in: scrollView)
+        let progress = min(max(pulled / refreshPullThreshold, 0), 1)
+        refreshIndicator.alpha = progress
+        if pulled > 12 {
+            if !hasStartedPullSpin {
+                hasStartedPullSpin = true
+                refreshIndicator.startAnimating()
+            }
+        } else if pulled <= 0 {
+            hasStartedPullSpin = false
+            refreshIndicator.stopAnimating()
+            refreshIndicator.alpha = 0
+        }
+    }
+
+    private func startRefresh() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        hasStartedPullSpin = true
+        refreshIndicator.alpha = 1
+        if !refreshIndicator.isAnimating {
+            refreshIndicator.startAnimating()
+        }
+        attachRefreshIndicatorToTitle()
+
+        Task { @MainActor [weak self] in
+            await self?.onRefresh?()
+            self?.finishRefresh()
+        }
+    }
+
+    private func finishRefresh() {
+        isDismissingRefresh = true
+
+        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+            self.refreshIndicator.alpha = 0
+        } completion: { _ in
+            self.refreshIndicator.stopAnimating()
+            self.hasStartedPullSpin = false
+            self.isDismissingRefresh = false
+            self.isRefreshing = false
+            if let pending = self.pendingApply {
+                self.pendingApply = nil
+                self.commitApply(
+                    visibleSections: pending.visibleSections,
+                    tiles: pending.tiles,
+                    stats: pending.stats,
+                    sectionsChanged: pending.needsSectionApply,
+                    statsChanged: pending.needsStatsApply
+                )
+            }
+            self.normalizeScrollPosition(animated: true)
+        }
+    }
+
+    private func normalizeScrollPosition(animated: Bool) {
+        let topOffset = -collectionView.adjustedContentInset.top
+        let offsetY = collectionView.contentOffset.y
+        guard offsetY < topOffset + 1 else { return }
+        guard abs(offsetY - topOffset) > 0.5 else { return }
+        collectionView.setContentOffset(CGPoint(x: 0, y: topOffset), animated: animated)
     }
 
     /// Artwork starts loading only once a cell is actually about to be seen, and is
     /// cancelled the moment it leaves. That is what keeps a swipe from queueing a hundred
     /// decodes for tiles the user never looks at.
-    override func collectionView(
+    func collectionView(
         _ collectionView: UICollectionView,
         willDisplay cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
@@ -344,7 +580,7 @@ final class HomeCollectionViewController: UICollectionViewController {
         (cell as? HomeTileCell)?.loadArtworkIfNeeded()
     }
 
-    override func collectionView(
+    func collectionView(
         _ collectionView: UICollectionView,
         didEndDisplaying cell: UICollectionViewCell,
         forItemAt indexPath: IndexPath
@@ -352,16 +588,13 @@ final class HomeCollectionViewController: UICollectionViewController {
         (cell as? HomeTileCell)?.cancelArtworkLoad()
     }
 
-    override func collectionView(
-        _ collectionView: UICollectionView,
-        didSelectItemAt indexPath: IndexPath
-    ) {
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard case .tile(let entry) = dataSource.itemIdentifier(for: indexPath) else { return }
         onSelectTile?(entry.section, entry.tile)
     }
 
-    override func collectionView(
+    func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
@@ -381,11 +614,90 @@ final class HomeCollectionViewController: UICollectionViewController {
     }
 }
 
-// MARK: - Stats bar
+// MARK: - Stats bar (UIKit — fixed height, no SwiftUI hosting)
 
 @MainActor
-final class HomeStatsCell: UICollectionViewCell {
-    static let reuseID = "HomeStatsCell"
+final class HomeStatsBarView: UIView {
+    static let verticalPadding: CGFloat = 6
+    static let buttonVerticalPadding: CGFloat = 7
+    static let buttonHorizontalPadding: CGFloat = 14
+
+    static func barHeight(for traits: UITraitCollection) -> CGFloat {
+        let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
+        let buttonHeight = font.lineHeight + buttonVerticalPadding * 2
+        return verticalPadding * 2 + max(font.lineHeight, buttonHeight)
+    }
+
+    private let countLabel = UILabel()
+    private let shuffleButton = UIButton(type: .system)
+    private let activityIndicator = UIActivityIndicatorView(style: .medium)
+    private let shuffleIconView = UIImageView()
+    private let shuffleTitleLabel = UILabel()
+    private var onShuffle: (() -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        countLabel.font = .preferredFont(forTextStyle: .subheadline)
+        countLabel.adjustsFontForContentSizeCategory = true
+        countLabel.textColor = .secondaryLabel
+
+        shuffleButton.translatesAutoresizingMaskIntoConstraints = false
+        shuffleButton.backgroundColor = .secondarySystemFill
+        shuffleButton.layer.cornerRadius = 16
+        shuffleButton.clipsToBounds = true
+        shuffleButton.addTarget(self, action: #selector(shuffleTapped), for: .touchUpInside)
+
+        shuffleIconView.translatesAutoresizingMaskIntoConstraints = false
+        shuffleIconView.image = UIImage(systemName: "shuffle")
+        shuffleIconView.tintColor = .label
+        shuffleIconView.contentMode = .scaleAspectFit
+
+        shuffleTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        shuffleTitleLabel.text = "Shuffle"
+        shuffleTitleLabel.font = .preferredFont(forTextStyle: .subheadline).semibold
+        shuffleTitleLabel.adjustsFontForContentSizeCategory = true
+        shuffleTitleLabel.textColor = .label
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.hidesWhenStopped = true
+
+        shuffleButton.addSubview(shuffleIconView)
+        shuffleButton.addSubview(shuffleTitleLabel)
+        shuffleButton.addSubview(activityIndicator)
+
+        addSubview(countLabel)
+        addSubview(shuffleButton)
+
+        NSLayoutConstraint.activate([
+            countLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            countLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: shuffleButton.leadingAnchor,
+                constant: -12
+            ),
+
+            shuffleButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            shuffleButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            shuffleButton.heightAnchor.constraint(
+                greaterThanOrEqualToConstant: shuffleTitleLabel.font.lineHeight + Self.buttonVerticalPadding * 2
+            ),
+
+            shuffleIconView.leadingAnchor.constraint(equalTo: shuffleButton.leadingAnchor, constant: Self.buttonHorizontalPadding),
+            shuffleIconView.centerYAnchor.constraint(equalTo: shuffleButton.centerYAnchor),
+            shuffleIconView.widthAnchor.constraint(equalToConstant: 16),
+            shuffleIconView.heightAnchor.constraint(equalToConstant: 16),
+
+            shuffleTitleLabel.leadingAnchor.constraint(equalTo: shuffleIconView.trailingAnchor, constant: 6),
+            shuffleTitleLabel.trailingAnchor.constraint(equalTo: shuffleButton.trailingAnchor, constant: -Self.buttonHorizontalPadding),
+            shuffleTitleLabel.centerYAnchor.constraint(equalTo: shuffleButton.centerYAnchor),
+
+            activityIndicator.centerXAnchor.constraint(equalTo: shuffleIconView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: shuffleIconView.centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { nil }
 
     func configure(
         albumCount: Int,
@@ -395,19 +707,65 @@ final class HomeStatsCell: UICollectionViewCell {
         isShuffleDisabled: Bool,
         onShuffle: @escaping () -> Void
     ) {
-        contentConfiguration = UIHostingConfiguration {
-            LibraryShuffleCountBar(
-                counts: [
-                    (albumCount, "Album"),
-                    (songCount, "Song")
-                ],
-                isCountProvisional: isCountProvisional,
-                isShuffleBusy: isShuffleBusy,
-                isShuffleDisabled: isShuffleDisabled,
-                onShuffle: onShuffle
-            )
+        self.onShuffle = onShuffle
+        let albumText = "\(albumCount.formatted()) \(albumCount == 1 ? "Album" : "Albums")"
+        let songText = "\(songCount.formatted()) \(songCount == 1 ? "Song" : "Songs")"
+        countLabel.text = "\(albumText) · \(songText)"
+        countLabel.alpha = isCountProvisional ? 0.85 : 1
+        countLabel.accessibilityLabel = isCountProvisional ? "Counting library" : countLabel.text
+
+        shuffleButton.isEnabled = !isShuffleBusy && !isShuffleDisabled
+        shuffleButton.alpha = isShuffleDisabled ? 0.35 : 1
+        shuffleIconView.isHidden = isShuffleBusy
+        shuffleTitleLabel.isHidden = isShuffleBusy
+        if isShuffleBusy {
+            activityIndicator.startAnimating()
+        } else {
+            activityIndicator.stopAnimating()
         }
-        .margins(.all, 0)
+    }
+
+    @objc private func shuffleTapped() {
+        onShuffle?()
+    }
+}
+
+@MainActor
+final class HomeStatsCell: UICollectionViewCell {
+    static let reuseID = "HomeStatsCell"
+
+    private let barView = HomeStatsBarView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        barView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(barView)
+        NSLayoutConstraint.activate([
+            barView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            barView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            barView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            barView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func configure(
+        albumCount: Int,
+        songCount: Int,
+        isCountProvisional: Bool,
+        isShuffleBusy: Bool,
+        isShuffleDisabled: Bool,
+        onShuffle: @escaping () -> Void
+    ) {
+        barView.configure(
+            albumCount: albumCount,
+            songCount: songCount,
+            isCountProvisional: isCountProvisional,
+            isShuffleBusy: isShuffleBusy,
+            isShuffleDisabled: isShuffleDisabled,
+            onShuffle: onShuffle
+        )
     }
 }
 

@@ -2,6 +2,119 @@ import SwiftUI
 import UIKit
 import VerodromeKit
 
+/// Resolves a library `Song` for a queue row's playable id.
+@MainActor
+enum QueueSongLibrary {
+    static func resolveSong(for item: QueueItem) -> Song? {
+        guard item.kind == .song,
+              let account = try? VerodromeKit.shared.activeAccount(),
+              let song = try? VerodromeKit.shared.repository()?.resolveSong(
+                  remoteId: item.playableId,
+                  account: account
+              )
+        else { return nil }
+        return song
+    }
+}
+
+/// Long-press menu for a queue song row — same choices as `QueueRowMenu`.
+struct QueueSongContextMenu: View {
+    let item: QueueItem
+    let downloadStatus: DownloadStatus
+    let onOpenAlbum: (String) -> Void
+    let onOpenArtist: (String) -> Void
+    let onAddToPlaylist: (Song) -> Void
+
+    @EnvironmentObject private var queueList: QueueListModel
+    @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var router: AppRouter
+
+    private var song: Song? { QueueSongLibrary.resolveSong(for: item) }
+
+    var body: some View {
+        Button {
+            guard let song else { return }
+            Task { await ActionToast.toggleFavorite(song: song) }
+        } label: {
+            Label(
+                song?.isFavorite == true ? "Unlike" : "Like",
+                systemImage: song?.isFavorite == true ? "heart.slash" : "heart"
+            )
+        }
+        .disabled(song == nil)
+
+        Button {
+            queueList.addToQueueTemporarily([item])
+        } label: {
+            Label("Add to Queue", systemImage: "text.append")
+        }
+
+        Button {
+            Task { await ActionToast.startRadio(seed: item, player: player, router: router) }
+        } label: {
+            Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+        }
+        .disabled(item.kind != .song || player.isStartingRadio)
+
+        Button {
+            presentNowPlayingShare(item: item)
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+
+        if let albumId = song?.album?.compoundRemoteId {
+            Button {
+                onOpenAlbum(albumId)
+            } label: {
+                Label("Go to Album", systemImage: "square.stack")
+            }
+        }
+
+        if let artistId = song?.artist?.compoundRemoteId {
+            Button {
+                onOpenArtist(artistId)
+            } label: {
+                Label("Go to Artist", systemImage: "person.fill")
+            }
+        }
+
+        Button {
+            guard let song else { return }
+            onAddToPlaylist(song)
+        } label: {
+            Label("Add to Playlist", systemImage: "text.badge.plus")
+        }
+        .disabled(song == nil)
+
+        Button {
+            guard let song else { return }
+            Task { await LibraryActions.shared.downloadOrCancel(song: song) }
+        } label: {
+            Label(downloadActionTitle, systemImage: downloadActionSymbol)
+        }
+        .disabled(song == nil)
+    }
+
+    private var downloadActionTitle: String {
+        switch downloadStatus {
+        case .pending, .downloading: return "Cancel Download"
+        case .waiting: return "Download Now"
+        case .downloaded: return "Remove Download"
+        case .failed: return "Retry Download"
+        case .none, .partial, .cached: return "Download"
+        }
+    }
+
+    private var downloadActionSymbol: String {
+        switch downloadStatus {
+        case .pending, .downloading: return "stop.circle"
+        case .downloaded: return "arrow.down.circle.fill"
+        case .failed: return "exclamationmark.circle"
+        case .none, .waiting, .partial, .cached: return "arrow.down.circle"
+        }
+    }
+}
+
 /// Trailing ellipsis menu for a queue song row.
 ///
 /// A custom popover rather than SwiftUI `Menu` / `UIMenu`: both reserve a wide
@@ -10,19 +123,15 @@ struct QueueRowMenu: View {
     let item: QueueItem
     let downloadStatus: DownloadStatus
     let onOpenAlbum: (String) -> Void
+    let onOpenArtist: (String) -> Void
     let onAddToPlaylist: (Song) -> Void
 
     @EnvironmentObject private var queueList: QueueListModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var router: AppRouter
-    @State private var song: Song?
-    @State private var showMenu = false
-    /// Which edge of the popover faces the ellipsis. Flips when the row sits in the
-    /// lower half of the screen so the menu grows upward instead of clipping.
-    @State private var arrowEdge: Edge = .top
-    /// Samples the button's global midY only when opening — not via a live preference
-    /// that updates on every scroll frame.
-    @State private var frameSampler = QueueRowMenuFrameSampler()
+    @State private var buttonGlobalFrame: CGRect = .zero
+    @State private var popoverArrowEdge: Edge = .top
+    @State private var menuPresentation: QueueRowMenuPresentation?
 
     private var downloadActionTitle: String {
         switch downloadStatus {
@@ -45,11 +154,12 @@ struct QueueRowMenu: View {
 
     var body: some View {
         Button {
-            // Resolve the library song only when the menu is actually opened.
-            if song == nil { song = resolveSong() }
-            let midY = frameSampler.globalMidY()
-            arrowEdge = midY > UIScreen.main.bounds.midY ? .bottom : .top
-            showMenu = true
+            let song = resolveSong()
+            popoverArrowEdge = preferredArrowEdge(for: buttonGlobalFrame)
+            // Present on the next turn so `arrowEdge` is settled before UIKit reads it.
+            DispatchQueue.main.async {
+                menuPresentation = QueueRowMenuPresentation(song: song)
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
@@ -60,15 +170,32 @@ struct QueueRowMenu: View {
         .buttonStyle(.plain)
         .accessibilityLabel("More options")
         .background {
-            QueueRowMenuFrameProbe(sampler: frameSampler)
+            GeometryReader { geo in
+                Color.clear
+                    .onChange(of: geo.frame(in: .global), initial: true) { _, frame in
+                        buttonGlobalFrame = frame
+                    }
+            }
         }
-        .popover(isPresented: $showMenu, arrowEdge: arrowEdge) {
-            menuContent
+        .popover(item: $menuPresentation, arrowEdge: popoverArrowEdge) { presentation in
+            menuContent(song: presentation.song)
                 .presentationCompactAdaptation(.popover)
         }
     }
 
-    private var menuContent: some View {
+    /// `.top` grows the menu below the ellipsis; `.bottom` grows it above.
+    private func preferredArrowEdge(for frame: CGRect) -> Edge {
+        guard frame != .zero else { return .top }
+        let screenHeight = UIScreen.main.bounds.height
+        let estimatedMenuHeight: CGFloat = 360
+        let spaceBelow = screenHeight - frame.maxY
+        let spaceAbove = frame.minY
+        if spaceBelow >= estimatedMenuHeight { return .top }
+        if spaceAbove >= estimatedMenuHeight { return .bottom }
+        return spaceBelow >= spaceAbove ? .top : .bottom
+    }
+
+    private func menuContent(song: Song?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             menuRow(
                 title: song?.isFavorite == true ? "Unlike" : "Like",
@@ -103,6 +230,12 @@ struct QueueRowMenu: View {
                 }
             }
 
+            if let artistId = song?.artist?.compoundRemoteId {
+                menuRow(title: "Go to Artist", systemImage: "person.fill") {
+                    onOpenArtist(artistId)
+                }
+            }
+
             menuRow(
                 title: "Add to Playlist",
                 systemImage: "text.badge.plus",
@@ -134,7 +267,7 @@ struct QueueRowMenu: View {
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            showMenu = false
+            menuPresentation = nil
             // Let the popover finish dismissing before presenting a sheet / share UI.
             DispatchQueue.main.async(execute: action)
         } label: {
@@ -156,42 +289,13 @@ struct QueueRowMenu: View {
     }
 
     private func resolveSong() -> Song? {
-        guard item.kind == .song,
-              let account = try? VerodromeKit.shared.activeAccount(),
-              let song = try? VerodromeKit.shared.repository()?.resolveSong(
-                  remoteId: item.playableId,
-                  account: account
-              )
-        else { return nil }
-        return song
+        QueueSongLibrary.resolveSong(for: item)
     }
 }
 
-/// Holds a weak reference to the probe UIView so the button can sample its frame on tap.
-@MainActor
-private final class QueueRowMenuFrameSampler {
-    weak var view: UIView?
-
-    func globalMidY() -> CGFloat {
-        guard let view, let window = view.window else { return 0 }
-        return view.convert(view.bounds, to: window).midY
-    }
-}
-
-private struct QueueRowMenuFrameProbe: UIViewRepresentable {
-    let sampler: QueueRowMenuFrameSampler
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        sampler.view = view
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        sampler.view = uiView
-    }
+private struct QueueRowMenuPresentation: Identifiable {
+    let id = UUID()
+    let song: Song?
 }
 
 /// Presents a system share sheet for a song title (and optional artist).

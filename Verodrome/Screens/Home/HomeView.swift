@@ -17,12 +17,11 @@ struct HomeTileItem: Identifiable, Hashable {
 /// Everything that should cause a tile reload, collapsed into one `.task(id:)` key so
 /// opening Home runs a single background load instead of one per trigger.
 ///
-/// Deliberately excludes `isSyncing`: including it fired a full reload when a sync started
-/// *and* again when it ended, and the mid-sync one contends with the ingest writes. Sync
-/// completion is handled by a one-shot `onChange` instead.
+/// Deliberately excludes `isSyncing` and `randomSeed`: sync completion is handled by a
+/// one-shot `onChange`, and reshuffling random albums is tied to pull-to-refresh so a
+/// seed bump does not fire a second reload on top of the refresh work.
 private struct HomeLoadTrigger: Equatable {
     let sections: [HomeSection]
-    let seed: Int
 }
 
 /// Populates `Album.artistName` for albums synced before it was denormalized.
@@ -81,6 +80,9 @@ struct HomeView: View {
     /// until the new one lands, without tying blur to the whole background sync.
     @State private var isRefreshingLibraryTotals = false
     @State private var didRequestInitialRefresh = false
+    /// True while a user pull-to-refresh is in flight — blocks duplicate reloads from
+    /// `onChange(isSyncing)` and keeps the stats bar from reconfiguring mid-refresh.
+    @State private var isPullRefreshing = false
     @State private var selectedAlbumId: String?
     @State private var selectedPlaylistId: String?
     @State private var selectedPodcastId: String?
@@ -88,10 +90,7 @@ struct HomeView: View {
     @State private var selectedSectionList: HomeSection?
 
     private var loadTrigger: HomeLoadTrigger {
-        HomeLoadTrigger(
-            sections: settings.enabledHomeSections,
-            seed: randomSeed
-        )
+        HomeLoadTrigger(sections: settings.enabledHomeSections)
     }
 
     var body: some View {
@@ -101,10 +100,6 @@ struct HomeView: View {
             stats: HomeStatsBarState(
                 albumCount: libraryTotals.albums,
                 songCount: libraryTotals.songs,
-                // Don't key off `librarySync.isSyncing`: Navidrome's background job holds
-                // that flag through the full track backfill, which would keep Home blurred
-                // for minutes. Show the last settled tally; soften only before the first
-                // count and during the brief post-sync recount.
                 isCountProvisional: !hasLoadedLibraryTotals || isRefreshingLibraryTotals,
                 isShuffleBusy: shuffle.isStarting,
                 isShuffleDisabled: libraryTotals.songs == 0
@@ -124,11 +119,9 @@ struct HomeView: View {
                 selectedSectionList = section
             },
             onShuffle: shuffleAllSongs,
-            onRefresh: {
-                await refreshHomeLists()
-                randomSeed = Int.random(in: Int.min...Int.max)
-            }
+            onRefresh: refreshHomeFromUserPull
         )
+        .equatable()
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle(account.homeTitle)
         .toolbar {
@@ -173,13 +166,23 @@ struct HomeView: View {
         .onChange(of: librarySync.isSyncing) { wasSyncing, isSyncing in
             // Only once the writes have stopped — reloading mid-sync competes with ingest
             // for the store and produced the slowest loads by far.
-            guard wasSyncing, !isSyncing else { return }
+            guard wasSyncing, !isSyncing, !isPullRefreshing else { return }
             isRefreshingLibraryTotals = true
             Task {
                 await loadTiles()
                 await loadLibraryTotals()
             }
         }
+    }
+
+    /// Pull-to-refresh: sync server lists, reshuffle random albums, reload once.
+    private func refreshHomeFromUserPull() async {
+        isPullRefreshing = true
+        defer { isPullRefreshing = false }
+        await refreshHomeLists()
+        randomSeed = Int.random(in: Int.min...Int.max)
+        await loadTiles()
+        await loadLibraryTotals()
     }
 
     private func shuffleAllSongs() {

@@ -16,6 +16,7 @@ struct QueueView: View {
     /// and its cells out of step — rows drop in late or draw empty.
     @State private var editMode: EditMode = .inactive
     @State private var selectedAlbumId: String?
+    @State private var selectedArtistId: String?
     @State private var playlistTarget: Song?
     /// Token + distance to nudge the list when "Added to Queue" grows above the viewport.
     @State private var scrollBump = ScrollBump.zero
@@ -83,6 +84,7 @@ struct QueueView: View {
             .listStyle(.plain)
             .environment(\.editMode, $editMode)
             .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+            .navigationDestination(item: $selectedArtistId) { ArtistDetailView(artistID: $0) }
             .sheet(item: $playlistTarget) { song in
                 PlaylistSelectorView { playlist in
                     Task {
@@ -248,6 +250,15 @@ struct QueueView: View {
                 )
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                QueueSongContextMenu(
+                    item: item,
+                    downloadStatus: menuDownloadStatus(status),
+                    onOpenAlbum: { selectedAlbumId = $0 },
+                    onOpenArtist: { selectedArtistId = $0 },
+                    onAddToPlaylist: { playlistTarget = $0 }
+                )
+            }
 
             // Editing gives the trailing edge to the reorder grip instead.
             if item.kind == .song, !isEditing {
@@ -256,6 +267,7 @@ struct QueueView: View {
                     // Menu only needs working/not — live progress would rebuild it each tick.
                     downloadStatus: menuDownloadStatus(status),
                     onOpenAlbum: { selectedAlbumId = $0 },
+                    onOpenArtist: { selectedArtistId = $0 },
                     onAddToPlaylist: { playlistTarget = $0 }
                 )
             }
