@@ -5,13 +5,15 @@ struct LibraryHubView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var themeManager: ThemeManager
     @State private var showEditor = false
+    @State private var showSettings = false
 
     var body: some View {
         List {
             ForEach(settings.enabledLibraryCategories) { category in
-                NavigationLink {
-                    destination(for: category)
-                } label: {
+                // Value links push on the enclosing NavigationStack. A destination
+                // NavigationLink inside NavigationSplitView is treated as column
+                // selection and wedges the iPad sidebar so nothing else can be chosen.
+                NavigationLink(value: category) {
                     Label {
                         Text(category.title)
                     } icon: {
@@ -27,6 +29,9 @@ struct LibraryHubView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Library")
+        .navigationDestination(for: LibraryCategory.self) { category in
+            destination(for: category)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showEditor = true } label: {
@@ -35,12 +40,15 @@ struct LibraryHubView: View {
                 .accessibilityLabel("Customize Library")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    SettingsHostView()
+                Button {
+                    showSettings = true
                 } label: {
                     Image(systemName: "gearshape")
                 }
             }
+        }
+        .navigationDestination(isPresented: $showSettings) {
+            SettingsHostView()
         }
         .sheet(isPresented: $showEditor) {
             NavigationStack {

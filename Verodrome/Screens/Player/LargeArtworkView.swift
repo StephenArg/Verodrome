@@ -28,8 +28,9 @@ struct LargeArtworkView: View {
     var onDoubleTap: (() -> Void)? = nil
 
     /// Floor for the cover, so an extremely short layout still shows recognizable
-    /// art rather than a sliver.
-    private let minimumSide: CGFloat = 140
+    /// art rather than a sliver. iPad gives more of the leftover height to the
+    /// transport / bottom bar, so this floor is a bit lower there.
+    private var minimumSide: CGFloat { PlayerChrome.isPad ? 110 : 140 }
 
     /// Short enough that a run of skips doesn't stack a backlog of half-finished slides.
     private static let slideDuration: TimeInterval = 0.16

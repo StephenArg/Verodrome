@@ -1,5 +1,28 @@
 import SwiftUI
+import UIKit
 import VerodromeKit
+
+/// Phone-sized chrome by default. iPad uses a larger transport and bottom bar;
+/// the cover then takes whatever height is left.
+enum PlayerChrome {
+    static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    static var playDiameter: CGFloat { isPad ? 92 : 72 }
+    static var skipIconSize: CGFloat { isPad ? 36 : 28 }
+    static var sideIconSize: CGFloat { isPad ? 28 : 22 }
+    static var controlSpacing: CGFloat { isPad ? 44 : 36 }
+    static var statusDotSize: CGFloat { isPad ? 5 : 4 }
+    static var statusDotSpacing: CGFloat { isPad ? 6 : 5 }
+
+    static var bottomIconFrame: CGFloat { isPad ? 34 : 24 }
+    static var bottomIconFont: Font { isPad ? .title2 : .title3 }
+    static var bottomGlyphSize: CGFloat { isPad ? 22 : 17 }
+    static var bottomBarSpacing: CGFloat { isPad ? 36 : 28 }
+    static var bottomBarTopPadding: CGFloat { isPad ? 28 : 20 }
+    static var bottomBarBottomPadding: CGFloat { isPad ? 22 : 16 }
+
+    static var heroTopPadding: CGFloat { isPad ? 8 : 24 }
+}
 
 struct PlayerControlView: View {
     @EnvironmentObject private var player: PlayerViewModel
@@ -17,12 +40,13 @@ struct PlayerControlView: View {
     @State private var isShuffleOrbiting = false
 
     /// Match Spotify-style control row proportions from the reference.
-    private let playDiameter: CGFloat = 72
-    private let skipIconSize: CGFloat = 28
-    private let sideIconSize: CGFloat = 22
-    private let controlSpacing: CGFloat = 36
-    private let statusDotSize: CGFloat = 4
-    private let statusDotSpacing: CGFloat = 5
+    /// iPad uses `PlayerChrome` so the transport reads at tablet size.
+    private var playDiameter: CGFloat { PlayerChrome.playDiameter }
+    private var skipIconSize: CGFloat { PlayerChrome.skipIconSize }
+    private var sideIconSize: CGFloat { PlayerChrome.sideIconSize }
+    private var controlSpacing: CGFloat { PlayerChrome.controlSpacing }
+    private var statusDotSize: CGFloat { PlayerChrome.statusDotSize }
+    private var statusDotSpacing: CGFloat { PlayerChrome.statusDotSpacing }
     /// One lap each for dot → line → dot.
     private let shuffleOrbitLapDuration: TimeInterval = 0.42
     private var shuffleOrbitDuration: TimeInterval { shuffleOrbitLapDuration * 3 }
@@ -59,32 +83,57 @@ struct PlayerControlView: View {
                 .padding(.horizontal, VerodromeTheme.playerContentHorizontalPadding)
             }
 
-            HStack(spacing: controlSpacing) {
-                if player.canShuffleQueue {
-                    shuffleButton
-                } else {
-                    Color.clear
-                        .frame(width: sideIconSize + 16, height: playDiameter)
-                        .accessibilityHidden(true)
-                }
-                skipButton(
-                    direction: .backward,
-                    onTap: player.skipBackward,
-                    holdRate: 0.5
-                )
-                playButton
-                skipButton(
-                    direction: .forward,
-                    onTap: player.skipForward,
-                    holdRate: 2
-                )
-                repeatButton
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 8)
+            transportRow
         }
+    }
+
+    /// Album / playlist queues can restore original order. Shuffle All and a songs-list
+    /// tap still show the control: the former reshuffles, the latter starts Shuffle All.
+    private var showsShuffleControl: Bool {
+        player.canShuffleQueue
+            || shuffleAll.isShuffleLocked
+            || shuffleAll.shufflePlaysWholeLibrary
+    }
+
+    /// Ideal phone row: five controls with 36pt gaps. On a narrower iPad sheet or
+    /// inspector the gaps shrink so shuffle / repeat stay on-screen.
+    private var controlRowIdealWidth: CGFloat {
+        let side = sideIconSize + 16
+        let skip = skipIconSize + 12
+        return side + skip + playDiameter + skip + side + controlSpacing * 4 + 16
+    }
+
+    private var transportRow: some View {
+        HStack(spacing: 0) {
+            if showsShuffleControl {
+                shuffleButton
+            } else {
+                Color.clear
+                    .frame(width: sideIconSize + 16, height: playDiameter)
+                    .accessibilityHidden(true)
+            }
+            Spacer(minLength: 8)
+            skipButton(
+                direction: .backward,
+                onTap: player.skipBackward,
+                holdRate: 0.5
+            )
+            Spacer(minLength: 8)
+            playButton
+            Spacer(minLength: 8)
+            skipButton(
+                direction: .forward,
+                onTap: player.skipForward,
+                holdRate: 2
+            )
+            Spacer(minLength: 8)
+            repeatButton
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: controlRowIdealWidth)
+        .frame(maxWidth: .infinity)
     }
 
     private var displayedTime: TimeInterval {
@@ -264,14 +313,14 @@ struct PlayerControlView: View {
     private var repeatButton: some View {
         let isOn = player.repeatMode != .off
         return Button { player.toggleRepeat() } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: statusDotSpacing) {
                 RepeatControlIcon(mode: player.repeatMode)
                     .frame(width: sideIconSize + 6, height: sideIconSize - 2)
                     .foregroundStyle(isOn ? Color.accentColor : Color.primary)
                 // Keep height aligned with shuffle's optional dot.
                 Circle()
                     .fill(isOn ? Color.accentColor : Color.clear)
-                    .frame(width: 4, height: 4)
+                    .frame(width: statusDotSize, height: statusDotSize)
             }
             .frame(width: sideIconSize + 16, height: playDiameter)
             .contentShape(Rectangle())

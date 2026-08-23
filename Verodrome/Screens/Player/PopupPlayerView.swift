@@ -98,6 +98,7 @@ struct PopupPlayerView: View {
         .presentationDragIndicator(.visible)
         .presentationDetents([.large])
         .presentationCornerRadius(24)
+        .playerPageSheetSizing()
     }
 
     private var playerContent: some View {
@@ -109,7 +110,7 @@ struct PopupPlayerView: View {
                 .layoutPriority(1)
 
             heroPanel
-                .padding(.top, 24)
+                .padding(.top, PlayerChrome.heroTopPadding)
 
             // Everything below the cover carries a layout priority so it is
             // measured first and keeps its full height; the artwork then takes
@@ -198,8 +199,8 @@ struct PopupPlayerView: View {
 
             bottomActionBar
                 .padding(.horizontal)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
+                .padding(.top, PlayerChrome.bottomBarTopPadding)
+                .padding(.bottom, PlayerChrome.bottomBarBottomPadding)
                 .layoutPriority(1)
         }
     }
@@ -555,9 +556,13 @@ struct PopupPlayerView: View {
     // MARK: - Bottom action bar (AirPlay / Lyrics / Speed / Sleep / Share / Queue)
 
     private var bottomActionBar: some View {
-        HStack(spacing: 28) {
+        let icon = PlayerChrome.bottomIconFrame
+        let glyph = PlayerChrome.bottomGlyphSize
+        return HStack(spacing: PlayerChrome.bottomBarSpacing) {
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
+                .scaleEffect(icon / 24)
+                .frame(width: icon, height: icon)
 
             Button {
                 // Always tappable so SwiftUI's disabled styling can't grey the icon out
@@ -565,8 +570,9 @@ struct PopupPlayerView: View {
                 toggleLyrics()
             } label: {
                 Image(systemName: "text.quote")
-                    .font(.title3)
+                    .font(PlayerChrome.bottomIconFont)
                     .foregroundStyle(lyricsButtonTint)
+                    .frame(width: icon, height: icon)
             }
             .accessibilityLabel(settings.showLyricsInPlayer ? "Show Artwork" : "Show Lyrics")
 
@@ -576,10 +582,11 @@ struct PopupPlayerView: View {
                     isRandomPlaybackSpeed: player.isRandomPlaybackSpeed,
                     isEnabled: player.currentItem?.isLiveStream != true,
                     accentColor: themeManager.accentColor,
+                    iconFontSize: glyph,
                     onSelect: { player.setPlaybackSpeed($0) },
                     onSelectRandom: { player.setPlaybackSpeedRandom() }
                 )
-                .frame(width: 24, height: 24)
+                .frame(width: icon, height: icon)
                 .accessibilityLabel("Playback Speed")
 
                 // The sleep-timer chip owns the center of the bar; keep the speed control
@@ -611,23 +618,23 @@ struct PopupPlayerView: View {
                 presentShareSheet()
             } label: {
                 Image(systemName: "square.and.arrow.up")
-                    // Slightly under `.title3` — this glyph reads larger than the
-                    // neighboring outline icons at the same point size.
-                    .font(.system(size: 17, weight: .regular))
+                    // Slightly under the neighboring outline icons at the same point size.
+                    .font(.system(size: glyph, weight: .regular))
                     .foregroundStyle(.primary)
-                    .frame(width: 24, height: 24)
+                    .frame(width: icon, height: icon)
             }
 
             Button {
                 bottomPanel = .addToPlaylist
             } label: {
                 Image(systemName: isInAnyPlaylist ? "checkmark.circle.fill" : "plus.circle")
-                    .font(.title3)
+                    .font(PlayerChrome.bottomIconFont)
                     // Theme accent — not `.tint` / `Color.accentColor`, and not under the
                     // bar-wide `.foregroundStyle(.primary)` that used to paint over it.
                     .foregroundStyle(isInAnyPlaylist ? themeManager.accentColor : Color.primary)
                     .symbolRenderingMode(.monochrome)
                     .contentTransition(.symbolEffect(.replace))
+                    .frame(width: icon, height: icon)
             }
             .disabled(currentSong == nil)
             .accessibilityLabel(isInAnyPlaylist ? "Edit Playlists" : "Add to Playlist")
@@ -636,8 +643,9 @@ struct PopupPlayerView: View {
                 bottomPanel = .queue
             } label: {
                 Image(systemName: "list.bullet")
-                    .font(.title3)
+                    .font(PlayerChrome.bottomIconFont)
                     .foregroundStyle(.primary)
+                    .frame(width: icon, height: icon)
             }
         }
         .buttonStyle(.plain)
@@ -823,6 +831,19 @@ struct PopupPlayerView: View {
         return parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+}
+
+private extension View {
+    /// iPadOS 18 defaults sheets to a compact form card. The player needs page width
+    /// so the shuffle / repeat row isn't clipped.
+    @ViewBuilder
+    func playerPageSheetSizing() -> some View {
+        if #available(iOS 18.0, *) {
+            self.presentationSizing(.page)
+        } else {
+            self
+        }
     }
 }
 
@@ -1339,6 +1360,7 @@ private struct PlaybackSpeedMenuButton: View {
     var isEnabled: Bool
     /// Same accent the lyrics button uses when active.
     var accentColor: Color
+    var iconFontSize: CGFloat = 17
     var onSelect: (Float) -> Void
     var onSelectRandom: () -> Void
 
@@ -1386,7 +1408,7 @@ private struct PlaybackSpeedMenuButton: View {
         } label: {
             // `timer` renders taller than neighbors at `.title3`.
             Image(systemName: "timer")
-                .font(.system(size: 17))
+                .font(.system(size: iconFontSize))
                 .foregroundStyle(iconColor)
         }
         .disabled(!isEnabled)

@@ -71,6 +71,7 @@ struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showEditor = false
+    @State private var showSettings = false
     @State private var randomSeed = Int.random(in: Int.min...Int.max)
     @State private var sectionTiles: [HomeSection: [HomeTileItem]] = [:]
     @State private var libraryTotals = HomeLibraryTotals()
@@ -134,10 +135,13 @@ struct HomeView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsHostView() } label: {
+                Button { showSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
             }
+        }
+        .navigationDestination(isPresented: $showSettings) {
+            SettingsHostView()
         }
         .sheet(isPresented: $showEditor) {
             HomeEditorView()
