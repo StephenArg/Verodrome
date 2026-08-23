@@ -130,13 +130,7 @@ struct PlayerControlView: View {
         let intervalDelta = direction == .forward ? delta : -delta
         return HoldableButton(
             isEnabled: !isLive,
-            onTap: {
-                if settings.miniSkipEnabled {
-                    player.seekByInterval(intervalDelta)
-                } else {
-                    onTap()
-                }
-            },
+            onTap: onTap,
             onHoldStart: {
                 if settings.miniSkipEnabled {
                     player.beginIntervalHold(intervalDelta)
@@ -157,20 +151,12 @@ struct PlayerControlView: View {
                 .frame(width: skipIconSize + 12, height: playDiameter)
         }
         .opacity(isLive ? 0.35 : 1)
-        .accessibilityLabel(skipAccessibilityLabel(direction: direction, seconds: seconds))
+        .accessibilityLabel(skipAccessibilityLabel(direction: direction))
         .accessibilityHint(skipAccessibilityHint(direction: direction, seconds: seconds))
     }
 
-    private func skipAccessibilityLabel(
-        direction: SkipControlIcon.Direction,
-        seconds: Int
-    ) -> String {
-        if settings.miniSkipEnabled {
-            return direction == .backward
-                ? "Skip back \(seconds) seconds"
-                : "Skip forward \(seconds) seconds"
-        }
-        return direction == .backward ? "Previous" : "Next"
+    private func skipAccessibilityLabel(direction: SkipControlIcon.Direction) -> String {
+        direction == .backward ? "Previous" : "Next"
     }
 
     private func skipAccessibilityHint(direction: SkipControlIcon.Direction, seconds: Int) -> String {

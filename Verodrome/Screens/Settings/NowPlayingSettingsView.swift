@@ -48,7 +48,7 @@ struct NowPlayingSettingsView: View {
             } header: {
                 Text("Skip Buttons")
             } footer: {
-                Text("When on, skip jumps by the interval. Hold skip to keep jumping, with a short play at each stop. Hold the left or right side of the artwork or lyrics for half or double speed. Swipe the artwork to change tracks. Turn this off to skip tracks and hold skip for speed.")
+                Text("Tap skip to change tracks. When on, hold skip to jump by the interval, with a short play at each stop. Hold the left or right side of the artwork or lyrics for half or double speed. Swipe the artwork to change tracks. Turn this off to hold skip for speed instead of interval jumps.")
             }
 
             Section {

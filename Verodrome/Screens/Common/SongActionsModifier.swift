@@ -11,6 +11,8 @@ struct SongActionsModifier: ViewModifier {
     @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var showPlaylistSelector = false
+    @State private var selectedAlbumId: String?
+    @State private var selectedArtistId: String?
 
     private var downloadStatus: DownloadStatus {
         downloadCenter.status(for: song.remoteId, isDownloaded: song.isDownloadedLocally)
@@ -61,6 +63,8 @@ struct SongActionsModifier: ViewModifier {
                     }
                 }
             }
+            .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
+            .navigationDestination(item: $selectedArtistId) { ArtistDetailView(artistID: $0) }
     }
 
     @ViewBuilder
@@ -115,6 +119,22 @@ struct SongActionsModifier: ViewModifier {
             Label(downloadActionTitle, systemImage: downloadActionSymbol)
         }
 
+        if song.album?.compoundRemoteId != nil {
+            Button {
+                openAlbum()
+            } label: {
+                Label("Go to Album", systemImage: "square.stack")
+            }
+        }
+
+        if song.artist?.compoundRemoteId != nil {
+            Button {
+                openArtist()
+            } label: {
+                Label("Go to Artist", systemImage: "person.fill")
+            }
+        }
+
         Button {
             showPlaylistSelector = true
         } label: {
@@ -122,6 +142,24 @@ struct SongActionsModifier: ViewModifier {
         }
 
         ShareMenuButton(subject: .song(song))
+    }
+
+    private func openAlbum() {
+        guard let albumId = song.album?.compoundRemoteId else { return }
+        if router.showFullPlayer {
+            router.pushPlayer(.album(albumId))
+        } else {
+            selectedAlbumId = albumId
+        }
+    }
+
+    private func openArtist() {
+        guard let artistId = song.artist?.compoundRemoteId else { return }
+        if router.showFullPlayer {
+            router.pushPlayer(.artist(artistId))
+        } else {
+            selectedArtistId = artistId
+        }
     }
 
     @ViewBuilder

@@ -36,7 +36,7 @@ public final class SettingsStore: ObservableObject {
     @Published public var changingColorsInPlayer: Bool = true
     @Published public var showRatingStars: Bool = true
     @Published public var showSongInfo: Bool = false
-    /// Skip buttons jump by `miniSkipInterval` instead of changing tracks.
+    /// Hold skip jumps by `miniSkipInterval` instead of changing playback speed.
     @Published public var miniSkipEnabled: Bool = true
     @Published public var miniSkipInterval: MiniSkipInterval = .default
     /// CarPlay Next/Previous hold: interval jumps instead of 2× / 0.5×.
