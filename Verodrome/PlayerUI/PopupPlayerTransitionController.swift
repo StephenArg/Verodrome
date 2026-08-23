@@ -12,6 +12,12 @@ enum PopupPlayerTransitionController {
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = 24
             sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+            // Landscape iPad is compact-height; attaching keeps the sheet full width
+            // so the shuffle / repeat row is not clipped to a phone-sized card.
+            sheet.prefersEdgeAttachedInCompactHeight = true
+            if #available(iOS 17.0, *) {
+                sheet.prefersPageSizing = true
+            }
         }
     }
 }
