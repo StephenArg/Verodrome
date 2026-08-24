@@ -365,6 +365,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             inPlaylist: isCurrentSongInAnyPlaylist,
             isStartingRadio: isStartingRadio,
             showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true,
+            shuffleOn: VerodromeKit.shared.player?.shuffleMode == .on,
             lyricsVisible: lyricsOnNowPlaying
         )
         guard layout != nowPlayingButtonLayout else { return }
@@ -396,13 +397,18 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             buttons.append(radio)
         }
         if layout.showShuffle {
-            // Handler (not the no-arg initializer): CarPlay does not reliably send
-            // `changeShuffleModeCommand` for third-party audio apps. Selected state
-            // still comes from `currentShuffleType` — do not rebuild this row on tap.
-            buttons.append(CPNowPlayingShuffleButton { [weak self] _ in
+            // Image button, not `CPNowPlayingShuffleButton`: replacing now-playing
+            // artwork (lyric lines) makes CarPlay rebind the system shuffle control
+            // and it flashes off/on. Selected state is ours and only changes
+            // when shuffle actually toggles.
+            let shuffle = CPNowPlayingImageButton(image: CarPlayArtwork.barSymbol("shuffle")) { [weak self] _ in
                 VerodromeKit.shared.player?.toggleShuffle()
+                self?.nowPlayingButtonLayout = nil
+                self?.refreshNowPlayingButtons()
                 self?.catalog.refreshQueueIfPresented()
-            })
+            }
+            shuffle.isSelected = layout.shuffleOn
+            buttons.append(shuffle)
         }
         buttons.append(CPNowPlayingRepeatButton { [weak self] _ in
             VerodromeKit.shared.player?.toggleRepeat()
@@ -529,6 +535,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         var inPlaylist: Bool
         var isStartingRadio: Bool
         var showShuffle: Bool
+        var shuffleOn: Bool
         var lyricsVisible: Bool
     }
 
