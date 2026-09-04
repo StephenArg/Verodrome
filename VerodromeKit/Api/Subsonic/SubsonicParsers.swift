@@ -186,7 +186,7 @@ enum SubsonicParsers {
                 isPublic: node.attributes["public"] == "true",
                 isSmart: isSmartPlaylist(node),
                 isReadOnly: isReadOnlyPlaylist(node),
-                songIds: entries,
+                songIds: entries.isEmpty ? nil : entries,
                 artId: node.attributes["coverArt"]
             )
         }

@@ -304,7 +304,7 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         let playlists = try SubsonicParsers.parsePlaylistDetail(data: data)
         guard let playlist = playlists.first else { return }
 
-        let removeIndexes = Array(playlist.songIds.indices)
+        let removeIndexes = Array((playlist.songIds ?? []).indices)
         try await server.updatePlaylist(id: playlistId, songIndexesToRemove: removeIndexes)
         try await server.updatePlaylist(id: playlistId, songIdsToAdd: songIds)
     }

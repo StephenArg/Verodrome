@@ -23,6 +23,9 @@ struct PlaylistDetailView: View {
     @State private var selection: Set<PlaylistRowItem.ID> = []
     @State private var reorderTask: Task<Void, Never>?
     @State private var isMutating = false
+    /// False until the open-sync finishes, so an empty playlist can say "No Songs"
+    /// instead of spinning on "Loading songs…".
+    @State private var hasFinishedLoadingSongs = false
 
     init(playlistID: String) {
         self.playlistID = playlistID
@@ -110,7 +113,7 @@ struct PlaylistDetailView: View {
 
                 Section("Songs") {
                     if entries.isEmpty {
-                        Text(isMutating ? "Updating…" : "Loading songs…")
+                        Text(emptySongsMessage(for: playlist))
                             .foregroundStyle(.secondary)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
@@ -177,13 +180,22 @@ struct PlaylistDetailView: View {
             artworkTint = await ArtworkTintResolver.shared.tint(for: nil, token: backgroundArtworkToken)
         }
         .task(id: playlists.first?.remoteId) {
-            guard let playlist = playlists.first else { return }
+            hasFinishedLoadingSongs = false
+            guard let playlist = playlists.first else {
+                hasFinishedLoadingSongs = true
+                return
+            }
             loadSongs(for: playlist)
-            guard let remoteId = playlists.first?.remoteId else { return }
+            guard let remoteId = playlists.first?.remoteId else {
+                hasFinishedLoadingSongs = true
+                return
+            }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(playlistId: remoteId)
             // Don't clobber an in-progress edit with the server pull.
-            guard !isEditing, let playlist = playlists.first else { return }
-            loadSongs(for: playlist)
+            if !isEditing, let playlist = playlists.first {
+                loadSongs(for: playlist)
+            }
+            hasFinishedLoadingSongs = true
         }
         .onChange(of: canEditPlaylist) { _, canEdit in
             if !canEdit {
@@ -339,6 +351,17 @@ struct PlaylistDetailView: View {
         let shouldPin = isFilterOffScreen ? offset > unpinAt : offset > pinAt
         guard shouldPin != isFilterOffScreen else { return }
         isFilterOffScreen = shouldPin
+    }
+
+    /// Empty rows are either still arriving, a mutation in flight, or the playlist
+    /// really has nothing in it. `songCount` from catalog is enough to skip the
+    /// spinner when we already know the list is empty.
+    private func emptySongsMessage(for playlist: Playlist) -> String {
+        if isMutating { return "Updating…" }
+        if !hasFinishedLoadingSongs, playlist.songCount > 0 {
+            return "Loading songs…"
+        }
+        return "No Songs"
     }
 
     private var downloadActionTitle: String {

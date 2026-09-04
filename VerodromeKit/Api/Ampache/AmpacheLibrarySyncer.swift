@@ -281,7 +281,7 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
         // entries come from the call above and are grafted on before ingesting.
         let playlists = try AmpacheParsers.parsePlaylists(data: try await server.getPlaylist(id: id))
         let withEntries = playlists.map { playlist -> IngestPlaylist in
-            guard playlist.id == id, playlist.songIds.isEmpty else { return playlist }
+            guard playlist.id == id, (playlist.songIds ?? []).isEmpty else { return playlist }
             return IngestPlaylist(
                 id: playlist.id,
                 name: playlist.name,

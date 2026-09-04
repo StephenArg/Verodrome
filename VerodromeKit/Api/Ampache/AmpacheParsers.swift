@@ -181,7 +181,7 @@ enum AmpacheParsers {
                 // Ampache returns smart playlists from the same endpoint, distinguished only
                 // by a prefixed id such as `smart_3`.
                 isSmart: id.hasPrefix("smart_"),
-                songIds: songIds,
+                songIds: songIds.isEmpty ? nil : songIds,
                 artId: node.attributes["art"] ?? childText(node, "art")
             )
         }

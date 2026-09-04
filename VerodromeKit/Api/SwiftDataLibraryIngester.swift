@@ -258,8 +258,11 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             // edit. `readonly` already covers other people's playlists on servers that
             // report it, and a refused edit covers the ones that don't.
             playlist.isEditable = !(playlist.isSmart || item.isReadOnly)
-            if !item.songIds.isEmpty {
-                let songs = item.songIds.compactMap { try? repository.resolveSong(remoteId: $0, account: account) }
+            if let songIds = item.songIds {
+                // Detail responses include an entry list, which may be empty when the
+                // playlist was cleared on the server. Catalog rows use nil instead so
+                // they cannot wipe a cached track list.
+                let songs = songIds.compactMap { try? repository.resolveSong(remoteId: $0, account: account) }
                 try repository.replacePlaylistItems(playlist, with: songs)
                 if playlist.artworkToken == nil || playlist.artworkToken?.isEmpty == true {
                     playlist.artworkToken = songs

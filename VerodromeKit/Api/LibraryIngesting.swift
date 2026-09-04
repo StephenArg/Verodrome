@@ -149,7 +149,10 @@ public struct IngestPlaylist: Sendable, Hashable {
     /// OpenSubsonic `readonly`: this user cannot change the playlist, whether because the
     /// server generates it or because someone else owns it.
     public let isReadOnly: Bool
-    public let songIds: [String]
+    /// Entry ids when this row is a playlist *detail*. Nil on catalog lists, which
+    /// have a count but no tracks — that has to stay distinct from `[]`, which means
+    /// the server says the playlist is empty and local items should be cleared.
+    public let songIds: [String]?
     /// Subsonic `coverArt` id or Ampache `art` URL/token.
     public let artId: String?
 
@@ -161,7 +164,7 @@ public struct IngestPlaylist: Sendable, Hashable {
         isPublic: Bool = false,
         isSmart: Bool = false,
         isReadOnly: Bool = false,
-        songIds: [String] = [],
+        songIds: [String]? = nil,
         artId: String? = nil
     ) {
         self.id = id

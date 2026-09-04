@@ -62,4 +62,45 @@ final class PlaylistIngestTests: XCTestCase {
         try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix")])
         XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.isEditable, true)
     }
+
+    /// Catalog rows carry a count but no entries. Rewriting items from that would
+    /// empty a playlist the user had already opened.
+    func testCatalogIngestLeavesCachedItemsAlone() async throws {
+        let storage = PersistentStorage(inMemory: true)
+        let ingester = makeIngester(storage)
+        try await ingester.ingest(songs: [IngestSong(id: "s1", title: "Track")])
+        try await ingester.ingest(playlists: [
+            IngestPlaylist(id: "p1", name: "Mix", songCount: 1, songIds: ["s1"])
+        ])
+        XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.items.count, 1)
+
+        try await ingester.ingest(playlists: [
+            IngestPlaylist(id: "p1", name: "Mix", songCount: 9)
+        ])
+
+        let playlist = try XCTUnwrap(fetchPlaylist(storage, remoteId: "p1"))
+        XCTAssertEqual(playlist.items.count, 1)
+        XCTAssertEqual(playlist.items.first?.song?.remoteId, "s1")
+        XCTAssertEqual(playlist.songCount, 1)
+    }
+
+    /// A detail pull with no entries is how an emptied playlist arrives. Treating that
+    /// the same as a catalog row left the last cached song on screen.
+    func testDetailIngestWithNoSongsClearsCachedItems() async throws {
+        let storage = PersistentStorage(inMemory: true)
+        let ingester = makeIngester(storage)
+        try await ingester.ingest(songs: [IngestSong(id: "s1", title: "Track")])
+        try await ingester.ingest(playlists: [
+            IngestPlaylist(id: "p1", name: "Mix", songCount: 1, songIds: ["s1"])
+        ])
+        XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.items.count, 1)
+
+        try await ingester.ingest(playlists: [
+            IngestPlaylist(id: "p1", name: "Mix", songCount: 0, songIds: [])
+        ])
+
+        let playlist = try XCTUnwrap(fetchPlaylist(storage, remoteId: "p1"))
+        XCTAssertTrue(playlist.items.isEmpty)
+        XCTAssertEqual(playlist.songCount, 0)
+    }
 }
