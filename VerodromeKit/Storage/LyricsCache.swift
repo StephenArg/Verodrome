@@ -74,13 +74,18 @@ public final class LyricsCache: @unchecked Sendable {
     }
 }
 
-/// Shared lookup order for playback and download write-through: disk → server → embedded ID3.
+/// Shared lookup order for playback and download write-through:
+/// disk → server → LRCLIB → embedded ID3.
 public enum LyricsLookup {
     /// Resolves lyrics without touching the network when `fetchFromServer` is nil.
+    ///
+    /// `fetchFromLrcLib` is the optional [LRCLIB](https://lrclib.net) fallback: it runs
+    /// only after the server returns nothing, and its hits are cached like any other.
     public static func resolve(
         playableId: String,
         cache: LyricsCache?,
         fetchFromServer: (() async throws -> String?)?,
+        fetchFromLrcLib: (() async -> String?)? = nil,
         embeddedLyrics: (() -> String?)?
     ) async -> String? {
         if let cached = cache?.load(id: playableId) {
@@ -89,6 +94,13 @@ public enum LyricsLookup {
 
         if let fetchFromServer,
            let text = try? await fetchFromServer(),
+           let normalized = nonEmpty(text) {
+            cache?.store(id: playableId, text: normalized)
+            return normalized
+        }
+
+        if let fetchFromLrcLib,
+           let text = await fetchFromLrcLib(),
            let normalized = nonEmpty(text) {
             cache?.store(id: playableId, text: normalized)
             return normalized
@@ -104,6 +116,10 @@ public enum LyricsLookup {
     }
 
     /// Local-only path used at track start so artwork can appear before a network round-trip.
+    ///
+    /// ID3 lyrics are returned for immediate display but deliberately not cached: writing
+    /// them through would make the later network pass see a disk hit and skip the server
+    /// and LRCLIB, which may have better (synced) lyrics than the embedded tag.
     public static func resolveLocal(
         playableId: String,
         cache: LyricsCache?,
@@ -114,7 +130,6 @@ public enum LyricsLookup {
         }
         if let embedded = embeddedLyrics?(),
            let normalized = nonEmpty(embedded) {
-            cache?.store(id: playableId, text: normalized)
             return normalized
         }
         return nil

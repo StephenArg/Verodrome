@@ -663,11 +663,17 @@ public final class AudioPlayer: ObservableObject {
         let syncer = allowNetwork
             ? VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding)
             : nil
+        let lrcLibQuery = (allowNetwork && !isEffectivelyOffline && settings().lrcLibLyricsEnabled)
+            ? makeLrcLibQuery(for: item)
+            : nil
         let text = await LyricsLookup.resolve(
             playableId: item.playableId,
             cache: VerodromeKit.shared.lyricsCache,
             fetchFromServer: syncer.map { provider in
                 { try await provider.fetchLyrics(playableId: item.playableId) }
+            },
+            fetchFromLrcLib: lrcLibQuery.map { query in
+                { await LrcLibClient.shared.fetchLyrics(query: query) }
             },
             embeddedLyrics: {
                 guard let cache = VerodromeKit.shared.playableCache,
@@ -681,6 +687,21 @@ public final class AudioPlayer: ObservableObject {
         guard nowPlaying?.playableId == item.playableId else { return }
         if let text { lyrics = text }
         lyricsLoaded = true
+    }
+
+    /// LRCLIB match metadata for a queue item, or `nil` when it can't be matched
+    /// (non-song, or missing title / artist).
+    private func makeLrcLibQuery(for item: QueueItem) -> LrcLibClient.Query? {
+        guard item.kind == .song else { return nil }
+        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let artist = item.artistName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty, !artist.isEmpty else { return nil }
+        return LrcLibClient.Query(
+            trackName: title,
+            artistName: artist,
+            albumName: item.albumName,
+            duration: item.duration > 0 ? item.duration : nil
+        )
     }
 
     /// Pulls favorite / rating for the track that just became current so a like changed

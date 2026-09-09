@@ -96,6 +96,66 @@ final class LyricsCacheTests: XCTestCase {
             embeddedLyrics: { "From ID3" }
         )
         XCTAssertEqual(text, "From ID3")
+    }
+
+    /// ID3 must not be cached from the local pass, or the later network lookup would see a
+    /// disk hit and never reach the server / LRCLIB (which may have synced lyrics).
+    func testResolveLocalDoesNotCacheEmbedded() async {
+        let cache = LyricsCache(root: root)
+        _ = LyricsLookup.resolveLocal(
+            playableId: "song1",
+            cache: cache,
+            embeddedLyrics: { "From ID3" }
+        )
+        XCTAssertNil(cache.load(id: "song1"))
+    }
+
+    func testResolvePrefersServerOverLrcLib() async {
+        let cache = LyricsCache(root: root)
+        var lrcLibCalled = false
+        let text = await LyricsLookup.resolve(
+            playableId: "song1",
+            cache: cache,
+            fetchFromServer: { "From server" },
+            fetchFromLrcLib: {
+                lrcLibCalled = true
+                return "From LRCLIB"
+            },
+            embeddedLyrics: { "From ID3" }
+        )
+        XCTAssertEqual(text, "From server")
+        XCTAssertFalse(lrcLibCalled)
+        XCTAssertEqual(cache.load(id: "song1"), "From server")
+    }
+
+    func testResolveFallsBackToLrcLibAndCaches() async {
+        let cache = LyricsCache(root: root)
+        var embeddedCalled = false
+        let text = await LyricsLookup.resolve(
+            playableId: "song1",
+            cache: cache,
+            fetchFromServer: { nil },
+            fetchFromLrcLib: { "[00:01.00]From LRCLIB" },
+            embeddedLyrics: {
+                embeddedCalled = true
+                return "From ID3"
+            }
+        )
+        XCTAssertEqual(text, "[00:01.00]From LRCLIB")
+        XCTAssertFalse(embeddedCalled)
+        XCTAssertEqual(cache.load(id: "song1"), "[00:01.00]From LRCLIB")
+    }
+
+    func testResolveFallsThroughLrcLibMissToEmbedded() async {
+        let cache = LyricsCache(root: root)
+        let text = await LyricsLookup.resolve(
+            playableId: "song1",
+            cache: cache,
+            fetchFromServer: { nil },
+            fetchFromLrcLib: { nil },
+            embeddedLyrics: { "From ID3" }
+        )
+        XCTAssertEqual(text, "From ID3")
         XCTAssertEqual(cache.load(id: "song1"), "From ID3")
     }
 

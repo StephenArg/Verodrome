@@ -317,11 +317,30 @@ public actor DownloadManager: DownloadManaging {
         let syncer = await MainActor.run {
             VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding)
         }
+        let lrcLibQuery = await MainActor.run { () -> LrcLibClient.Query? in
+            guard SettingsStore.shared.loadUserSettings().lrcLibLyricsEnabled,
+                  let repository = VerodromeKit.shared.repository(),
+                  let account = try? VerodromeKit.shared.activeAccount(),
+                  let song = try? repository.resolveSong(remoteId: id, account: account)
+            else { return nil }
+            let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let artist = song.artistName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty, !artist.isEmpty else { return nil }
+            return LrcLibClient.Query(
+                trackName: title,
+                artistName: artist,
+                albumName: song.albumTitle,
+                duration: song.playDuration > 0 ? song.playDuration : nil
+            )
+        }
         _ = await LyricsLookup.resolve(
             playableId: id,
             cache: lyricsCache,
             fetchFromServer: syncer.map { provider in
                 { try await provider.fetchLyrics(playableId: id) }
+            },
+            fetchFromLrcLib: lrcLibQuery.map { query in
+                { await LrcLibClient.shared.fetchLyrics(query: query) }
             },
             embeddedLyrics: { embedded }
         )

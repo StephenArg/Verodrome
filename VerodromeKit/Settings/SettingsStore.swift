@@ -28,6 +28,8 @@ public final class SettingsStore: ObservableObject {
     /// Songs list only: when on, the list shows tracks that have a local file.
     @Published public var songsDownloadedOnly: Bool = false
     @Published public var showMiniLyrics: Bool = true
+    /// When the music server has no lyrics, fall back to a lookup on LRCLIB.
+    @Published public var lrcLibLyricsEnabled: Bool = true
     /// Whether the full-screen player shows lyrics in place of the artwork.
     @Published public var showLyricsInPlayer: Bool = false
     /// How long artwork stays visible before the lyrics crossfade on each track.
@@ -76,6 +78,7 @@ public final class SettingsStore: ObservableObject {
         var librarySort: LibrarySortSelection
         var songsDownloadedOnly: Bool
         var showMiniLyrics: Bool
+        var lrcLibLyricsEnabled: Bool
         var showLyricsInPlayer: Bool
         var lyricsArtworkHold: LyricsArtworkHold
         var changingColorsInPlayer: Bool
@@ -117,6 +120,7 @@ public final class SettingsStore: ObservableObject {
             librarySort: LibrarySortSelection,
             songsDownloadedOnly: Bool,
             showMiniLyrics: Bool,
+            lrcLibLyricsEnabled: Bool,
             showLyricsInPlayer: Bool,
             lyricsArtworkHold: LyricsArtworkHold,
             changingColorsInPlayer: Bool,
@@ -157,6 +161,7 @@ public final class SettingsStore: ObservableObject {
             self.librarySort = librarySort
             self.songsDownloadedOnly = songsDownloadedOnly
             self.showMiniLyrics = showMiniLyrics
+            self.lrcLibLyricsEnabled = lrcLibLyricsEnabled
             self.showLyricsInPlayer = showLyricsInPlayer
             self.lyricsArtworkHold = lyricsArtworkHold
             self.changingColorsInPlayer = changingColorsInPlayer
@@ -199,6 +204,7 @@ public final class SettingsStore: ObservableObject {
             case librarySort
             case songsDownloadedOnly
             case showMiniLyrics
+            case lrcLibLyricsEnabled
             case showLyricsInPlayer
             case lyricsArtworkHold
             case changingColorsInPlayer
@@ -243,6 +249,7 @@ public final class SettingsStore: ObservableObject {
             librarySort = try c.decodeIfPresent(LibrarySortSelection.self, forKey: .librarySort) ?? .default
             songsDownloadedOnly = try c.decodeIfPresent(Bool.self, forKey: .songsDownloadedOnly) ?? false
             showMiniLyrics = try c.decode(Bool.self, forKey: .showMiniLyrics)
+            lrcLibLyricsEnabled = try c.decodeIfPresent(Bool.self, forKey: .lrcLibLyricsEnabled) ?? true
             showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
             lyricsArtworkHold = try c.decodeIfPresent(LyricsArtworkHold.self, forKey: .lyricsArtworkHold) ?? .default
             changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
@@ -301,6 +308,7 @@ public final class SettingsStore: ObservableObject {
             try c.encode(librarySort, forKey: .librarySort)
             try c.encode(songsDownloadedOnly, forKey: .songsDownloadedOnly)
             try c.encode(showMiniLyrics, forKey: .showMiniLyrics)
+            try c.encode(lrcLibLyricsEnabled, forKey: .lrcLibLyricsEnabled)
             try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
             try c.encode(lyricsArtworkHold, forKey: .lyricsArtworkHold)
             try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
@@ -364,6 +372,7 @@ public final class SettingsStore: ObservableObject {
             librarySort: librarySort,
             songsDownloadedOnly: songsDownloadedOnly,
             showMiniLyrics: showMiniLyrics,
+            lrcLibLyricsEnabled: lrcLibLyricsEnabled,
             showLyricsInPlayer: showLyricsInPlayer,
             lyricsArtworkHold: lyricsArtworkHold,
             changingColorsInPlayer: changingColorsInPlayer,
@@ -437,6 +446,7 @@ public final class SettingsStore: ObservableObject {
         user.scrobbleTiming = scrobbleTiming
         user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.lrcLibLyricsEnabled = lrcLibLyricsEnabled
         user.showLyricsInPlayer = showLyricsInPlayer
         user.lyricsArtworkHold = lyricsArtworkHold
         user.changingColorsInPlayer = changingColorsInPlayer
@@ -464,6 +474,7 @@ public final class SettingsStore: ObservableObject {
         scrobbleTiming = settings.scrobbleTiming
         hapticsEnabled = settings.hapticsEnabled
         showMiniLyrics = settings.showLyricsWhenAvailable
+        lrcLibLyricsEnabled = settings.lrcLibLyricsEnabled
         showLyricsInPlayer = settings.showLyricsInPlayer
         lyricsArtworkHold = settings.lyricsArtworkHold
         changingColorsInPlayer = settings.changingColorsInPlayer
@@ -500,6 +511,7 @@ public final class SettingsStore: ObservableObject {
             librarySort = snapshot.librarySort
             songsDownloadedOnly = snapshot.songsDownloadedOnly
             showMiniLyrics = snapshot.showMiniLyrics
+            lrcLibLyricsEnabled = snapshot.lrcLibLyricsEnabled
             showLyricsInPlayer = snapshot.showLyricsInPlayer
             lyricsArtworkHold = snapshot.lyricsArtworkHold
             changingColorsInPlayer = snapshot.changingColorsInPlayer
@@ -555,6 +567,7 @@ public final class SettingsStore: ObservableObject {
         scrobbleTiming = user.scrobbleTiming
         hapticsEnabled = user.hapticsEnabled
         showMiniLyrics = user.showLyricsWhenAvailable
+        lrcLibLyricsEnabled = user.lrcLibLyricsEnabled
         showLyricsInPlayer = user.showLyricsInPlayer
         lyricsArtworkHold = user.lyricsArtworkHold
         changingColorsInPlayer = user.changingColorsInPlayer
@@ -585,6 +598,7 @@ public final class SettingsStore: ObservableObject {
         user.scrobbleTiming = scrobbleTiming
         user.hapticsEnabled = hapticsEnabled
         user.showLyricsWhenAvailable = showMiniLyrics
+        user.lrcLibLyricsEnabled = lrcLibLyricsEnabled
         user.showLyricsInPlayer = showLyricsInPlayer
         user.lyricsArtworkHold = lyricsArtworkHold
         user.changingColorsInPlayer = changingColorsInPlayer

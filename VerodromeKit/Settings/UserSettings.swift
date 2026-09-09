@@ -22,6 +22,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
     /// When the queue runs low, append similar-song radio so listening can continue.
     public var radioContinuationEnabled: Bool
     public var showLyricsWhenAvailable: Bool
+    /// When the music server has no lyrics, fall back to a lookup on LRCLIB.
+    public var lrcLibLyricsEnabled: Bool
     /// Whether the full-screen player shows the lyrics panel in place of the artwork.
     public var showLyricsInPlayer: Bool
     /// How long artwork stays visible before the lyrics crossfade on each track.
@@ -51,6 +53,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         gaplessPlaybackEnabled: Bool = true,
         radioContinuationEnabled: Bool = true,
         showLyricsWhenAvailable: Bool = true,
+        lrcLibLyricsEnabled: Bool = true,
         showLyricsInPlayer: Bool = false,
         lyricsArtworkHold: LyricsArtworkHold = .default,
         changingColorsInPlayer: Bool = true,
@@ -76,6 +79,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
         self.radioContinuationEnabled = radioContinuationEnabled
         self.showLyricsWhenAvailable = showLyricsWhenAvailable
+        self.lrcLibLyricsEnabled = lrcLibLyricsEnabled
         self.showLyricsInPlayer = showLyricsInPlayer
         self.lyricsArtworkHold = lyricsArtworkHold
         self.changingColorsInPlayer = changingColorsInPlayer
@@ -118,6 +122,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case gaplessPlaybackEnabled
         case radioContinuationEnabled
         case showLyricsWhenAvailable
+        case lrcLibLyricsEnabled
         case showLyricsInPlayer
         case lyricsArtworkHold
         case changingColorsInPlayer
@@ -161,6 +166,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         gaplessPlaybackEnabled = try c.decodeIfPresent(Bool.self, forKey: .gaplessPlaybackEnabled) ?? true
         radioContinuationEnabled = try c.decodeIfPresent(Bool.self, forKey: .radioContinuationEnabled) ?? true
         showLyricsWhenAvailable = try c.decodeIfPresent(Bool.self, forKey: .showLyricsWhenAvailable) ?? true
+        lrcLibLyricsEnabled = try c.decodeIfPresent(Bool.self, forKey: .lrcLibLyricsEnabled) ?? true
         showLyricsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .showLyricsInPlayer) ?? false
         lyricsArtworkHold = try c.decodeIfPresent(LyricsArtworkHold.self, forKey: .lyricsArtworkHold) ?? .default
         changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
@@ -189,6 +195,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
         try c.encode(radioContinuationEnabled, forKey: .radioContinuationEnabled)
         try c.encode(showLyricsWhenAvailable, forKey: .showLyricsWhenAvailable)
+        try c.encode(lrcLibLyricsEnabled, forKey: .lrcLibLyricsEnabled)
         try c.encode(showLyricsInPlayer, forKey: .showLyricsInPlayer)
         try c.encode(lyricsArtworkHold, forKey: .lyricsArtworkHold)
         try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
