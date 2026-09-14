@@ -68,6 +68,36 @@ final class LibraryMutationOutboxTests: XCTestCase {
         ])
     }
 
+    /// The canonical-ID migration hands in bulk maps: playlists, songs (inside
+    /// add/remove/reorder payloads), and per-type entity ids (for favorite/rating
+    /// mutations). Each remap kind fires independently and touches only its own entries.
+    func testBulkRemapRewritesPlaylistsSongsAndEntityIdsInOnePass() async {
+        let outbox = LibraryMutationOutbox(directory: directory, accountKey: "account")
+        await outbox.enqueue(.createPlaylist(localId: "old-playlist", name: "Mine"))
+        await outbox.enqueue(.addToPlaylist(playlistId: "old-playlist", songIds: ["old-song", "keeps"]))
+        await outbox.enqueue(.setFavorite(entityId: "old-song", type: .song, isFavorite: true))
+        await outbox.enqueue(.setRating(entityId: "old-album", type: .album, rating: 4))
+        await outbox.enqueue(.setFavorite(entityId: "unrelated", type: .artist, isFavorite: true))
+
+        await outbox.remapIds(
+            playlists: ["old-playlist": "new-playlist"],
+            songs: ["old-song": "new-song"],
+            entities: [
+                .song: ["old-song": "new-song"],
+                .album: ["old-album": "new-album"],
+            ]
+        )
+
+        let pending = await outbox.all()
+        XCTAssertEqual(pending, [
+            .createPlaylist(localId: "new-playlist", name: "Mine"),
+            .addToPlaylist(playlistId: "new-playlist", songIds: ["new-song", "keeps"]),
+            .setFavorite(entityId: "new-song", type: .song, isFavorite: true),
+            .setRating(entityId: "new-album", type: .album, rating: 4),
+            .setFavorite(entityId: "unrelated", type: .artist, isFavorite: true),
+        ])
+    }
+
     func testPersistsAcrossInstances() async {
         let outbox = LibraryMutationOutbox(directory: directory, accountKey: "account")
         await outbox.enqueue(.setFavorite(entityId: "s1", type: .song, isFavorite: true))

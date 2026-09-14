@@ -24,6 +24,9 @@ public final class SubsonicServerApi: @unchecked Sendable {
     private var tokenSalt: String?
 
     public private(set) var isAuthenticated = false
+    /// Ping `type=` / `serverVersion=`. Used to rewrite media-file IDs on Navidrome 0.64+.
+    public private(set) var productName: String?
+    public private(set) var productVersion: String?
 
     public init(
         baseURL: URL = URL(string: "http://localhost")!,
@@ -63,7 +66,16 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
         let data = try await request(method: "ping")
         isAuthenticated = true
-        return try SubsonicParsers.parseServerInfo(data: data)
+        let info = try SubsonicParsers.parseServerInfo(data: data)
+        productName = info.name
+        productVersion = info.version
+        return info
+    }
+
+    /// Updates the product identity from a later ping (e.g. mid-session upgrade).
+    public func rememberProduct(_ info: ServerInfo) {
+        productName = info.name
+        productVersion = info.version
     }
 
     public func ping() async throws {
@@ -186,18 +198,18 @@ public final class SubsonicServerApi: @unchecked Sendable {
         case .album: parameter = "albumId"
         case .artist: parameter = "artistId"
         }
-        _ = try await request(method: method, parameters: [parameter: id])
+        _ = try await request(method: method, parameters: [parameter: songIdForRequest(id)])
     }
 
     public func setRating(id: String, rating: Int) async throws {
-        _ = try await request(method: "setRating", parameters: ["id": id, "rating": String(rating)])
+        _ = try await request(method: "setRating", parameters: ["id": songIdForRequest(id), "rating": String(rating)])
     }
 
     public func scrobble(id: String, time: Date, submission: Bool = true) async throws {
         _ = try await request(
             method: "scrobble",
             parameters: [
-                "id": id,
+                "id": songIdForRequest(id),
                 "time": String(Int(time.timeIntervalSince1970 * 1000)),
                 "submission": submission ? "true" : "false"
             ]
@@ -206,7 +218,7 @@ public final class SubsonicServerApi: @unchecked Sendable {
 
     /// OpenSubsonic `getLyricsBySongId`, falling back to classic `getLyrics`.
     public func getLyricsBySongId(id: String) async throws -> Data {
-        try await request(method: "getLyricsBySongId", parameters: ["id": id])
+        try await request(method: "getLyricsBySongId", parameters: ["id": songIdForRequest(id)])
     }
 
     public func getLyrics(artist: String, title: String) async throws -> Data {
@@ -220,13 +232,13 @@ public final class SubsonicServerApi: @unchecked Sendable {
         try await request(
             method: "createPlaylist",
             parameters: ["name": name],
-            repeating: songIds.isEmpty ? [:] : ["songId": songIds]
+            repeating: songIds.isEmpty ? [:] : ["songId": songIds.map(songIdForRequest)]
         )
     }
 
     public func updatePlaylist(id: String, name: String? = nil, songIdsToAdd: [String] = [], songIndexesToRemove: [Int] = []) async throws {
         var repeating: [String: [String]] = [:]
-        if !songIdsToAdd.isEmpty { repeating["songIdToAdd"] = songIdsToAdd }
+        if !songIdsToAdd.isEmpty { repeating["songIdToAdd"] = songIdsToAdd.map(songIdForRequest) }
         if !songIndexesToRemove.isEmpty {
             repeating["songIndexToRemove"] = songIndexesToRemove.map(String.init)
         }
@@ -269,22 +281,35 @@ public final class SubsonicServerApi: @unchecked Sendable {
     // MARK: - Media URLs
 
     public func streamURL(for songId: String, maxBitrate: Int?, format: StreamFormat?) -> URL? {
-        var params: [String: String] = ["id": songId]
+        var params: [String: String] = ["id": songIdForRequest(songId)]
         if let maxBitrate { params["maxBitRate"] = String(maxBitrate) }
         if let format { params["format"] = format.rawValue }
         return try? buildURL(method: "stream", parameters: params)
     }
 
     public func downloadURL(for songId: String, maxBitrate: Int? = nil, format: StreamFormat? = nil) -> URL? {
-        var params: [String: String] = ["id": songId]
+        var params: [String: String] = ["id": songIdForRequest(songId)]
         if let maxBitrate { params["maxBitRate"] = String(maxBitrate) }
         if let format { params["format"] = format.rawValue }
         return try? buildURL(method: "download", parameters: params)
     }
 
+    /// `getSong` is deliberately *not* rewritten: the canonical-ID probe must see the
+    /// server's true answer for the raw ID vs `canonical(id)`. Stream/download/lyrics
+    /// still remap so playback works before (or without) a library rewrite.
+    private func songIdForRequest(_ id: String) -> String {
+        NavidromeRequestID.resolve(id, serverTypeName: productName, version: productVersion)
+    }
+
     public func coverArtURL(for coverArtId: String, size: Int?) -> URL? {
         var params: [String: String] = ["id": coverArtId]
-        if let size { params["size"] = String(size) }
+        // Navidrome 0.64 rejects non-positive `size` on `getCoverArt` with a 400. Callers
+        // in Verodrome only ever pass 120/300/450/900 today, so this is purely defensive:
+        // if a future call site (or an out-of-tree caller) hands in 0 / a negative value,
+        // drop the parameter and let the server return its default size.
+        if let size, size > 0 {
+            params["size"] = String(size)
+        }
         return try? buildURL(method: "getCoverArt", parameters: params)
     }
 

@@ -22,6 +22,33 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
     private var memory: [String: URL] = [:]
     private var didIndexCacheDirectory = false
 
+    /// HTTP validators for every cached render — the `ETag` + `Last-Modified` +
+    /// `Cache-Control: immutable` bits we saw when the file was written. Persisted next
+    /// to the cache directory as `art-meta.json`, mirroring the shape of the playable
+    /// cache's own meta. Missing entries fall back to unconditional network loads, so
+    /// carts of pre-existing files keep working after the meta file first appears.
+    private var artMeta: [String: ArtCacheMeta] = [:]
+    private var loadedArtMeta = false
+
+    struct ArtCacheMeta: Codable, Equatable {
+        var etag: String?
+        var lastModified: String?
+        var immutable: Bool
+        var storedAt: Date
+
+        var hasValidator: Bool { etag != nil || lastModified != nil }
+    }
+
+    private var artMetaURL: URL {
+        cacheDirectory.appendingPathComponent("art-meta.json")
+    }
+
+    /// Anything older than this that isn't marked immutable is a revalidation candidate
+    /// when a caller enqueues it via prefetch. Tunable but coarse — the point is to keep
+    /// stale placeholders from lingering after real art lands server-side, not to catch
+    /// every second-by-second update.
+    private static let revalidationStaleness: TimeInterval = 60 * 60 * 24  // 1 day
+
     /// Limits concurrent direct network loads from `loadImage` (which bypasses the
     /// prefetch queue). Without this, ~140 Home tiles fire URLSession requests at once.
     private let maxActiveLoads = 6
@@ -39,7 +66,23 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
     }
 
     public func enqueue(artId: String, kind: ArtworkKind = .album, size: Int = 300) async {
-        if localURL(for: artId, size: size) != nil { return }
+        loadArtMetaIfNeeded()
+        // A cached-but-stale entry may still resolve, but if it has an ETag we should try
+        // to revalidate opportunistically off the hot path. Immutable entries and those
+        // without a validator skip straight to the fast return.
+        if localURL(for: artId, size: size) != nil {
+            let key = cacheKey(artId: artId, size: size)
+            if let meta = artMeta[key],
+               !meta.immutable,
+               meta.hasValidator,
+               Date().timeIntervalSince(meta.storedAt) >= Self.revalidationStaleness {
+                if !pending.contains(where: { $0.artId == artId && $0.size == size }) {
+                    pending.append((artId, kind, size))
+                    await pump()
+                }
+            }
+            return
+        }
         if pending.contains(where: { $0.artId == artId && $0.size == size }) { return }
         pending.append((artId, kind, size))
         await pump()
@@ -227,9 +270,22 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
                 ArtworkPerf.record(source: .miss, size: size, ms: netMs + prepMs, context: "decodeMiss")
                 return nil
             }
-            let dest = fileURL(for: artId, size: size)
-            try? data.write(to: dest, options: .atomic)
-            noteStored(artId: artId, size: size, at: dest)
+            // Navidrome 0.64 tags unresolved art with `Cache-Control: no-store`; decoding
+            // it for the current render is fine, but persisting it would leave the
+            // placeholder in the cache forever.
+            let policy = CachePolicy.parse(from: response)
+            if !policy.noStore {
+                let dest = fileURL(for: artId, size: size)
+                try? data.write(to: dest, options: .atomic)
+                noteStored(artId: artId, size: size, at: dest)
+                artMeta[cacheKey(artId: artId, size: size)] = ArtCacheMeta(
+                    etag: policy.etag,
+                    lastModified: policy.lastModified,
+                    immutable: policy.immutable,
+                    storedAt: Date()
+                )
+                persistArtMeta()
+            }
             let totalMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000).rounded())
             ArtworkPerf.record(
                 source: .network,
@@ -247,10 +303,13 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
     }
 
     private static func isSuccessfulImageResponse(_ response: URLResponse, data: Data? = nil) -> Bool {
-        if let data, data.isEmpty { return false }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            return false
+        if let http = response as? HTTPURLResponse {
+            // 304 is a *conditional* success — the caller keeps the existing file. Empty
+            // bodies are expected and correct, so don't reject on `data.isEmpty` first.
+            if http.statusCode == 304 { return true }
+            if !(200..<300).contains(http.statusCode) { return false }
         }
+        if let data, data.isEmpty { return false }
         if let mime = response.mimeType?.lowercased(),
            !mime.hasPrefix("image/"),
            mime != "application/octet-stream",
@@ -260,10 +319,35 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
         return true
     }
 
+    /// Parsed subset of the response's `Cache-Control` header, plus the raw validator
+    /// headers so we can persist them.
+    private struct CachePolicy {
+        var noStore: Bool
+        var immutable: Bool
+        var etag: String?
+        var lastModified: String?
+
+        static func parse(from response: URLResponse) -> CachePolicy {
+            guard let http = response as? HTTPURLResponse else {
+                return CachePolicy(noStore: false, immutable: false, etag: nil, lastModified: nil)
+            }
+            let cacheControl = (http.value(forHTTPHeaderField: "Cache-Control") ?? "").lowercased()
+            let directives = cacheControl.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            return CachePolicy(
+                noStore: directives.contains("no-store"),
+                immutable: directives.contains("immutable"),
+                etag: http.value(forHTTPHeaderField: "ETag"),
+                lastModified: http.value(forHTTPHeaderField: "Last-Modified")
+            )
+        }
+    }
+
     private func removeCachedFile(at url: URL) {
         try? FileManager.default.removeItem(at: url)
         if let key = memory.first(where: { $0.value == url })?.key {
             memory[key] = nil
+            artMeta[key] = nil
+            persistArtMeta()
         }
     }
 
@@ -387,7 +471,34 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
         }
         do {
             let remote = try await urlProvider.artworkURL(forArtId: artId, kind: kind, size: size)
-            let (temp, response) = try await URLSession.shared.download(from: remote)
+            // Send conditional headers when we have validators on the current entry so
+            // Navidrome can answer 304 and skip re-sending the body. Only wired here
+            // (background pump), not on the synchronous `loadImage` path — that runs
+            // ~140 tiles at a time and would flood the network with conditional GETs.
+            let key = cacheKey(artId: artId, size: size)
+            var request = URLRequest(url: remote)
+            if let meta = artMeta[key] {
+                if let etag = meta.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+                if let lastModified = meta.lastModified { request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since") }
+            }
+            let (temp, response) = try await URLSession.shared.download(for: request)
+            let policy = CachePolicy.parse(from: response)
+
+            // 304: the cached file is still current — just refresh the meta so the next
+            // revalidation window resets, and leave the file alone.
+            if let http = response as? HTTPURLResponse, http.statusCode == 304 {
+                try? FileManager.default.removeItem(at: temp)
+                if var meta = artMeta[key] {
+                    meta.storedAt = Date()
+                    if let etag = policy.etag { meta.etag = etag }
+                    if let lm = policy.lastModified { meta.lastModified = lm }
+                    if policy.immutable { meta.immutable = true }
+                    artMeta[key] = meta
+                    persistArtMeta()
+                }
+                return
+            }
+
             // Reject error/HTML bodies before they become permanent cache misses.
             let attrs = try FileManager.default.attributesOfItem(atPath: temp.path)
             let byteCount = (attrs[.size] as? NSNumber)?.intValue ?? 0
@@ -397,13 +508,44 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
                 try? FileManager.default.removeItem(at: temp)
                 return
             }
+            // Never persist a placeholder — Navidrome 0.64 serves the "not resolved yet"
+            // response with `Cache-Control: no-store`. Persisting it would freeze the
+            // placeholder in the cache forever; instead let the callsite render this
+            // frame with the fetched body and re-request next time.
+            if policy.noStore {
+                try? FileManager.default.removeItem(at: temp)
+                return
+            }
             let dest = fileURL(for: artId, size: size)
             if FileManager.default.fileExists(atPath: dest.path) {
                 try FileManager.default.removeItem(at: dest)
             }
             try FileManager.default.moveItem(at: temp, to: dest)
             noteStored(artId: artId, size: size, at: dest)
+            artMeta[key] = ArtCacheMeta(
+                etag: policy.etag,
+                lastModified: policy.lastModified,
+                immutable: policy.immutable,
+                storedAt: Date()
+            )
+            persistArtMeta()
         } catch {}
+    }
+
+    // MARK: - Meta persistence
+
+    private func loadArtMetaIfNeeded() {
+        guard !loadedArtMeta else { return }
+        loadedArtMeta = true
+        guard let data = try? Data(contentsOf: artMetaURL),
+              let decoded = try? JSONDecoder().decode([String: ArtCacheMeta].self, from: data)
+        else { return }
+        artMeta = decoded
+    }
+
+    private func persistArtMeta() {
+        guard let data = try? JSONEncoder().encode(artMeta) else { return }
+        try? data.write(to: artMetaURL, options: .atomic)
     }
 
     // MARK: - Cache maintenance
@@ -442,6 +584,8 @@ public actor ArtworkDownloadManager: ArtworkPrefetching {
     public func clearCache() throws {
         pending.removeAll()
         memory.removeAll()
+        artMeta.removeAll()
+        loadedArtMeta = true
         let fm = FileManager.default
         if fm.fileExists(atPath: cacheDirectory.path) {
             try fm.removeItem(at: cacheDirectory)

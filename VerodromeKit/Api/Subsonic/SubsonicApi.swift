@@ -96,7 +96,10 @@ public final class SubsonicApi: BackendApi, @unchecked Sendable {
     public func serverInfo() async throws -> ServerInfo {
         guard isAuthenticated else { throw BackendApiError.notAuthenticated }
         let data = try await server.request(method: "ping")
-        return try SubsonicParsers.parseServerInfo(data: data)
+        let info = try SubsonicParsers.parseServerInfo(data: data)
+        server.rememberProduct(info)
+        serverType = info.name
+        return info
     }
 
     public func ping() async throws {

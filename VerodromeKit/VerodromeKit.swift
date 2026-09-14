@@ -42,6 +42,15 @@ public final class VerodromeKit: ObservableObject {
 
     @Published public var syncProgressMessage: String = ""
     @Published public var launchPhase: LaunchPhase = .loading
+    /// Full-screen overlay while canonical IDs are probed/rewritten. The rewrite itself
+    /// is main-actor SwiftData work, so this flag is published and a frame is yielded
+    /// *before* that work so the overlay can actually paint.
+    @Published public private(set) var isRemappingCanonicalIds = false
+    @Published public private(set) var idMigrationStatusText = "Updating library IDs…"
+    /// Coalesces overlapping `ensureActiveLibrarySyncer` calls (initialize, Home, background
+    /// sync) so the ID gate cannot present/dismiss the overlay three times on one launch.
+    private var inFlightEnsureSyncer: Task<(any LibrarySyncer)?, Error>?
+    private var overlayRetainCount = 0
 
     public enum LaunchPhase: Equatable {
         case loading, login, syncing, main
@@ -54,6 +63,12 @@ public final class VerodromeKit: ObservableObject {
 
     public func initialize(inMemory: Bool = false) async {
         if isInitialized { return }
+        // Bind account settings before anything reads `observableSettings.account`.
+        // Without this, cold launch leaves the in-memory copy at `.default`, the
+        // canonical-ID gate sees a nil server type, and streaming keeps pre-0.64 IDs.
+        if let key = accountStore.activeAccountKey() {
+            observableSettings.reload(accountKey: key)
+        }
         let storage = inMemory ? PersistentStorage(inMemory: true) : PersistentStorage.shared
         self.storage = storage
         let cacheRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -460,10 +475,25 @@ public final class VerodromeKit: ObservableObject {
     /// Ensures backend auth + library syncer exist for the active account (e.g. after cold launch).
     @discardableResult
     public func ensureActiveLibrarySyncer() async throws -> (any LibrarySyncer)? {
+        if let inFlightEnsureSyncer {
+            return try await inFlightEnsureSyncer.value
+        }
+        let task = Task { @MainActor in
+            try await self.performEnsureActiveLibrarySyncer()
+        }
+        inFlightEnsureSyncer = task
+        defer { inFlightEnsureSyncer = nil }
+        return try await task.value
+    }
+
+    private func performEnsureActiveLibrarySyncer() async throws -> (any LibrarySyncer)? {
         if let activeLibrarySyncer, backendProxy.isAuthenticated {
-            if accountStore.needsServerTypeName {
-                await refreshServerTypeIfNeeded()
-            }
+            await refreshServerTypeIfNeeded()
+            // Re-check the ID migration gate even when a syncer already exists: a user
+            // can upgrade Navidrome while the app sits in the foreground, and the
+            // syncer that was minted at launch would otherwise never learn about it.
+            // Same-epoch fast path is one settings read, so this is effectively free.
+            await runCanonicalIdMigrationIfNeeded(syncer: activeLibrarySyncer)
             return activeLibrarySyncer
         }
         guard let storage else { return nil }
@@ -482,7 +512,7 @@ public final class VerodromeKit: ObservableObject {
             }
             rememberServerType(try await backendProxy.login(credentials: login))
             didAuthenticate = true
-        } else if accountStore.needsServerTypeName {
+        } else {
             await refreshServerTypeIfNeeded()
         }
         // The ingester runs on its own ModelActor so sync writes never touch the main
@@ -516,9 +546,51 @@ public final class VerodromeKit: ObservableObject {
         if didAuthenticate {
             NotificationCenter.default.post(name: .backendAuthenticated, object: nil)
         }
+        // Canonical-ID migration runs strictly before any sync / queue-load consumer
+        // reads from the library. Placed here rather than at the top of the function so
+        // the syncer is already available to drive the probe's `getSong` calls, but
+        // before `libraryMutationSyncer.flush()` (which reads local IDs) and before
+        // this function returns the syncer to its caller.
+        await runCanonicalIdMigrationIfNeeded(syncer: syncer)
         // Syncer just became available — push anything queued while offline.
         await libraryMutationSyncer?.flush()
         return syncer
+    }
+
+    /// Show the blocking overlay and wait a beat so SwiftUI can commit it before this
+    /// actor starts the SwiftData rewrite (which would otherwise freeze a still-hidden overlay).
+    public func presentCanonicalIdMigrationOverlay(_ message: String = "Updating library IDs…") async {
+        overlayRetainCount += 1
+        idMigrationStatusText = message
+        let firstShow = !isRemappingCanonicalIds
+        isRemappingCanonicalIds = true
+        // Yield a frame only when the overlay actually appears, so SwiftUI can paint
+        // it before SwiftData blocks the main actor. Repeat presents must not sleep
+        // or overlapping callers stack 50ms delays into a multi-second flash.
+        if firstShow {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    public func dismissCanonicalIdMigrationOverlay() {
+        overlayRetainCount = max(0, overlayRetainCount - 1)
+        if overlayRetainCount == 0 {
+            isRemappingCanonicalIds = false
+        }
+    }
+
+    /// Runs the Navidrome canonical-ID gate and, if a remap happened, reloads the
+    /// in-memory play queue so restored/queued tracks use the new IDs. The on-disk
+    /// queue JSON is rewritten by the migrator; `PlayQueueHandler` is loaded earlier
+    /// during `initialize` and would otherwise keep streaming the old IDs.
+    private func runCanonicalIdMigrationIfNeeded(syncer: any LibrarySyncer) async {
+        let outcome = await NavidromeIdMigrationHook.runIfNeeded(kit: self, syncer: syncer)
+        switch outcome {
+        case .migratedForward, .migratedBackward, .resumed:
+            await queueHandler?.loadFromDisk()
+        default:
+            break
+        }
     }
 
     public func getMeta(for info: AccountInfo) -> MetaManager {
@@ -535,15 +607,30 @@ public final class VerodromeKit: ObservableObject {
         return LibraryRepository(storage: storage)
     }
 
-    /// Persists the handshake/ping product name so Home can title itself after relaunch.
+    /// Persists the handshake/ping product name (and version) so Home can title itself
+    /// after relaunch and the canonical-ID gate can decide whether to probe without
+    /// re-pinging on every call. Writes the `SettingsStore` row directly — relying on
+    /// `observableSettings.updateAccount` is a no-op until that object has been bound
+    /// to the active account, which is too late for cold launch.
     private func rememberServerType(_ info: ServerInfo) {
-        observableSettings.updateAccount { $0.serverTypeName = info.name }
+        if let key = accountStore.activeAccountKey() {
+            var copy = settings.loadAccountSettings(for: key)
+            copy.serverTypeName = info.name
+            copy.serverVersion = info.version
+            settings.saveAccountSettings(copy, for: key)
+            observableSettings.reload(accountKey: key)
+        }
         accountStore.rememberServerTypeName(info.name)
     }
 
     private func refreshServerTypeIfNeeded() async {
-        guard accountStore.needsServerTypeName,
-              backendProxy.isAuthenticated,
+        guard backendProxy.isAuthenticated else { return }
+        let needsType = accountStore.needsServerTypeName
+        let needsVersion: Bool = {
+            guard let key = accountStore.activeAccountKey() else { return false }
+            return settings.loadAccountSettings(for: key).serverVersion == nil
+        }()
+        guard needsType || needsVersion,
               let info = try? await backendProxy.serverInfo() else { return }
         rememberServerType(info)
     }

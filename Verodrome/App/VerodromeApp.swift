@@ -40,6 +40,12 @@ struct VerodromeApp: App {
                     radioContinuation.attach(player: player, shuffleAll: shuffleAll)
                     themeManager.applyTheme()
                 }
+                .overlay {
+                    if kit.isRemappingCanonicalIds {
+                        CanonicalIdMigrationOverlay(message: kit.idMigrationStatusText)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: kit.isRemappingCanonicalIds)
                 .onOpenURL { url in
                     Task {
                         // Router is owned by RootLaunchView; post for handling when main is active.
@@ -86,5 +92,37 @@ struct VerodromeApp: App {
         case .light: .light
         case .dark: .dark
         }
+    }
+}
+
+/// Blocks the UI while Navidrome IDs are rewritten. Shown before the main-actor
+/// SwiftData pass so the freeze has a visible explanation instead of a stuck screen.
+private struct CanonicalIdMigrationOverlay: View {
+    let message: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.primary)
+                Text(message)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text("Downloads stay on this device. This can take a moment on a large library.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: 320)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }

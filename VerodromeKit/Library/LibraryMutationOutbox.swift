@@ -118,22 +118,46 @@ public actor LibraryMutationOutbox {
 
     /// Rewrites playlist ids after an offline-created playlist receives a server id.
     public func remapPlaylistId(from oldId: String, to newId: String) {
-        guard oldId != newId else { return }
+        remapIds(playlists: [oldId: newId], songs: [:], entities: [:])
+    }
+
+    /// Bulk id remap for the canonical-id migration. Rewrites playlist ids, song ids in
+    /// playlist add/remove/reorder payloads, and generic entity ids in favorite/rating
+    /// mutations (which are keyed by `LibraryEntityType`, so a `song` remap only touches
+    /// `.song` entries). One pass over `pending` per invocation, then persist once.
+    public func remapIds(
+        playlists: [String: String],
+        songs: [String: String],
+        entities: [LibraryEntityType: [String: String]]
+    ) {
+        guard !playlists.isEmpty || !songs.isEmpty || !entities.isEmpty else { return }
         loadIfNeeded()
         pending = pending.map { mutation in
             switch mutation {
             case .createPlaylist(let localId, let name):
-                return localId == oldId ? .createPlaylist(localId: newId, name: name) : mutation
+                let mapped = playlists[localId] ?? localId
+                return mapped == localId ? mutation : .createPlaylist(localId: mapped, name: name)
             case .renamePlaylist(let playlistId, let name):
-                return playlistId == oldId ? .renamePlaylist(playlistId: newId, name: name) : mutation
+                let mapped = playlists[playlistId] ?? playlistId
+                return mapped == playlistId ? mutation : .renamePlaylist(playlistId: mapped, name: name)
             case .addToPlaylist(let playlistId, let songIds):
-                return playlistId == oldId ? .addToPlaylist(playlistId: newId, songIds: songIds) : mutation
+                let newPlaylistId = playlists[playlistId] ?? playlistId
+                let newSongIds = songIds.map { songs[$0] ?? $0 }
+                return .addToPlaylist(playlistId: newPlaylistId, songIds: newSongIds)
             case .removeFromPlaylist(let playlistId, let songIds):
-                return playlistId == oldId ? .removeFromPlaylist(playlistId: newId, songIds: songIds) : mutation
+                let newPlaylistId = playlists[playlistId] ?? playlistId
+                let newSongIds = songIds.map { songs[$0] ?? $0 }
+                return .removeFromPlaylist(playlistId: newPlaylistId, songIds: newSongIds)
             case .reorderPlaylist(let playlistId, let songIds):
-                return playlistId == oldId ? .reorderPlaylist(playlistId: newId, songIds: songIds) : mutation
-            case .setFavorite, .setRating:
-                return mutation
+                let newPlaylistId = playlists[playlistId] ?? playlistId
+                let newSongIds = songIds.map { songs[$0] ?? $0 }
+                return .reorderPlaylist(playlistId: newPlaylistId, songIds: newSongIds)
+            case .setFavorite(let entityId, let type, let isFavorite):
+                let mapped = entities[type]?[entityId] ?? entityId
+                return mapped == entityId ? mutation : .setFavorite(entityId: mapped, type: type, isFavorite: isFavorite)
+            case .setRating(let entityId, let type, let rating):
+                let mapped = entities[type]?[entityId] ?? entityId
+                return mapped == entityId ? mutation : .setRating(entityId: mapped, type: type, rating: rating)
             }
         }
         persist()

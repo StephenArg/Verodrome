@@ -150,6 +150,24 @@ public final class NavidromeNativeApi: @unchecked Sendable {
     // MARK: - Transport
 
     private func perform(_ request: URLRequest) async throws -> (data: Data, headers: [String: String]) {
+        do {
+            return try await performOnce(request)
+        } catch let error as BackendApiError {
+            // Navidrome 0.64.0's migration rotates the JWT signing secret, so any token
+            // held across the upgrade (and any token that has simply expired) starts
+            // coming back 401. One re-authentication and one retry make the caller
+            // oblivious to it. Anything else propagates as before.
+            if case .http(let status, _) = error, status == 401 || status == 403 {
+                try await authenticate()
+                return try await performOnce(request)
+            }
+            throw error
+        }
+    }
+
+    /// Single attempt at the request. Extracted so `perform` can wrap it in the auth
+    /// retry above without recursing.
+    private func performOnce(_ request: URLRequest) async throws -> (data: Data, headers: [String: String]) {
         guard let token else { throw BackendApiError.notAuthenticated }
 
         var authorized = request
@@ -161,6 +179,13 @@ public final class NavidromeNativeApi: @unchecked Sendable {
             .response
 
         if let error = response.error {
+            // Surface 401/403 as `.http(status:)` so the outer `perform` can catch it
+            // and re-authenticate. Alamofire's `.responseValidationFailed` collapses the
+            // status into the error message otherwise, and pattern matching that would
+            // be brittle.
+            if let status = response.response?.statusCode, status == 401 || status == 403 {
+                throw BackendApiError.http(status: status, message: error.localizedDescription)
+            }
             throw BackendApiError.from(status: response.response?.statusCode, message: error.localizedDescription)
         }
         guard let data = response.data else {
