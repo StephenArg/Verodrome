@@ -21,6 +21,9 @@ public final class AccountStore: ObservableObject {
     @Published public private(set) var detectedApiType: ApiType?
     /// Title-cased server product for Home ("Navidrome", "Ampache", …).
     @Published public private(set) var serverTypeDisplayName: String?
+    /// Server URL and username kept across an auto-sign-out so the login form can
+    /// refill them. The rejected password is never stored here.
+    @Published public private(set) var loginPrefill: LoginPrefill?
 
     /// Home tab/nav title — server product when known, otherwise `"Home"`.
     public var homeTitle: String {
@@ -55,6 +58,7 @@ public final class AccountStore: ObservableObject {
         lastError = nil
         detectedApiType = nil
         serverTypeDisplayName = nil
+        loginPrefill = nil
         migrateLegacyIfNeeded()
         if let key = activeAccountKey(), let stored = loadCredentials(for: key) {
             credentials = stored
@@ -109,6 +113,7 @@ public final class AccountStore: ObservableObject {
         }
         _ = await detectApiType(for: trimmedURL)
         try await VerodromeKit.shared.login(credentials: login)
+        loginPrefill = nil
         refreshPublishedState()
     }
 
@@ -119,6 +124,20 @@ public final class AccountStore: ObservableObject {
         detectedApiType = nil
         serverTypeDisplayName = nil
         NotificationCenter.default.post(name: .accountChanged, object: nil)
+    }
+
+    public func rememberError(_ message: String) {
+        lastError = message
+    }
+
+    public func consumeLastError() -> String? {
+        let message = lastError
+        lastError = nil
+        return message
+    }
+
+    public func rememberLoginPrefill(serverURL: String, username: String) {
+        loginPrefill = LoginPrefill(serverURL: serverURL, username: username)
     }
 
     public func activeAccountKey() -> AccountInfo.Key? {
@@ -201,6 +220,16 @@ public final class AccountStore: ObservableObject {
         try? saveCredentials(legacy, for: info)
         setActiveAccount(info)
         defaults.removeObject(forKey: Keys.legacyCredentials)
+    }
+}
+
+public struct LoginPrefill: Equatable, Sendable {
+    public var serverURL: String
+    public var username: String
+
+    public init(serverURL: String, username: String) {
+        self.serverURL = serverURL
+        self.username = username
     }
 }
 

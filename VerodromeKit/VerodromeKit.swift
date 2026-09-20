@@ -52,6 +52,9 @@ public final class VerodromeKit: ObservableObject {
     /// sync) so the ID gate cannot present/dismiss the overlay three times on one launch.
     private var inFlightEnsureSyncer: Task<(any LibrarySyncer)?, Error>?
     private var overlayRetainCount = 0
+    /// Overlapping REST calls can all come back `40` at once; one sign-out is enough.
+    private var isLoggingOutForInvalidCredentials = false
+    private var credentialsRejectedObserver: (any NSObjectProtocol)?
 
     public enum LaunchPhase: Equatable {
         case loading, login, syncing, main
@@ -64,6 +67,7 @@ public final class VerodromeKit: ObservableObject {
 
     public func initialize(inMemory: Bool = false) async {
         if isInitialized { return }
+        observeCredentialFailures()
         // Bind account settings before anything reads `observableSettings.account`.
         // Without this, cold launch leaves the in-memory copy at `.default`, the
         // canonical-ID gate sees a nil server type, and streaming keeps pre-0.64 IDs.
@@ -187,6 +191,9 @@ public final class VerodromeKit: ObservableObject {
 
         if accountStore.activeAccountKey() != nil {
             _ = try? await ensureActiveLibrarySyncer()
+            // Re-auth with a stale password signs the account out. Don't keep restoring
+            // a queue or kicking a sync for a session that is already gone.
+            guard accountStore.activeAccountKey() != nil else { return }
             await restoreParkedTrack()
             // The download queue is memory only, so downloads the last session left
             // unfinished — or parked waiting for Wi-Fi — have to be put back on it.
@@ -412,6 +419,42 @@ public final class VerodromeKit: ObservableObject {
         launchPhase = .login
     }
 
+    private func observeCredentialFailures() {
+        guard credentialsRejectedObserver == nil else { return }
+        credentialsRejectedObserver = NotificationCenter.default.addObserver(
+            forName: .credentialsRejected,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                VerodromeKit.shared.logoutForInvalidCredentials()
+            }
+        }
+    }
+
+    /// Drops the session when the server says the stored username/password are wrong.
+    /// Login probes (`BackendProxy.login`) are excluded so a typo on Add Account cannot
+    /// sign out the account that is already working.
+    func logoutForInvalidCredentials(matching error: Error? = nil) {
+        if let error, !CredentialFailure.matches(error) { return }
+        guard accountStore.activeAccountKey() != nil else { return }
+        guard !isLoggingOutForInvalidCredentials else { return }
+        isLoggingOutForInvalidCredentials = true
+        defer { isLoggingOutForInvalidCredentials = false }
+
+        if let credentials = accountStore.credentials {
+            accountStore.rememberLoginPrefill(
+                serverURL: credentials.serverURL,
+                username: credentials.username
+            )
+        }
+        accountStore.rememberError(
+            "The server rejected this account's username or password. Please sign in again."
+        )
+        Task { await EventLogger.shared.warning("auth", "Server rejected stored credentials; signing out.") }
+        accountStore.logout()
+    }
+
     /// Switches the active account, re-authenticates the backend, and updates library-synced state.
     public func switchToAccount(_ info: AccountInfo) async throws {
         guard let stored = accountStore.allAccounts().first(where: { $0.info.key == info.key }) else {
@@ -431,7 +474,12 @@ public final class VerodromeKit: ObservableObject {
         ) else {
             throw BackendError.invalidURL
         }
-        rememberServerType(try await backendProxy.login(credentials: login))
+        do {
+            rememberServerType(try await backendProxy.login(credentials: login))
+        } catch {
+            logoutForInvalidCredentials(matching: error)
+            throw error
+        }
         _ = try await ensureActiveLibrarySyncer()
         await queueHandler?.loadFromDisk()
         await restoreParkedTrack()
@@ -520,8 +568,13 @@ public final class VerodromeKit: ObservableObject {
             ) else {
                 throw BackendError.invalidURL
             }
-            rememberServerType(try await backendProxy.login(credentials: login))
-            didAuthenticate = true
+            do {
+                rememberServerType(try await backendProxy.login(credentials: login))
+                didAuthenticate = true
+            } catch {
+                logoutForInvalidCredentials(matching: error)
+                throw error
+            }
         } else {
             await refreshServerTypeIfNeeded()
         }

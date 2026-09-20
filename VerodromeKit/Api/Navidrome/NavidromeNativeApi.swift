@@ -48,7 +48,18 @@ public final class NavidromeNativeApi: @unchecked Sendable {
             .response
 
         if let error = response.error {
-            throw BackendApiError.server(error.localizedDescription)
+            // `/auth/login` takes the password directly, so 401 here is a dead secret
+            // rather than an expired JWT (those come back from `/api/*` and are retried
+            // once in `perform`).
+            let apiError = BackendApiError.from(
+                status: response.response?.statusCode,
+                message: error.localizedDescription
+            )
+            if CredentialFailure.matches(apiError) {
+                token = nil
+                CredentialFailure.reportIfNeeded(apiError)
+            }
+            throw apiError
         }
         guard let data = response.data,
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

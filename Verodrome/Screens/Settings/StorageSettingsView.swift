@@ -238,6 +238,18 @@ struct StorageSettingsView: View {
         return formatter
     }
 
+    private var isPopularSupported: Bool {
+        ArtistTopSongs.isSupported(on: activeApiType)
+    }
+
+    private var activeApiType: ApiType? {
+        if let key = account.activeAccountKey() {
+            let stored = settings.loadAccountSettings(for: key).apiType
+            if stored != .notDetected { return stored }
+        }
+        return account.detectedApiType
+    }
+
     private func refreshCacheStats() async {
         isRefreshing = true
         defer { isRefreshing = false }

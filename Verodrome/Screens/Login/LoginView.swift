@@ -9,6 +9,7 @@ struct LoginView: View {
     @State private var isConnecting = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var errorTitle = "Connection Failed"
     @State private var detectedAPI: ApiType?
 
     var body: some View {
@@ -53,7 +54,7 @@ struct LoginView: View {
                 }
             }
             .navigationTitle("Welcome")
-            .alert("Connection Failed", isPresented: $showError) {
+            .alert(errorTitle, isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
@@ -62,6 +63,14 @@ struct LoginView: View {
                 if let creds = account.credentials {
                     serverURL = creds.serverURL
                     username = creds.username
+                } else if let prefill = account.loginPrefill {
+                    serverURL = prefill.serverURL
+                    username = prefill.username
+                }
+                if let message = account.consumeLastError() {
+                    errorTitle = "Signed Out"
+                    errorMessage = message
+                    showError = true
                 }
             }
         }
@@ -73,6 +82,7 @@ struct LoginView: View {
             do {
                 try await account.login(serverURL: serverURL, username: username, password: password)
             } catch {
+                errorTitle = "Connection Failed"
                 errorMessage = error.localizedDescription
                 showError = true
             }

@@ -344,15 +344,36 @@ public final class AmpacheServerApi: @unchecked Sendable {
             .response
 
         if let error = response.error {
-            throw BackendApiError.from(status: response.response?.statusCode, message: error.localizedDescription)
+            let apiError = BackendApiError.from(
+                status: response.response?.statusCode,
+                message: error.localizedDescription
+            )
+            noteCredentialFailureIfNeeded(apiError)
+            throw apiError
         }
 
         guard let data = response.data, !data.isEmpty else {
             throw BackendApiError.server("Empty response for action \(action)")
         }
 
-        try AmpacheParsers.checkForError(data: data)
+        do {
+            try AmpacheParsers.checkForError(data: data)
+        } catch {
+            noteCredentialFailureIfNeeded(error)
+            throw error
+        }
         return data
+    }
+
+    /// `4703` is a failed handshake (wrong user/pass). HTTP 401 is not used as a
+    /// signal here: Ampache reports permissions as XML `401` ACCESS_DENIED, and an
+    /// expired *session* is `4701`.
+    private func noteCredentialFailureIfNeeded(_ error: Error) {
+        guard let xml = error as? XmlParseError,
+              case .serverError(let code, _) = xml,
+              code == 4703 else { return }
+        token = nil
+        CredentialFailure.reportIfNeeded(error)
     }
 
     private func pageParameters(limit: Int, offset: Int) -> [String: String] {

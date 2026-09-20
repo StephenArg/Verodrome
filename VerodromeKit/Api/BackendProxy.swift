@@ -21,21 +21,26 @@ public final class BackendProxy: BackendApi, @unchecked Sendable {
     }
 
     public func login(credentials: LoginCredentials) async throws -> ServerInfo {
-        let candidates = orderedCandidates(for: credentials.preferredApiType)
-        var lastError: Error?
+        // Candidate pings share this method with cold-launch re-auth. A `40` from token
+        // mode is often "try the next dialect", not "the password is wrong" — suppress
+        // auto-logout here and let `VerodromeKit` decide after the whole probe fails.
+        return try await CredentialFailure.ignoring {
+            let candidates = orderedCandidates(for: credentials.preferredApiType)
+            var lastError: Error?
 
-        for api in candidates {
-            do {
-                let info = try await api.login(credentials: credentials)
-                activeApi = api
-                return info
-            } catch {
-                lastError = error
+            for api in candidates {
+                do {
+                    let info = try await api.login(credentials: credentials)
+                    activeApi = api
+                    return info
+                } catch {
+                    lastError = error
+                }
             }
-        }
 
-        activeApi = nil
-        throw lastError ?? BackendApiError.server("Could not detect a compatible music server API.")
+            activeApi = nil
+            throw lastError ?? BackendApiError.server("Could not detect a compatible music server API.")
+        }
     }
 
     public func generateStreamURL(for playable: PlayableRef, maxBitrate: Int?, format: StreamFormat?) -> URL? {

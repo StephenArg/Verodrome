@@ -10,6 +10,9 @@ public extension Notification.Name {
     static let foregroundRefresh = Notification.Name("com.verodrome.foregroundRefresh")
     /// Backend session is ready after cold-launch login (artwork / stream URLs can be minted).
     static let backendAuthenticated = Notification.Name("com.verodrome.backendAuthenticated")
+    /// Stored username/password were rejected. Posted off the main actor from API
+    /// transports; `VerodromeKit` signs the session out on the main actor.
+    static let credentialsRejected = Notification.Name("com.verodrome.credentialsRejected")
     /// A playlist's track list changed, or a playlist was removed.
     static let playlistItemsChanged = Notification.Name("com.verodrome.playlistItemsChanged")
     /// A song's favorite/rating was refreshed from the server. `object` is the playable id.

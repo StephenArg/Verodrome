@@ -137,6 +137,7 @@
 		7615ECA6C3BE3F2040224DAB /* CarPlayArtworkWarmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0815658B450FC194147373 /* CarPlayArtworkWarmer.swift */; };
 		76368769A940A26762412885 /* OptionsMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95EE1D7F734A3C43A7ACA676 /* OptionsMenu.swift */; };
 		77FE85C615C6DDB9EF93F82B /* DeepLinkRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B992F9B9B091C8B3FE873C /* DeepLinkRouterTests.swift */; };
+		9F4A7B12D5F3608C2A91E3BF /* CredentialFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9B2C83A8E1507F0B42D6EA /* CredentialFailureTests.swift */; };
 		7852ABE5C0E68A3C3F657401 /* GenreDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B1AFA5331EE7C925F26020 /* GenreDetailView.swift */; };
 		7891DBF8A2BC1A83119C0FCF /* DominantColors in Frameworks */ = {isa = PBXBuildFile; productRef = 776F36D783A170DC842CDE0F /* DominantColors */; };
 		798D969E953F2338F22D5035 /* ampache_artists.xml in Resources */ = {isa = PBXBuildFile; fileRef = 1C79DD8D1B11D3EEE865A45C /* ampache_artists.xml */; };
@@ -166,6 +167,7 @@
 		8CD662D5651CA664CC4DA7E6 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCE6A29ECA804E13B5BE804 /* PlayerViewModel.swift */; };
 		8CEF842D8878A0FCCEC84560 /* VerodromeKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5037D46285BED7427F5D10CB /* VerodromeKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		8D1924B0A3668EF8D6B0BAE2 /* LibraryPruner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7598C5E5C5681F5679CD3287 /* LibraryPruner.swift */; };
+		8D3F6A01C4E2597B1F80D2AE /* CredentialFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8E1A92B7D04F6E9A31C5D8 /* CredentialFailure.swift */; };
 		8DF208C2855D4BC31507E9D7 /* PlaybackStallDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907C4796EF2C179061D0B502 /* PlaybackStallDetector.swift */; };
 		8F3A91EDFEB2B9144FB73D1E /* DownloadsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C92BBDB9FC39F6FC7FB7B8D /* DownloadsSettingsView.swift */; };
 		8FA8E3C6EE2C01722EAFA3A5 /* AmpacheLibrarySyncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB5F30826912857B161CF94 /* AmpacheLibrarySyncer.swift */; };
@@ -436,6 +438,8 @@
 		3EB1D2CB15F82EEADBBCA994 /* NavidromeIdMigrationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavidromeIdMigrationCoordinator.swift; sourceTree = "<group>"; };
 		3EE4D481F08A2BD0222C1BC6 /* AlphabetIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetIndex.swift; sourceTree = "<group>"; };
 		418518A357CF8987C22C1713 /* CryptoHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoHelpers.swift; sourceTree = "<group>"; };
+		4C8E1A92B7D04F6E9A31C5D8 /* CredentialFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialFailure.swift; sourceTree = "<group>"; };
+		5E9B2C83A8E1507F0B42D6EA /* CredentialFailureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialFailureTests.swift; sourceTree = "<group>"; };
 		41A6CBD0A436BE4E10BE4BCF /* LibrarySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySettingsView.swift; sourceTree = "<group>"; };
 		431F01D0AF32B290818C7A49 /* PlayerControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerControlView.swift; sourceTree = "<group>"; };
 		43FAAB86E3F25E08723B105D /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -981,6 +985,7 @@
 				29848EE7B890C25E5D7E4DEE /* BackendProxy.swift */,
 				9845951F2EF955854E2A32FB /* CommonLibrarySyncer.swift */,
 				418518A357CF8987C22C1713 /* CryptoHelpers.swift */,
+				4C8E1A92B7D04F6E9A31C5D8 /* CredentialFailure.swift */,
 				DB189D87D0D60E692C25387E /* LibraryIngesting.swift */,
 				D4CED3821A6CB4D06162FF9C /* LibrarySyncer.swift */,
 				D87DE4B5C02EF543CCDDB20B /* LoginCredentials.swift */,
@@ -1217,6 +1222,7 @@
 				D7D46C4814ECBF3726E9EE41 /* Navidrome */,
 				D6B60A5A32AEC475E1919B4B /* Subsonic */,
 				900BECBB3FC05714EDB91657 /* FavoriteSongIngestTests.swift */,
+				5E9B2C83A8E1507F0B42D6EA /* CredentialFailureTests.swift */,
 				19183A4EE6ACBB78D78BB661 /* LibrarySyncProgressTests.swift */,
 				C84AAF665BF96DDDC21EBE04 /* PlaylistIngestTests.swift */,
 				7E861159C805C4329A8CF06F /* ShareParserTests.swift */,
@@ -1563,6 +1569,7 @@
 				554F494CD9A72230735A35AB /* ArtworkSwipeCommitTests.swift in Sources */,
 				B179EE055A12F970425DC12E /* AudioTranscodeResolverTests.swift in Sources */,
 				77FE85C615C6DDB9EF93F82B /* DeepLinkRouterTests.swift in Sources */,
+				9F4A7B12D5F3608C2A91E3BF /* CredentialFailureTests.swift in Sources */,
 				DACA6820B6CBC837DBE51DBA /* DownloadCenterTests.swift in Sources */,
 				B621508BB9646E898D36D70D /* DownloadManagerTests.swift in Sources */,
 				079947E1BA6465E49C7EF9A6 /* DownloadedShuffleSessionTests.swift in Sources */,
@@ -1637,6 +1644,7 @@
 				E33DFE182E7BE70DC885C90F /* CacheFileManager.swift in Sources */,
 				EDDC4669D73820F995699936 /* CommonLibrarySyncer.swift in Sources */,
 				A32E4DF530E0B6610DED0044 /* CryptoHelpers.swift in Sources */,
+				8D3F6A01C4E2597B1F80D2AE /* CredentialFailure.swift in Sources */,
 				A8DB63E991350B1400885BDF /* DeepLinkRouter.swift in Sources */,
 				D7463E7E79A0498439A418B5 /* DownloadCenter.swift in Sources */,
 				918C8577ACA770A25E08D9A7 /* DownloadManager.swift in Sources */,

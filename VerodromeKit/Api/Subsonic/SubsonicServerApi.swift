@@ -347,15 +347,34 @@ public final class SubsonicServerApi: @unchecked Sendable {
         if let error = response.error {
             // Navidrome answers 501 in plain text for endpoints an admin has switched
             // off, which never reaches the Subsonic error envelope below.
-            throw BackendApiError.from(status: response.response?.statusCode, message: error.localizedDescription)
+            let apiError = BackendApiError.from(
+                status: response.response?.statusCode,
+                message: error.localizedDescription
+            )
+            noteCredentialFailureIfNeeded(apiError)
+            throw apiError
         }
 
         guard let data = response.data, !data.isEmpty else {
             throw BackendApiError.server("Empty response for \(method)")
         }
 
-        try SubsonicParsers.checkForError(data: data)
+        do {
+            try SubsonicParsers.checkForError(data: data)
+        } catch {
+            noteCredentialFailureIfNeeded(error)
+            throw error
+        }
         return data
+    }
+
+    /// Password goes out on every REST call, so a `40` / HTTP 401 means this session's
+    /// stored secret is dead. Clearing `isAuthenticated` stops `ensureActiveLibrarySyncer`
+    /// from treating the next call as still signed in.
+    private func noteCredentialFailureIfNeeded(_ error: Error) {
+        guard CredentialFailure.matches(error) else { return }
+        isAuthenticated = false
+        CredentialFailure.reportIfNeeded(error)
     }
 
     private func buildURL(
