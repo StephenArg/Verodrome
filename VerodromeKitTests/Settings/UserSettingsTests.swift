@@ -23,4 +23,46 @@ final class UserSettingsTests: XCTestCase {
         let decoded = try JSONDecoder().decode(UserSettings.self, from: data)
         XCTAssertFalse(decoded.lrcLibLyricsEnabled)
     }
+
+    func testArtistTopSongsDefaultsOn() {
+        XCTAssertTrue(UserSettings.default.showArtistTopSongs)
+    }
+
+    /// A settings blob written before the artist Top Songs toggle existed must decode
+    /// with the section opted in, matching the default for fresh installs.
+    func testDecodingLegacyBlobEnablesArtistTopSongs() throws {
+        let json = Data("""
+        {"showLyricsWhenAvailable": true}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: json)
+        XCTAssertTrue(decoded.showArtistTopSongs)
+    }
+
+    func testRoundTripPreservesArtistTopSongsFlag() throws {
+        var settings = UserSettings.default
+        settings.showArtistTopSongs = false
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: data)
+        XCTAssertFalse(decoded.showArtistTopSongs)
+    }
+
+    func testAutoCacheArtistPopularSongsDefaultsOn() {
+        XCTAssertTrue(UserSettings.default.autoCacheArtistPopularSongs)
+    }
+
+    func testDecodingLegacyBlobEnablesAutoCacheArtistPopularSongs() throws {
+        let json = Data("""
+        {"showLyricsWhenAvailable": true}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: json)
+        XCTAssertTrue(decoded.autoCacheArtistPopularSongs)
+    }
+
+    func testRoundTripPreservesAutoCacheArtistPopularSongsFlag() throws {
+        var settings = UserSettings.default
+        settings.autoCacheArtistPopularSongs = false
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: data)
+        XCTAssertFalse(decoded.autoCacheArtistPopularSongs)
+    }
 }

@@ -372,6 +372,14 @@ extension SubsonicLibrarySyncer: SimilarSongProviding {
     }
 }
 
+extension SubsonicLibrarySyncer: TopSongProviding {
+    public func topSongs(artistId: String, artistName: String, count: Int) async throws -> [IngestSong] {
+        try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
+        let data = try await server.getTopSongs(artist: artistName, id: artistId, count: count)
+        return try SubsonicParsers.parseSongList(data: data)
+    }
+}
+
 extension SubsonicLibrarySyncer: RandomSongProviding {
     /// Navidrome's native list endpoint pages a seeded random ordering, so it can be
     /// asked for as much as any other bulk page. Plain Subsonic tops out at 500.

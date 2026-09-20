@@ -79,7 +79,7 @@ public struct IngestAlbum: Sendable, Hashable {
     }
 }
 
-public struct IngestSong: Sendable, Hashable {
+public struct IngestSong: Sendable, Hashable, Codable {
     public let id: String
     public let title: String
     public let albumId: String?

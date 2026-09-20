@@ -25,7 +25,10 @@ struct EntityRow: View {
     var isPlaying: Bool = false
     var trailing: String? = nil
     /// When set, shows this track position instead of artwork (e.g. album track lists).
+    /// Combined with `showsArtworkBesideNumber`, the rank sits to the left of the cover.
     var trackNumber: Int? = nil
+    /// Ranked lists (Popular) keep both the number and the album cover.
+    var showsArtworkBesideNumber: Bool = false
     /// When true (default), uses lightweight 80px artwork suitable for scrolling lists.
     var compactArtwork: Bool = true
     /// Per-track download state, drawn to the left of the subtitle (artist / album).
@@ -93,22 +96,35 @@ struct EntityRow: View {
 
     @ViewBuilder
     private var leadingAccessory: some View {
-        if let trackNumber {
-            Text("\(trackNumber)")
-                .font(.body.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 28, alignment: .trailing)
-        } else {
-            // ArtworkView already clipShapes; don't add another clipped()/clipShape pass
-            // per scrolling cell.
-            Group {
-                if compactArtwork {
-                    ArtworkView.thumbnail(artworkURL, symbol: symbol)
-                } else {
-                    ArtworkView.grid(artworkURL, symbol: symbol)
-                }
+        if let trackNumber, showsArtworkBesideNumber {
+            HStack(spacing: 8) {
+                rankLabel(trackNumber, width: 16, alignment: .leading)
+                artwork
             }
-            .frame(width: 48, height: 48)
+        } else if let trackNumber {
+            rankLabel(trackNumber, width: 28, alignment: .trailing)
+        } else {
+            artwork
         }
+    }
+
+    private func rankLabel(_ number: Int, width: CGFloat, alignment: Alignment) -> some View {
+        Text("\(number)")
+            .font(.body.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .frame(width: width, alignment: alignment)
+    }
+
+    /// ArtworkView already clipShapes; don't add another clipped()/clipShape pass
+    /// per scrolling cell.
+    private var artwork: some View {
+        Group {
+            if compactArtwork {
+                ArtworkView.thumbnail(artworkURL, symbol: symbol)
+            } else {
+                ArtworkView.grid(artworkURL, symbol: symbol)
+            }
+        }
+        .frame(width: 48, height: 48)
     }
 }

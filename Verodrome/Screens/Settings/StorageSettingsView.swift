@@ -4,16 +4,20 @@ import VerodromeKit
 struct StorageSettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var account: AccountStore
 
     @State private var temporaryBytes: Int64 = 0
     @State private var temporaryCount = 0
     @State private var libraryBytes: Int64 = 0
     @State private var artworkBytes: Int64 = 0
     @State private var artworkFileCount = 0
+    @State private var popularBytes: Int64 = 0
+    @State private var popularEntryCount = 0
     @State private var isRefreshing = false
     @State private var isClearing = false
     @State private var showClearArtworkConfirm = false
     @State private var showClearQueueConfirm = false
+    @State private var showClearPopularConfirm = false
     @State private var statusMessage: String?
 
     private let staleOptions = [12, 18, 24]
@@ -110,6 +114,36 @@ struct StorageSettingsView: View {
                 Text("Caches tracks ahead of and behind the one playing so skips start instantly. The cache limit spends that space on the current track, then upcoming tracks, then previous ones.")
             }
 
+            if isPopularSupported {
+                Section {
+                    Toggle("Auto-cache Popular", isOn: $settings.autoCacheArtistPopularSongs)
+                        .onChange(of: settings.autoCacheArtistPopularSongs) { _, _ in settings.save() }
+
+                    LabeledContent("Storage Used") {
+                        if isRefreshing {
+                            ProgressView()
+                        } else {
+                            Text(byteFormatter.string(fromByteCount: popularBytes))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    Button("Clear Popular Cache", role: .destructive) {
+                        showClearPopularConfirm = true
+                    }
+                    .disabled(isClearing || popularEntryCount == 0)
+                    if let statusMessage, statusMessage.hasPrefix("Popular") {
+                        Text(statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Popular")
+                } footer: {
+                    Text("Auto-cache fills Last.fm popular lists for recently played, favorite, and queued artists so artist pages can paint immediately. Turning it off stops those background fetches only — it does not wipe saved lists. Layout & Gestures → Artist → Popular still shows or hides the section.")
+                }
+            }
+
             Section {
                 LabeledContent("Storage Used") {
                     if isRefreshing {
@@ -129,7 +163,7 @@ struct StorageSettingsView: View {
                     showClearArtworkConfirm = true
                 }
                 .disabled(isClearing || (artworkBytes == 0 && artworkFileCount == 0))
-                if let statusMessage {
+                if let statusMessage, !statusMessage.hasPrefix("Popular") {
                     Text(statusMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -158,6 +192,18 @@ struct StorageSettingsView: View {
         }
         .refreshable {
             await refreshCacheStats()
+        }
+        .confirmationDialog(
+            "Clear Popular Cache?",
+            isPresented: $showClearPopularConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Cache", role: .destructive) {
+                Task { await clearPopularCache() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes \(byteFormatter.string(fromByteCount: popularBytes)) of saved Popular lists. They will download again when you open an artist page.")
         }
         .confirmationDialog(
             "Clear Artwork Cache?",
@@ -203,12 +249,18 @@ struct StorageSettingsView: View {
         async let library = Task.detached(priority: .utility) {
             PersistentStorage.shared.libraryStoreByteSize()
         }.value
-        let (artworkStats, playableStats, librarySize) = await (artwork, playable, library)
+        async let popularBytesTask = ArtistPopularSongsCache.shared.byteSize()
+        async let popularCountTask = ArtistPopularSongsCache.shared.entryCount()
+        let (artworkStats, playableStats, librarySize, popularSize, popularCount) = await (
+            artwork, playable, library, popularBytesTask, popularCountTask
+        )
         artworkBytes = artworkStats.totalBytes
         artworkFileCount = artworkStats.fileCount
         temporaryBytes = playableStats.temporaryBytes
         temporaryCount = playableStats.temporaryCount
         libraryBytes = librarySize
+        popularBytes = popularSize
+        popularEntryCount = popularCount
     }
 
     private func clearArtworkCache() async {
@@ -226,5 +278,14 @@ struct StorageSettingsView: View {
         } catch {
             statusMessage = "Couldn’t clear cache: \(error.localizedDescription)"
         }
+    }
+
+    private func clearPopularCache() async {
+        isClearing = true
+        statusMessage = nil
+        defer { isClearing = false }
+        await ArtistPopularSongsCache.shared.removeAll()
+        await refreshCacheStats()
+        statusMessage = "Popular cache cleared."
     }
 }

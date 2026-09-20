@@ -198,12 +198,17 @@ public final class LibraryRepository {
         guard favoritesOnly else {
             return try context.fetch(FetchDescriptor<Album>(sortBy: [SortDescriptor(\Album.sortTitle)]))
         }
-        return try context.fetch(
-            FetchDescriptor<Album>(
-                predicate: #Predicate { $0.isFavorite == true },
-                sortBy: [SortDescriptor(\Album.sortTitle)]
-            )
+        return try fetchFavoriteAlbums(limit: nil)
+    }
+
+    /// Favorite albums only — `limit` keeps Popular warmup off the whole starred catalog.
+    public func fetchFavoriteAlbums(limit: Int?) throws -> [Album] {
+        var descriptor = FetchDescriptor<Album>(
+            predicate: #Predicate { $0.isFavorite == true },
+            sortBy: [SortDescriptor(\Album.sortTitle)]
         )
+        if let limit { descriptor.fetchLimit = max(0, limit) }
+        return try context.fetch(descriptor)
     }
 
     public func fetchAlbums(newestIndexPositive: Bool) throws -> [Album] {
@@ -292,6 +297,16 @@ public final class LibraryRepository {
             if favoritesOnly && !song.isFavorite { return false }
             return true
         }
+    }
+
+    /// Favorite songs only — `limit` keeps Popular warmup from loading the song table.
+    public func fetchFavoriteSongs(limit: Int) throws -> [Song] {
+        var descriptor = FetchDescriptor<Song>(
+            predicate: #Predicate { $0.isFavorite == true },
+            sortBy: [SortDescriptor(\Song.sortTitle)]
+        )
+        descriptor.fetchLimit = max(0, limit)
+        return try context.fetch(descriptor)
     }
 
     @discardableResult

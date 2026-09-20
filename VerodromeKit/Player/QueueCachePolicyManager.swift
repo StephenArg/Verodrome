@@ -17,6 +17,8 @@ public final class QueueCachePolicyManager {
     private let downloader: any DownloadManaging
     private let artwork: (any ArtworkPrefetching)?
     private let settings: () -> UserSettings
+    /// Artists of tracks in the keep window. Popular auto-cache; fire-and-forget.
+    public var onWindowItems: (([QueueItem]) -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var reevaluateTask: Task<Void, Never>?
 
@@ -151,6 +153,7 @@ public final class QueueCachePolicyManager {
         pruneStale(staleHours: user.queuePrefetchStaleHours)
         fillWindow(keepItems: keepItems, currentId: currentId, limitBytes: user.cacheLimitBytes)
         enforceCacheLimit(limitBytes: user.cacheLimitBytes)
+        onWindowItems?(keepItems)
     }
 
     /// Deletes cached files the cache has no record of. Both prune loops above iterate the

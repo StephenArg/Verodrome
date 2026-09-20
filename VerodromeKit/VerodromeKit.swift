@@ -21,6 +21,7 @@ public final class VerodromeKit: ObservableObject {
     public private(set) var queueHandler: PlayQueueHandler?
     public private(set) var queueStore: FilePlayerQueueStore?
     public private(set) var queueCachePolicy: QueueCachePolicyManager?
+    public private(set) var popularPrefetch: ArtistPopularSongsPrefetcher?
     public private(set) var downloadManager: DownloadManager?
     public private(set) var playlistDownloads: PlaylistDownloadCoordinator?
     public private(set) var downloadNetworkPolicy: DownloadNetworkPolicy?
@@ -118,6 +119,14 @@ public final class VerodromeKit: ObservableObject {
             settings: { [weak self] in self?.settings.loadUserSettings() ?? .default }
         )
         self.queueCachePolicy = policy
+
+        let popularPrefetch = ArtistPopularSongsPrefetcher()
+        self.popularPrefetch = popularPrefetch
+        popularPrefetch.start()
+        policy.onWindowItems = { [weak popularPrefetch] items in
+            popularPrefetch?.prefetch(queueItems: items)
+        }
+        await ArtistPopularSongsCache.shared.loadAll()
         policy.start()
 
         let playlistDownloads = PlaylistDownloadCoordinator(
@@ -311,6 +320,7 @@ public final class VerodromeKit: ObservableObject {
         _ = try? await syncer.syncNewestAlbums(limit: 40)
         _ = try? await syncer.syncRecentAlbums(limit: 40)
         try? await syncer.syncFavoriteAlbums()
+        popularPrefetch?.warmupLikelyArtists()
 
         let backfillVersion = settings.loadAppSettings().tracksBackfillVersion
         guard backfillVersion < AppSettings.currentTracksBackfillVersion else {

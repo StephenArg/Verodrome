@@ -3,6 +3,7 @@ import VerodromeKit
 
 struct LayoutSettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var account: AccountStore
 
     private let swipeActions = ["queue", "download", "favorite", "none"]
 
@@ -27,6 +28,17 @@ struct LayoutSettingsView: View {
                     }
                 }
                 .onChange(of: settings.libraryDisplayType) { _, _ in settings.save() }
+            }
+
+            if isPopularSupported {
+                Section {
+                    Toggle("Popular", isOn: $settings.showArtistTopSongs)
+                        .onChange(of: settings.showArtistTopSongs) { _, _ in settings.save() }
+                } header: {
+                    Text("Artist")
+                } footer: {
+                    Text("Show Last.fm popular tracks at the top of artist pages when the library has enough of them.")
+                }
             }
 
             Section("Song Row Swipes") {
@@ -78,5 +90,17 @@ struct LayoutSettingsView: View {
 
     private var homeSectionsSummary: String {
         settings.enabledHomeSections.map(\.title).joined(separator: ", ")
+    }
+
+    private var isPopularSupported: Bool {
+        ArtistTopSongs.isSupported(on: activeApiType)
+    }
+
+    private var activeApiType: ApiType? {
+        if let key = account.activeAccountKey() {
+            let stored = settings.loadAccountSettings(for: key).apiType
+            if stored != .notDetected { return stored }
+        }
+        return account.detectedApiType
     }
 }

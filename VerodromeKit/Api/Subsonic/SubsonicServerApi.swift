@@ -133,6 +133,24 @@ public final class SubsonicServerApi: @unchecked Sendable {
         )
     }
 
+    /// Last.fm-backed popular tracks for an artist. Always sends `artist` so servers
+    /// without `topSongsByArtistId` still resolve by name; `id` is included when the
+    /// caller has one so Navidrome 0.64+ can skip the name lookup.
+    public func getTopSongs(artist: String, id: String? = nil, count: Int = 50) async throws -> Data {
+        var parameters: [String: String] = [
+            "artist": artist,
+            "count": String(max(1, count))
+        ]
+        if let id, !id.isEmpty {
+            parameters["id"] = NavidromeRequestID.resolve(
+                id,
+                serverTypeName: productName,
+                version: productVersion
+            )
+        }
+        return try await request(method: "getTopSongs", parameters: parameters)
+    }
+
     public func getSong(id: String) async throws -> Data {
         try await request(method: "getSong", parameters: ["id": id])
     }

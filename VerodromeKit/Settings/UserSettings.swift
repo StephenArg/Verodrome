@@ -32,6 +32,10 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var changingColorsInPlayer: Bool
     public var showRatingStars: Bool
     public var showSongInfo: Bool
+    /// Last.fm popular tracks on artist pages, when the library has enough of them.
+    public var showArtistTopSongs: Bool
+    /// Background fill of Popular lists for likely next artists and the play-queue window.
+    public var autoCacheArtistPopularSongs: Bool
     public var equalizerBands: [Float]
 
     public init(
@@ -59,6 +63,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         changingColorsInPlayer: Bool = true,
         showRatingStars: Bool = true,
         showSongInfo: Bool = false,
+        showArtistTopSongs: Bool = true,
+        autoCacheArtistPopularSongs: Bool = true,
         equalizerBands: [Float] = Array(repeating: 0, count: 10)
     ) {
         self.isOfflineMode = isOfflineMode
@@ -85,6 +91,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.changingColorsInPlayer = changingColorsInPlayer
         self.showRatingStars = showRatingStars
         self.showSongInfo = showSongInfo
+        self.showArtistTopSongs = showArtistTopSongs
+        self.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
         self.equalizerBands = equalizerBands
     }
 
@@ -128,6 +136,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case changingColorsInPlayer
         case showRatingStars
         case showSongInfo
+        case showArtistTopSongs
+        case autoCacheArtistPopularSongs
         case equalizerBands
         // Legacy keys (decode-only)
         case streamingBitrateWifi
@@ -172,6 +182,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
         showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
         showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
+        showArtistTopSongs = try c.decodeIfPresent(Bool.self, forKey: .showArtistTopSongs) ?? true
+        autoCacheArtistPopularSongs = try c.decodeIfPresent(Bool.self, forKey: .autoCacheArtistPopularSongs) ?? true
         equalizerBands = try c.decodeIfPresent([Float].self, forKey: .equalizerBands) ?? Array(repeating: 0, count: 10)
     }
 
@@ -201,6 +213,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
         try c.encode(showRatingStars, forKey: .showRatingStars)
         try c.encode(showSongInfo, forKey: .showSongInfo)
+        try c.encode(showArtistTopSongs, forKey: .showArtistTopSongs)
+        try c.encode(autoCacheArtistPopularSongs, forKey: .autoCacheArtistPopularSongs)
         try c.encode(equalizerBands, forKey: .equalizerBands)
     }
 }

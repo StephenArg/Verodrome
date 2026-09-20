@@ -56,4 +56,52 @@ final class LibraryRepositoryTests: XCTestCase {
         try repo.replacePlaylistItems(playlist, with: [other, song])
         XCTAssertEqual(playlist.artworkToken, "pl-custom")
     }
+
+    /// Popular warmup must not load the song table and filter in memory.
+    func testFetchFavoriteSongsUsesPredicateAndLimit() throws {
+        let storage = PersistentStorage(inMemory: true)
+        let repo = LibraryRepository(storage: storage)
+        let info = AccountInfo(serverURL: "https://music.example", username: "vera")
+        let account = try repo.getOrCreateAccount(info: info, apiType: .subsonic)
+
+        for i in 0..<8 {
+            let song = try repo.getOrCreateSong(remoteId: "fav-\(i)", title: "Fav \(i)", account: account)
+            song.isFavorite = true
+        }
+        for i in 0..<12 {
+            _ = try repo.getOrCreateSong(remoteId: "plain-\(i)", title: "Plain \(i)", account: account)
+        }
+        try repo.save()
+
+        let limited = try repo.fetchFavoriteSongs(limit: 3)
+        XCTAssertEqual(limited.count, 3)
+        XCTAssertTrue(limited.allSatisfy(\.isFavorite))
+
+        let allFavorites = try repo.fetchFavoriteSongs(limit: 50)
+        XCTAssertEqual(allFavorites.count, 8)
+        XCTAssertTrue(allFavorites.allSatisfy(\.isFavorite))
+    }
+
+    func testFetchFavoriteAlbumsUsesPredicateAndLimit() throws {
+        let storage = PersistentStorage(inMemory: true)
+        let repo = LibraryRepository(storage: storage)
+        let info = AccountInfo(serverURL: "https://music.example", username: "vera")
+        let account = try repo.getOrCreateAccount(info: info, apiType: .subsonic)
+
+        for i in 0..<6 {
+            let album = try repo.getOrCreateAlbum(remoteId: "fav-\(i)", title: "Fav \(i)", account: account)
+            album.isFavorite = true
+        }
+        for i in 0..<10 {
+            _ = try repo.getOrCreateAlbum(remoteId: "plain-\(i)", title: "Plain \(i)", account: account)
+        }
+        try repo.save()
+
+        let limited = try repo.fetchFavoriteAlbums(limit: 2)
+        XCTAssertEqual(limited.count, 2)
+        XCTAssertTrue(limited.allSatisfy(\.isFavorite))
+
+        let unbounded = try repo.fetchAlbums(favoritesOnly: true)
+        XCTAssertEqual(unbounded.count, 6)
+    }
 }

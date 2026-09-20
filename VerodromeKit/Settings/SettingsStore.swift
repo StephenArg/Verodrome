@@ -38,6 +38,10 @@ public final class SettingsStore: ObservableObject {
     @Published public var changingColorsInPlayer: Bool = true
     @Published public var showRatingStars: Bool = true
     @Published public var showSongInfo: Bool = false
+    /// Last.fm popular tracks on artist pages, when the library has enough of them.
+    @Published public var showArtistTopSongs: Bool = true
+    /// Background fill of Popular lists for likely next artists and the play-queue window.
+    @Published public var autoCacheArtistPopularSongs: Bool = true
     /// Hold skip jumps by `miniSkipInterval` instead of changing playback speed.
     @Published public var miniSkipEnabled: Bool = true
     @Published public var miniSkipInterval: MiniSkipInterval = .default
@@ -84,6 +88,8 @@ public final class SettingsStore: ObservableObject {
         var changingColorsInPlayer: Bool
         var showRatingStars: Bool
         var showSongInfo: Bool
+        var showArtistTopSongs: Bool
+        var autoCacheArtistPopularSongs: Bool
         var miniSkipEnabled: Bool
         var miniSkipInterval: MiniSkipInterval
         var carPlayMiniSkipEnabled: Bool
@@ -126,6 +132,8 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer: Bool,
             showRatingStars: Bool,
             showSongInfo: Bool,
+            showArtistTopSongs: Bool,
+            autoCacheArtistPopularSongs: Bool,
             miniSkipEnabled: Bool,
             miniSkipInterval: MiniSkipInterval,
             carPlayMiniSkipEnabled: Bool,
@@ -167,6 +175,8 @@ public final class SettingsStore: ObservableObject {
             self.changingColorsInPlayer = changingColorsInPlayer
             self.showRatingStars = showRatingStars
             self.showSongInfo = showSongInfo
+            self.showArtistTopSongs = showArtistTopSongs
+            self.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
             self.miniSkipEnabled = miniSkipEnabled
             self.miniSkipInterval = miniSkipInterval
             self.carPlayMiniSkipEnabled = carPlayMiniSkipEnabled
@@ -210,6 +220,8 @@ public final class SettingsStore: ObservableObject {
             case changingColorsInPlayer
             case showRatingStars
             case showSongInfo
+            case showArtistTopSongs
+            case autoCacheArtistPopularSongs
             case miniSkipEnabled
             case miniSkipInterval
             case carPlayMiniSkipEnabled
@@ -255,6 +267,8 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer = try c.decodeIfPresent(Bool.self, forKey: .changingColorsInPlayer) ?? true
             showRatingStars = try c.decodeIfPresent(Bool.self, forKey: .showRatingStars) ?? true
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
+            showArtistTopSongs = try c.decodeIfPresent(Bool.self, forKey: .showArtistTopSongs) ?? true
+            autoCacheArtistPopularSongs = try c.decodeIfPresent(Bool.self, forKey: .autoCacheArtistPopularSongs) ?? true
             miniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .miniSkipEnabled) ?? true
             miniSkipInterval = try c.decodeIfPresent(MiniSkipInterval.self, forKey: .miniSkipInterval) ?? .default
             carPlayMiniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .carPlayMiniSkipEnabled) ?? false
@@ -314,6 +328,8 @@ public final class SettingsStore: ObservableObject {
             try c.encode(changingColorsInPlayer, forKey: .changingColorsInPlayer)
             try c.encode(showRatingStars, forKey: .showRatingStars)
             try c.encode(showSongInfo, forKey: .showSongInfo)
+            try c.encode(showArtistTopSongs, forKey: .showArtistTopSongs)
+            try c.encode(autoCacheArtistPopularSongs, forKey: .autoCacheArtistPopularSongs)
             try c.encode(miniSkipEnabled, forKey: .miniSkipEnabled)
             try c.encode(miniSkipInterval, forKey: .miniSkipInterval)
             try c.encode(carPlayMiniSkipEnabled, forKey: .carPlayMiniSkipEnabled)
@@ -378,6 +394,8 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer: changingColorsInPlayer,
             showRatingStars: showRatingStars,
             showSongInfo: showSongInfo,
+            showArtistTopSongs: showArtistTopSongs,
+            autoCacheArtistPopularSongs: autoCacheArtistPopularSongs,
             miniSkipEnabled: miniSkipEnabled,
             miniSkipInterval: miniSkipInterval,
             carPlayMiniSkipEnabled: carPlayMiniSkipEnabled,
@@ -452,6 +470,8 @@ public final class SettingsStore: ObservableObject {
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
+        user.showArtistTopSongs = showArtistTopSongs
+        user.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
         return user
     }
 
@@ -480,6 +500,8 @@ public final class SettingsStore: ObservableObject {
         changingColorsInPlayer = settings.changingColorsInPlayer
         showRatingStars = settings.showRatingStars
         showSongInfo = settings.showSongInfo
+        showArtistTopSongs = settings.showArtistTopSongs
+        autoCacheArtistPopularSongs = settings.autoCacheArtistPopularSongs
         save()
     }
 
@@ -517,6 +539,8 @@ public final class SettingsStore: ObservableObject {
             changingColorsInPlayer = snapshot.changingColorsInPlayer
             showRatingStars = snapshot.showRatingStars
             showSongInfo = snapshot.showSongInfo
+            showArtistTopSongs = snapshot.showArtistTopSongs
+            autoCacheArtistPopularSongs = snapshot.autoCacheArtistPopularSongs
             miniSkipEnabled = snapshot.miniSkipEnabled
             miniSkipInterval = snapshot.miniSkipInterval
             carPlayMiniSkipEnabled = snapshot.carPlayMiniSkipEnabled
@@ -573,6 +597,8 @@ public final class SettingsStore: ObservableObject {
         changingColorsInPlayer = user.changingColorsInPlayer
         showRatingStars = user.showRatingStars
         showSongInfo = user.showSongInfo
+        showArtistTopSongs = user.showArtistTopSongs
+        autoCacheArtistPopularSongs = user.autoCacheArtistPopularSongs
     }
 
     private func syncTypedStoresFromPublished() {
@@ -604,6 +630,8 @@ public final class SettingsStore: ObservableObject {
         user.changingColorsInPlayer = changingColorsInPlayer
         user.showRatingStars = showRatingStars
         user.showSongInfo = showSongInfo
+        user.showArtistTopSongs = showArtistTopSongs
+        user.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
         save(key: Keys.userSettings, value: user)
     }
 
