@@ -49,6 +49,9 @@ struct SettingsHostView: View {
                 NavigationLink { LibrarySettingsView() } label: {
                     settingsLabel("Library", systemImage: "books.vertical")
                 }
+                NavigationLink { ExplicitLyricsSettingsView() } label: {
+                    settingsLabel("Explicit Lyrics", systemImage: "exclamationmark.bubble")
+                }
                 NavigationLink { DownloadsSettingsView() } label: {
                     settingsLabel("Downloads", systemImage: "arrow.down.circle")
                 }

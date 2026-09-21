@@ -25,6 +25,10 @@ final class RadioContinuationCoordinator: ObservableObject {
         player.$currentItem
             .sink { [weak self] _ in self?.topUpIfNeeded() }
             .store(in: &cancellables)
+        // Hide Explicit can empty the upcoming run without a skip.
+        player.$queue
+            .sink { [weak self] _ in self?.topUpIfNeeded() }
+            .store(in: &cancellables)
         player.$repeatMode
             .sink { [weak self] mode in
                 if mode != .off {

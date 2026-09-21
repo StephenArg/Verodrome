@@ -157,6 +157,32 @@ public enum LyricsArtworkHold: Double, Codable, CaseIterable, Sendable, Identifi
     }
 }
 
+/// How broadly lyrics are scanned for explicit language.
+public enum LyricsExplicitSensitivity: String, Codable, CaseIterable, Sendable, Identifiable {
+    case conservative
+    case average
+    case loose
+
+    public var id: String { rawValue }
+
+    public static let `default`: LyricsExplicitSensitivity = .average
+
+    public var displayName: String {
+        switch self {
+        case .conservative: "Conservative"
+        case .average: "Average"
+        case .loose: "Loose"
+        }
+    }
+}
+
+/// Local lyrics-based parental rating. Independent of the lyrics sidecar cache.
+public enum LyricsExplicitStatus: Int, Sendable, Codable {
+    case unknown = 0
+    case clean = 1
+    case explicit = 2
+}
+
 /// How far a mini-skip tap jumps inside the current track.
 public enum MiniSkipInterval: Int, Codable, CaseIterable, Sendable, Identifiable {
     case three = 3

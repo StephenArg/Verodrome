@@ -162,9 +162,13 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
         audioPlayer.$nowPlaying
             .receive(on: DispatchQueue.main)
             .sink { [weak self] item in
-                self?.lastPersistedPosition = 0
-                self?.currentItem = item
-                self?.pushNowPlaying(reloadArtwork: true)
+                guard let self else { return }
+                let trackChanged = item?.id != self.currentItem?.id
+                if trackChanged {
+                    self.lastPersistedPosition = 0
+                }
+                self.currentItem = item
+                self.pushNowPlaying(reloadArtwork: trackChanged)
             }
             .store(in: &cancellables)
         audioPlayer.$lyrics

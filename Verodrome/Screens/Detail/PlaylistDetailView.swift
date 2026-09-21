@@ -233,7 +233,8 @@ struct PlaylistDetailView: View {
                     downloadStatus: downloadCenter.status(
                         for: song.remoteId,
                         isDownloaded: song.isDownloadedLocally
-                    )
+                    ),
+                    isExplicit: song.isLyricsExplicit
                 )
             } else {
                 Button { playSong(song, entryId: entry.id) } label: {
@@ -246,7 +247,8 @@ struct PlaylistDetailView: View {
                         downloadStatus: downloadCenter.status(
                             for: song.remoteId,
                             isDownloaded: song.isDownloadedLocally
-                        )
+                        ),
+                        isExplicit: song.isLyricsExplicit
                     )
                 }
                 .buttonStyle(.plain)

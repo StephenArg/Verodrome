@@ -226,6 +226,14 @@ final class PlayerViewModel: ObservableObject {
         }.store(in: &cancellables)
         impl.$lyricsLoaded.receive(on: DispatchQueue.main).assign(to: &$lyricsLoaded)
         impl.$statusMessage.receive(on: DispatchQueue.main).assign(to: &$statusMessage)
+        // `removeNonCurrent` (Hide Explicit) and other in-place edits skip
+        // `queueGeneration`, so the queue screen has to hear `queueChanged` too.
+        NotificationCenter.default.publisher(for: .verodromeQueueChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncQueue()
+            }
+            .store(in: &cancellables)
         syncQueue()
         let user = SettingsStore.shared.loadUserSettings()
         equalizerBands = user.equalizerBands
@@ -317,6 +325,7 @@ final class PlayerViewModel: ObservableObject {
     private func syncQueue(fallback: [QueueItem]? = nil) {
         let previousIndex = currentIndex
         let previousGeneration = contextGeneration
+        let previousEntryId = queue.indices.contains(currentIndex) ? queue[currentIndex].entryId : nil
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
         contextGeneration = facade?.contextGeneration ?? contextGeneration
@@ -326,8 +335,11 @@ final class PlayerViewModel: ObservableObject {
         }
         queueList.apply(queue: queue, currentIndex: currentIndex, origin: queueOrigin, repeatMode: repeatMode)
         // A brand-new context isn't a step through a queue, so its index delta says
-        // nothing about direction — leave the last one standing.
+        // nothing about direction — leave the last one standing. Dropping a row above
+        // the playhead also moves `currentIndex` without changing the playing track.
+        let newEntryId = queue.indices.contains(currentIndex) ? queue[currentIndex].entryId : nil
         if contextGeneration == previousGeneration,
+           previousEntryId != newEntryId,
            let direction = Self.slideDirection(
             from: previousIndex,
             to: currentIndex,

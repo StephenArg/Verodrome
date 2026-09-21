@@ -413,6 +413,84 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertEqual(handler.currentItem?.playableId, "1")
     }
 
+    func testRemoveNonCurrentDropsQueuedCopiesAndKeepsPlaying() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(4), startAt: 1)
+
+        let removed = handler.removeNonCurrent(playableId: "2")
+
+        XCTAssertEqual(removed.map(\.playableId), ["2"])
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1", "3"])
+        XCTAssertEqual(handler.currentItem?.playableId, "1")
+        XCTAssertEqual(handler.currentIndex, 1)
+    }
+
+    func testRemoveNonCurrentNeverRemovesThePlayingTrackEvenWhenIdsMatch() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 1)
+        handler.enqueueNext([QueueItem(playableId: "1", title: "Song 1 queued")])
+
+        _ = handler.removeNonCurrent(playableId: "1")
+
+        XCTAssertEqual(handler.currentItem?.playableId, "1")
+        XCTAssertEqual(handler.activeQueue.filter { $0.playableId == "1" }.count, 1)
+        XCTAssertFalse(handler.currentItem?.isUserQueued == true)
+        XCTAssertGreaterThanOrEqual(handler.activeQueue.count, 1)
+    }
+
+    func testRemoveNonCurrentLeavesASingleTrackQueueAlone() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(1), startAt: 0)
+        let generation = handler.queueGeneration
+
+        let removed = handler.removeNonCurrent(playableId: "0")
+
+        XCTAssertTrue(removed.isEmpty)
+        XCTAssertEqual(handler.activeQueue.count, 1)
+        XCTAssertEqual(handler.currentItem?.playableId, "0")
+        XCTAssertEqual(handler.queueGeneration, generation)
+    }
+
+    func testRemoveNonCurrentDoesNotBumpQueueGeneration() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        let generation = handler.queueGeneration
+
+        _ = handler.removeNonCurrent(playableId: "2")
+
+        XCTAssertEqual(handler.queueGeneration, generation)
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["0", "1"])
+        XCTAssertEqual(handler.currentItem?.playableId, "0")
+    }
+
+    func testRemoveNonCurrentPostsQueueChangedWithRemovedItems() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(3), startAt: 0)
+        var received: [String]?
+        let token = NotificationCenter.default.addObserver(
+            forName: .verodromeQueueChanged,
+            object: nil,
+            queue: .main
+        ) { note in
+            received = (note.object as? [QueueItem])?.map(\.playableId)
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        _ = handler.removeNonCurrent(playableId: "1")
+        XCTAssertEqual(received, ["1"])
+    }
+
+    func testRemoveNonCurrentKeepsPointerOnPlayingTrackWhenRemovingEarlierRows() {
+        let handler = PlayQueueHandler()
+        handler.replaceContext(with: Self.songs(4), startAt: 2)
+
+        _ = handler.removeNonCurrent(playableId: "0")
+
+        XCTAssertEqual(handler.currentItem?.playableId, "2")
+        XCTAssertEqual(handler.currentIndex, 1)
+        XCTAssertEqual(handler.activeQueue.map(\.playableId), ["1", "2", "3"])
+    }
+
     /// The same song can sit in the queue twice, so removing one copy has to leave the
     /// restore-order list holding the other.
     func testRemoveRowsWhileShuffledKeepsTheOtherCopyOfTheSameSong() {

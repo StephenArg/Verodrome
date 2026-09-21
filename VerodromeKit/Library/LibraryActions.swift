@@ -836,7 +836,8 @@ extension QueueItem {
             artistName: song.artistName,
             albumName: song.albumTitle,
             duration: song.playDuration,
-            artworkId: song.displayArtworkToken
+            artworkId: song.displayArtworkToken,
+            isLyricsExplicit: song.isLyricsExplicit
         )
     }
 

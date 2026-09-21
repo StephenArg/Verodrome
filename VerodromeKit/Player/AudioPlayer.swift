@@ -648,6 +648,7 @@ public final class AudioPlayer: ObservableObject {
         if let text {
             lyrics = text
             lyricsLoaded = true
+            applyLyricsExplicitIfNeeded(for: item, lyrics: text)
         }
     }
 
@@ -685,8 +686,23 @@ public final class AudioPlayer: ObservableObject {
 
         // The track may have changed while the lookup was in flight.
         guard nowPlaying?.playableId == item.playableId else { return }
-        if let text { lyrics = text }
+        if let text {
+            lyrics = text
+            applyLyricsExplicitIfNeeded(for: item, lyrics: text)
+        }
         lyricsLoaded = true
+    }
+
+    private func applyLyricsExplicitIfNeeded(for item: QueueItem, lyrics: String) {
+        guard item.kind == .song else { return }
+        guard let result = LyricsExplicitEvaluator.applyToLibrary(playableId: item.playableId, lyrics: lyrics) else {
+            return
+        }
+        guard nowPlaying?.playableId == item.playableId else { return }
+        let isExplicit = result.status == .explicit
+        guard var current = nowPlaying, current.isLyricsExplicit != isExplicit else { return }
+        current.isLyricsExplicit = isExplicit
+        nowPlaying = current
     }
 
     /// LRCLIB match metadata for a queue item, or `nil` when it can't be matched

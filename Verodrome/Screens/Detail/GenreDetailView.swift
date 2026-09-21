@@ -9,6 +9,7 @@ struct GenreDetailView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var genreAlbums: [Album] = []
     @State private var genreSongs: [Song] = []
@@ -51,16 +52,17 @@ struct GenreDetailView: View {
                     }
                 }
 
-                if !genreSongs.isEmpty {
+                if !displayedGenreSongs.isEmpty {
                     Section("Songs") {
-                        ForEach(genreSongs, id: \.compoundRemoteId) { song in
+                        ForEach(displayedGenreSongs, id: \.compoundRemoteId) { song in
                             Button { playSong(song) } label: {
                                 EntityRow(
                                     title: song.title,
                                     subtitle: song.displayArtist,
                                     artworkURL: song.displayArtworkToken,
                                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
-                                    trailing: formatDuration(song.displayDuration)
+                                    trailing: formatDuration(song.displayDuration),
+                                    isExplicit: song.isLyricsExplicit
                                 )
                             }
                             .buttonStyle(.plain)
@@ -73,6 +75,9 @@ struct GenreDetailView: View {
         .detailCollapsingNavTitle(genres.first?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: genres.first?.name) {
+            reloadGenreContent()
+        }
+        .onChange(of: settings.hideExplicitSongs) { _, _ in
             reloadGenreContent()
         }
     }
@@ -127,19 +132,26 @@ struct GenreDetailView: View {
         }
     }
 
+    private var displayedGenreSongs: [Song] {
+        settings.hideExplicitSongs ? genreSongs.filter { !$0.isLyricsExplicit } : genreSongs
+    }
+
     private func play(shuffle: Bool, genre: Genre) {
         PlayTrace.begin(
             shuffle ? "GenreDetail Shuffle" : "GenreDetail Play",
             details: "genre=\(genre.name)"
         )
-        PlayTrace.mark("mapping QueueItems", details: "count=\(genreSongs.count)")
-        var items = genreSongs.map(QueueItem.from)
-        if items.isEmpty {
+        PlayTrace.mark("mapping QueueItems", details: "count=\(displayedGenreSongs.count)")
+        var items = displayedGenreSongs.map(QueueItem.from)
+        if items.isEmpty, genreSongs.isEmpty {
             PlayTrace.mark("fallback via album.songs…")
             items = genreAlbums.flatMap { album in
                 album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }.map {
                     QueueItem.from($0, albumArtworkId: album.artworkToken)
                 }
+            }
+            if settings.hideExplicitSongs {
+                items.removeAll { $0.isLyricsExplicit }
             }
         }
         PlayTrace.mark("QueueItems ready", details: "count=\(items.count)")
@@ -151,8 +163,8 @@ struct GenreDetailView: View {
 
     private func playSong(_ song: Song) {
         PlayTrace.begin("GenreDetail track tap", details: "song=\(song.title)")
-        let items = genreSongs.map(QueueItem.from)
-        let index = genreSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
+        let items = displayedGenreSongs.map(QueueItem.from)
+        let index = displayedGenreSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         PlayTrace.mark("calling player.play", details: "count=\(items.count) startAt=\(index)")
         let origin = genres.first.map { QueueOrigin.genre($0.name) }
         player.play(items: items, startAt: index, origin: origin)

@@ -172,7 +172,12 @@ struct PopupPlayerView: View {
                         )
 
                         artistCreditsRow
-                            .opacity(artistCredits.isEmpty && downloadStatus == .none ? 0 : 1)
+                            .opacity(
+                                artistCredits.isEmpty
+                                    && downloadStatus == .none
+                                    && player.currentItem?.isLyricsExplicit != true
+                                    ? 0 : 1
+                            )
                     }
 
                     favoriteButton
@@ -689,6 +694,9 @@ struct PopupPlayerView: View {
             if downloadStatus != .none {
                 DownloadStatusIcon(status: downloadStatus, size: 14, tint: themeManager.accentColor)
                     .accessibilityLabel(downloadAccessibilityLabel)
+            }
+            if player.currentItem?.isLyricsExplicit == true {
+                ExplicitBadge()
             }
 
             artistCreditsContent

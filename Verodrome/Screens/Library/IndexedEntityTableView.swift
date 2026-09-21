@@ -14,6 +14,8 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
     /// A 0–5 star rating drawn in place of `trailingText`, so the filled stars can carry
     /// the tint colour instead of being flattened into a plain string.
     var trailingRating: Int? { get }
+    /// Local lyrics scan marked this song explicit.
+    var isExplicit: Bool { get }
     /// Player identity, for rows that represent something playable. Distinct from
     /// `id`, which is the compound library id and never matches a queue item.
     var playableId: String? { get }
@@ -28,6 +30,7 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
 
 extension LibraryRow {
     var trailingRating: Int? { nil }
+    var isExplicit: Bool { false }
     var playableId: String? { nil }
     var songRemoteIds: [String] { [] }
     var downloadedSongIds: Set<String> { [] }
@@ -55,6 +58,7 @@ struct LibraryRowSnapshot: LibraryRow {
     let symbol: String
     let trailingText: String?
     let trailingRating: Int?
+    let isExplicit: Bool
     let playableId: String?
     let songRemoteIds: [String]
     let downloadedSongIds: Set<String>
@@ -69,6 +73,7 @@ struct LibraryRowSnapshot: LibraryRow {
         symbol: String = "music.note",
         trailingText: String? = nil,
         trailingRating: Int? = nil,
+        isExplicit: Bool = false,
         playableId: String? = nil,
         songRemoteIds: [String] = [],
         downloadedSongIds: Set<String> = [],
@@ -82,6 +87,7 @@ struct LibraryRowSnapshot: LibraryRow {
         self.symbol = symbol
         self.trailingText = trailingText
         self.trailingRating = trailingRating
+        self.isExplicit = isExplicit
         self.playableId = playableId
         self.songRemoteIds = songRemoteIds
         self.downloadedSongIds = downloadedSongIds
@@ -375,6 +381,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
                     symbol: item.symbol,
                     isPlaying: isPlaying(item),
                     downloadStatus: Self.downloadStatus(for: item),
+                    isExplicit: item.isExplicit,
                     accent: accentUIColor
                 )
             }
@@ -393,6 +400,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
                 parts.append(item.id)
                 parts.append(item.subtitle)
                 parts.append(item.artworkToken ?? "")
+                parts.append(item.isExplicit ? "E" : "")
             }
         }
         return parts.joined(separator: "|")
@@ -502,6 +510,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             symbol: item.symbol,
             isPlaying: isPlaying(item),
             downloadStatus: Self.downloadStatus(for: item),
+            isExplicit: item.isExplicit,
             accent: accentUIColor
         )
         return cell
@@ -583,6 +592,52 @@ enum VisibleArtworkLoader {
     }
 }
 
+/// Inset letter plus a stroked capsule. A bordered `UILabel` has no padding, and
+/// trailing spaces in `" E "` are trimmed, which parks the letter against the right edge.
+private final class ExplicitBadgeView: UIView {
+    private let letter = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        letter.text = "E"
+        letter.font = .systemFont(ofSize: 10, weight: .bold)
+        letter.textColor = .secondaryLabel
+        letter.textAlignment = .center
+        letter.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(letter)
+
+        layer.cornerRadius = 3
+        layer.borderWidth = 1
+        applyBorderColor()
+
+        NSLayoutConstraint.activate([
+            letter.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            letter.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            letter.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            letter.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+        ])
+
+        isAccessibilityElement = true
+        accessibilityLabel = "Explicit"
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .vertical)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: CGSize {
+        let letterSize = letter.intrinsicContentSize
+        return CGSize(width: letterSize.width + 8, height: letterSize.height + 2)
+    }
+
+    func applyBorderColor() {
+        layer.borderColor = UIColor.secondaryLabel.cgColor
+        letter.textColor = .secondaryLabel
+    }
+}
+
 final class EntityTableCell: UITableViewCell {
     static let reuseID = "EntityTableCell"
 
@@ -591,6 +646,7 @@ final class EntityTableCell: UITableViewCell {
     private let subtitleLabel = UILabel()
     private let trailingLabel = UILabel()
     private let playingView = UIImageView(image: UIImage(systemName: "waveform"))
+    private let explicitBadge = ExplicitBadgeView()
     private let downloadView = UIImageView()
     private let downloadSpinner = UIActivityIndicatorView(style: .medium)
     /// Holds the download glyph so it can be collapsed out of the subtitle row when idle —
@@ -625,6 +681,8 @@ final class EntityTableCell: UITableViewCell {
         playingView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         playingView.accessibilityLabel = "Now playing"
 
+        explicitBadge.isHidden = true
+
         downloadView.contentMode = .scaleAspectFit
         downloadView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
         downloadView.isHidden = true
@@ -654,7 +712,7 @@ final class EntityTableCell: UITableViewCell {
         titleRow.spacing = 5
         titleRow.alignment = .center
 
-        let subtitleRow = UIStackView(arrangedSubviews: [downloadContainer, subtitleLabel])
+        let subtitleRow = UIStackView(arrangedSubviews: [downloadContainer, explicitBadge, subtitleLabel])
         subtitleRow.axis = .horizontal
         subtitleRow.spacing = 5
         subtitleRow.alignment = .center
@@ -735,6 +793,7 @@ final class EntityTableCell: UITableViewCell {
         artworkView.image = nil
         setPlaying(false, accent: playingView.tintColor ?? .label)
         setDownloadStatus(.none, accent: .clear)
+        explicitBadge.isHidden = true
         trailingLabel.attributedText = nil
         trailingLabel.isHidden = false
     }
@@ -748,10 +807,13 @@ final class EntityTableCell: UITableViewCell {
         symbol: String,
         isPlaying: Bool,
         downloadStatus: DownloadStatus = .none,
+        isExplicit: Bool = false,
         accent: UIColor
     ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
+        explicitBadge.isHidden = !isExplicit
+        explicitBadge.applyBorderColor()
         if let trailingRating {
             trailingLabel.attributedText = ratingStars(trailingRating, accent: accent)
             trailingLabel.isHidden = false

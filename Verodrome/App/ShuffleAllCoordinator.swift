@@ -61,6 +61,10 @@ final class ShuffleAllCoordinator: ObservableObject {
         player.$currentItem
             .sink { [weak self] _ in self?.refreshContext() }
             .store(in: &cancellables)
+        // Hide Explicit can drop upcoming rows without changing the current track.
+        player.$queue
+            .sink { [weak self] _ in self?.refreshContext() }
+            .store(in: &cancellables)
     }
 
     /// Records that the player is starting on the songs library, so a later tap on
@@ -82,7 +86,8 @@ final class ShuffleAllCoordinator: ObservableObject {
                 resolver: LocalLibrarySongResolver(
                     accountKey: AccountStore.shared.activeAccountKey()?.storageKey
                 ),
-                ingestor: VerodromeKit.shared.activeLibraryIngester
+                ingestor: VerodromeKit.shared.activeLibraryIngester,
+                hideExplicit: SettingsStore.shared.hideExplicitSongs
             ),
             downloadedOnly: false
         )
@@ -93,7 +98,7 @@ final class ShuffleAllCoordinator: ObservableObject {
     /// device downloaded, and this has to work with no network at all.
     @discardableResult
     func shuffleDownloaded() async -> Bool {
-        await start(DownloadedShuffleSession(), downloadedOnly: true)
+        await start(DownloadedShuffleSession(hideExplicit: SettingsStore.shared.hideExplicitSongs), downloadedOnly: true)
     }
 
     /// Fresh Shuffle All batch for the locked control: same pool as the walk already
@@ -177,6 +182,7 @@ final class ShuffleAllCoordinator: ObservableObject {
                 return
             }
             contextGeneration = player.contextGeneration
+            topUpIfNeeded(player)
             return
         }
         guard player.contextGeneration == generation else {

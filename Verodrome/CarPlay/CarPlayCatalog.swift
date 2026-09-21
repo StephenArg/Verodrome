@@ -736,7 +736,10 @@ final class CarPlayCatalog {
         return (0..<take).map { offset in
             let index = (start + offset) % queue.count
             let queueItem = queue[index]
-            let item = CPListItem(text: queueItem.title, detailText: queueItem.artistName)
+            let item = CPListItem(
+                text: queueItem.title,
+                detailText: Self.artistDetail(queueItem.artistName, isExplicit: queueItem.isLyricsExplicit)
+            )
             if offset == 0 {
                 item.isPlaying = true
                 item.playingIndicatorLocation = .trailing
@@ -932,7 +935,8 @@ final class CarPlayCatalog {
                                 artistName: song.artistName,
                                 albumName: song.albumTitle,
                                 duration: song.playDuration,
-                                artworkId: song.displayArtworkToken
+                                artworkId: song.displayArtworkToken,
+                                isLyricsExplicit: song.isLyricsExplicit
                             )
                         )
                     }
@@ -973,7 +977,10 @@ final class CarPlayCatalog {
         if !snapshot.songs.isEmpty {
             let queue = snapshot.songs.map(\.queueItem)
             let items = snapshot.songs.enumerated().map { index, hit in
-                let item = CPListItem(text: hit.title, detailText: hit.subtitle)
+                let item = CPListItem(
+                    text: hit.title,
+                    detailText: Self.artistDetail(hit.subtitle, isExplicit: hit.queueItem.isLyricsExplicit)
+                )
                 item.handler = { [weak self] _, completion in
                     completion()
                     Task { @MainActor in
@@ -1146,7 +1153,10 @@ final class CarPlayCatalog {
         return songs.prefix(itemCap).map { song in
             let item = CPListItem(
                 text: song.title,
-                detailText: song.artistName ?? song.artist?.name
+                detailText: Self.artistDetail(
+                    song.artistName ?? song.artist?.name,
+                    isExplicit: song.isLyricsExplicit
+                )
             )
             let songID = song.compoundRemoteId
             let token = song.displayArtworkToken
@@ -1229,6 +1239,15 @@ final class CarPlayCatalog {
         let item = CPListItem(text: "Nothing here yet", detailText: nil)
         item.handler = { _, completion in completion() }
         return item
+    }
+
+    /// CarPlay list rows can't host `ExplicitBadge`, so the letter leads the artist line.
+    private static func artistDetail(_ artist: String?, isExplicit: Bool) -> String? {
+        let name = artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isExplicit {
+            return name.isEmpty ? "E" : "E  \(name)"
+        }
+        return name.isEmpty ? nil : name
     }
 }
 

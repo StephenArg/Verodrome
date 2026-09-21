@@ -45,6 +45,9 @@ public final class NowPlayingInfoCenterHandler {
             info[MPMediaItemPropertyArtist] = artist
             info[MPMediaItemPropertyAlbumArtist] = artist
         }
+        if item.isLyricsExplicit {
+            info[MPMediaItemPropertyIsExplicit] = true
+        }
         if let album = item.albumName?.trimmingCharacters(in: .whitespacesAndNewlines), !album.isEmpty {
             info[MPMediaItemPropertyAlbumTitle] = album
         }

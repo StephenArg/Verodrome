@@ -15,6 +15,7 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
     let duration: TimeInterval
     let trailingText: String?
     let trailingRating: Int?
+    let isExplicit: Bool
 
     var subtitle: String { "\(artistName) · \(albumTitle)" }
     var symbol: String { "music.note" }
@@ -32,6 +33,7 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
         duration = song.playDuration
         trailingRating = sort == .ratingHighest ? song.rating : nil
         trailingText = trailingRating == nil ? Self.trailingText(for: song, sort: sort) : nil
+        isExplicit = song.isLyricsExplicit
     }
 
     /// Ordering by plays or rating sorts on a value the row otherwise never shows, so
@@ -56,7 +58,8 @@ struct LibrarySongRowSnapshot: Identifiable, Sendable, Hashable, LibraryRow {
             artistName: artistName,
             albumName: albumTitle,
             duration: duration,
-            artworkId: artworkToken
+            artworkId: artworkToken,
+            isLyricsExplicit: isExplicit
         )
     }
 }

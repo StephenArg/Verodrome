@@ -9,6 +9,7 @@ struct AlbumDetailView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -17,6 +18,7 @@ struct AlbumDetailView: View {
     @State private var showPlaylistSelector = false
     @State private var artworkTint: ArtworkTint?
     @State private var selectedArtistID: String?
+    @State private var isCheckingExplicit = false
 
     init(albumID: String) {
         self.albumID = albumID
@@ -75,7 +77,8 @@ struct AlbumDetailView: View {
                                 downloadStatus: downloadCenter.status(
                                     for: song.remoteId,
                                     isDownloaded: song.isDownloadedLocally
-                                )
+                                ),
+                                isExplicit: song.isLyricsExplicit
                             )
                         }
                         .buttonStyle(.plain)
@@ -223,6 +226,17 @@ struct AlbumDetailView: View {
             Divider()
 
             Button {
+                let songs = tracks
+                Task { await checkLyricsForExplicit(songs) }
+            } label: {
+                Label(
+                    isCheckingExplicit ? "Checking Lyrics…" : "Check Lyrics for Explicit",
+                    systemImage: "exclamationmark.bubble"
+                )
+            }
+            .disabled(tracks.isEmpty || isCheckingExplicit || !settings.explicitDetectionEnabled)
+
+            Button {
                 let token = album.artworkToken
                 Task { await tintResolver.refresh(key: tintKey, token: token) }
             } label: {
@@ -267,6 +281,23 @@ struct AlbumDetailView: View {
             } else {
                 await LibraryActions.shared.downloadRemaining(songs: songs)
             }
+        }
+    }
+
+    private func checkLyricsForExplicit(_ songs: [Song]) async {
+        isCheckingExplicit = true
+        defer { isCheckingExplicit = false }
+        let result = await LyricsExplicitScanner.scanAlbum(songs: songs)
+        if let album = albums.first {
+            loadTracks(for: album)
+        }
+        if result.total == 0 {
+            ActionToast.show("No tracks to check.")
+        } else if result.markedExplicit == 0 {
+            ActionToast.show("No explicit lyrics found.")
+        } else {
+            let noun = result.markedExplicit == 1 ? "track" : "tracks"
+            ActionToast.show("\(result.markedExplicit) \(noun) marked explicit.")
         }
     }
 

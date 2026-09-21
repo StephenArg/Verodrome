@@ -5,6 +5,7 @@ import VerodromeKit
 struct FavoritesView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var librarySync: LibrarySyncCoordinator
+    @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
 
     @State private var albumRows: [LibraryRowSnapshot] = []
@@ -41,7 +42,8 @@ struct FavoritesView: View {
                             title: row.title,
                             subtitle: row.subtitle,
                             artworkURL: row.artworkToken,
-                            isPlaying: nowPlaying.isCurrent(row.playableId)
+                            isPlaying: nowPlaying.isCurrent(row.playableId),
+                            isExplicit: row.isExplicit
                         )
                         .listRowBackground(Color(.systemBackground))
                     }
@@ -56,16 +58,19 @@ struct FavoritesView: View {
         .task(id: librarySync.isSyncing) {
             await reload()
         }
+        .task(id: settings.hideExplicitSongs) {
+            await reload()
+        }
     }
 
     private func reload() async {
-        let built = await Self.fetch()
+        let built = await Self.fetch(hideExplicit: settings.hideExplicitSongs)
         guard !Task.isCancelled else { return }
         albumRows = built.albums
         songRows = built.songs
     }
 
-    private static func fetch() async -> (albums: [LibraryRowSnapshot], songs: [LibraryRowSnapshot]) {
+    private static func fetch(hideExplicit: Bool) async -> (albums: [LibraryRowSnapshot], songs: [LibraryRowSnapshot]) {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 let albums = try context.fetch(
@@ -94,13 +99,16 @@ struct FavoritesView: View {
                         sortBy: [SortDescriptor(\Song.title)]
                     )
                 )
-                let songRows = songs.map { song in
+                let songRows = songs
+                    .filter { !hideExplicit || !$0.isLyricsExplicit }
+                    .map { song in
                     LibraryRowSnapshot(
                         id: song.compoundRemoteId,
                         sectionKey: song.title.sectionInitial,
                         title: song.title,
                         subtitle: song.displayArtist,
                         artworkToken: song.displayArtworkToken,
+                        isExplicit: song.isLyricsExplicit,
                         playableId: song.remoteId
                     )
                 }

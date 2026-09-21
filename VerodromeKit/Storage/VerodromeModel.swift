@@ -316,6 +316,10 @@ public final class Song {
     /// Denormalized cover art id so list rows avoid faulting `album`.
     public var artworkToken: String?
     public var updatedAt: Date
+    /// Local lyrics scan: 0 unknown, 1 clean, 2 explicit. Default is required for
+    /// lightweight migration of existing stores.
+    public var lyricsExplicitStatusRaw: Int = 0
+    public var lyricsExplicitCheckedAt: Date? = nil
 
     public var account: Account?
     public var artist: Artist?
@@ -341,6 +345,13 @@ public final class Song {
         set { remoteStatusRaw = newValue.rawValue }
     }
 
+    public var lyricsExplicitStatus: LyricsExplicitStatus {
+        get { LyricsExplicitStatus(rawValue: lyricsExplicitStatusRaw) ?? .unknown }
+        set { lyricsExplicitStatusRaw = newValue.rawValue }
+    }
+
+    public var isLyricsExplicit: Bool { lyricsExplicitStatus == .explicit }
+
     public init(remoteId: String, title: String, account: Account?) {
         self.remoteId = remoteId
         self.title = title
@@ -354,6 +365,8 @@ public final class Song {
         self.isUserPinned = false
         self.remoteStatusRaw = RemoteItemStatus.available.rawValue
         self.updatedAt = .now
+        self.lyricsExplicitStatusRaw = 0
+        self.lyricsExplicitCheckedAt = nil
         self.account = account
         self.compoundRemoteId = Song.makeCompoundRemoteId(account: account, remoteId: remoteId)
         self.playlistItems = []

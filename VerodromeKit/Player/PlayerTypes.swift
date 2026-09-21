@@ -168,6 +168,8 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
     /// Appended by radio continuation when the original context runs low. Repeat All
     /// scopes wrap/skip to non-continuation rows and the queue UI can hide this section.
     public var isRadioContinuation: Bool = false
+    /// Local lyrics scan marked this song explicit. Snapshot only — `Song` is source of truth.
+    public var isLyricsExplicit: Bool = false
 
     public var isLiveStream: Bool { kind == .radio || directStreamURL != nil }
 
@@ -183,6 +185,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         isUserQueued: Bool = false,
         isEphemeral: Bool = false,
         isRadioContinuation: Bool = false,
+        isLyricsExplicit: Bool = false,
         entryId: UUID = UUID()
     ) {
         self.entryId = entryId
@@ -197,6 +200,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         self.isUserQueued = isUserQueued
         self.isEphemeral = isEphemeral
         self.isRadioContinuation = isRadioContinuation
+        self.isLyricsExplicit = isLyricsExplicit
     }
 
     public init(from ref: PlayableRef) {
@@ -250,6 +254,7 @@ public struct QueueItem: Sendable, Hashable, Identifiable, Codable {
         isUserQueued = try c.decodeIfPresent(Bool.self, forKey: .isUserQueued) ?? false
         isEphemeral = try c.decodeIfPresent(Bool.self, forKey: .isEphemeral) ?? false
         isRadioContinuation = try c.decodeIfPresent(Bool.self, forKey: .isRadioContinuation) ?? false
+        isLyricsExplicit = try c.decodeIfPresent(Bool.self, forKey: .isLyricsExplicit) ?? false
     }
 
     public var artist: String? { artistName }

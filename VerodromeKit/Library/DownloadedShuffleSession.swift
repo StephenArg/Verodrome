@@ -25,11 +25,13 @@ public actor DownloadedShuffleSession: ShuffleBatchSession {
     public static let defaultBatchSize = 200
 
     private let storage: PersistentStorage
+    private let hideExplicit: Bool
     private var order: [QueueItem]?
     private var cursor = 0
 
-    public init(storage: PersistentStorage = .shared) {
+    public init(storage: PersistentStorage = .shared, hideExplicit: Bool = false) {
         self.storage = storage
+        self.hideExplicit = hideExplicit
     }
 
     /// True once every downloaded track has been handed out.
@@ -57,11 +59,13 @@ public actor DownloadedShuffleSession: ShuffleBatchSession {
     /// `relFilePath != nil` is the same test the downloaded filter and `isDownloadedLocally`
     /// use, so the walk covers exactly the rows the list was showing.
     private func drawDownloaded() async throws -> [QueueItem] {
-        try await storage.backgroundActor.perform { context in
+        let hideExplicit = hideExplicit
+        return try await storage.backgroundActor.perform { context in
             let songs = try context.fetch(
                 FetchDescriptor<Song>(predicate: #Predicate<Song> { $0.relFilePath != nil })
             )
-            return songs.map(QueueItem.from).shuffled()
+            let visible = hideExplicit ? songs.filter { !$0.isLyricsExplicit } : songs
+            return visible.map(QueueItem.from).shuffled()
         }
     }
 }

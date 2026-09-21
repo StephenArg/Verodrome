@@ -7,6 +7,7 @@ struct PlaylistAddSongsView: View {
     @Query private var playlists: [Playlist]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: SettingsStore
 
     @State private var songRows: [AddSongRow] = []
     @State private var selectedIDs: Set<String> = []
@@ -29,7 +30,8 @@ struct PlaylistAddSongsView: View {
                         EntityRow(
                             title: row.title,
                             subtitle: row.subtitle,
-                            artworkURL: row.artworkToken
+                            artworkURL: row.artworkToken,
+                            isExplicit: row.isExplicit
                         )
                         Spacer()
                         if selectedIDs.contains(row.id) {
@@ -53,7 +55,7 @@ struct PlaylistAddSongsView: View {
                 .disabled(selectedIDs.isEmpty || isSaving)
             }
         }
-        .task {
+        .task(id: settings.hideExplicitSongs) {
             await reload()
         }
         .task(id: debouncedSearch) {
@@ -79,14 +81,16 @@ struct PlaylistAddSongsView: View {
     }
 
     private func reload() async {
-        let rows = await Self.fetchSongs()
+        let hideExplicit = settings.hideExplicitSongs
+        let rows = await Self.fetchSongs(hideExplicit: hideExplicit)
         songRows = rows
     }
 
-    private static func fetchSongs() async -> [AddSongRow] {
+    private static func fetchSongs(hideExplicit: Bool) async -> [AddSongRow] {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 try context.fetch(FetchDescriptor<Song>(sortBy: [SortDescriptor(\Song.title)]))
+                    .filter { !hideExplicit || !$0.isLyricsExplicit }
                     .map(AddSongRow.init)
             }
         } catch {
@@ -115,11 +119,13 @@ struct AddSongRow: Identifiable, Hashable, Sendable {
     let title: String
     let subtitle: String
     let artworkToken: String?
+    let isExplicit: Bool
 
     init(song: Song) {
         id = song.compoundRemoteId
         title = song.title
         subtitle = song.artistName ?? "Unknown"
         artworkToken = song.displayArtworkToken
+        isExplicit = song.isLyricsExplicit
     }
 }

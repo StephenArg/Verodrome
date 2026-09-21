@@ -65,4 +65,44 @@ final class UserSettingsTests: XCTestCase {
         let decoded = try JSONDecoder().decode(UserSettings.self, from: data)
         XCTAssertFalse(decoded.autoCacheArtistPopularSongs)
     }
+
+    func testExplicitDetectionDefaultsOnAverageAndVisible() {
+        XCTAssertTrue(UserSettings.default.explicitDetectionEnabled)
+        XCTAssertEqual(UserSettings.default.explicitSensitivity, .average)
+        XCTAssertFalse(UserSettings.default.hideExplicitSongs)
+        XCTAssertTrue(UserSettings.default.explicitBlacklistWords.isEmpty)
+        XCTAssertTrue(UserSettings.default.explicitWhitelistWords.isEmpty)
+    }
+
+    func testDecodingLegacyBlobEnablesExplicitDetection() throws {
+        let json = Data("""
+        {"showLyricsWhenAvailable": true}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: json)
+        XCTAssertTrue(decoded.explicitDetectionEnabled)
+        XCTAssertEqual(decoded.explicitSensitivity, .average)
+        XCTAssertFalse(decoded.hideExplicitSongs)
+        XCTAssertTrue(decoded.explicitBlacklistWords.isEmpty)
+        XCTAssertTrue(decoded.explicitWhitelistWords.isEmpty)
+        XCTAssertNil(decoded.explicitWordListChangedAt)
+    }
+
+    func testRoundTripPreservesExplicitSettings() throws {
+        var settings = UserSettings.default
+        settings.explicitDetectionEnabled = false
+        settings.explicitSensitivity = .conservative
+        settings.explicitBlacklistWords = ["Banana", "banana"]
+        settings.explicitWhitelistWords = ["Fuck"]
+        settings.hideExplicitSongs = true
+        let changedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        settings.explicitWordListChangedAt = changedAt
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(UserSettings.self, from: data)
+        XCTAssertFalse(decoded.explicitDetectionEnabled)
+        XCTAssertEqual(decoded.explicitSensitivity, .conservative)
+        XCTAssertEqual(decoded.explicitBlacklistWords, ["banana"])
+        XCTAssertEqual(decoded.explicitWhitelistWords, ["fuck"])
+        XCTAssertTrue(decoded.hideExplicitSongs)
+        XCTAssertEqual(decoded.explicitWordListChangedAt, changedAt)
+    }
 }

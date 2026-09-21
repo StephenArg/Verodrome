@@ -246,7 +246,8 @@ struct QueueView: View {
                     symbol: item.kind == .radio ? "dot.radiowaves.left.and.right" : "music.note",
                     isPlaying: queueList.currentEntryId == item.entryId
                         || (queueList.currentEntryId == nil && queueList.currentIndex == offset),
-                    downloadStatus: status
+                    downloadStatus: status,
+                    isExplicit: item.isLyricsExplicit
                 )
             }
             .buttonStyle(.plain)

@@ -299,6 +299,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                     self?.catalog.refreshQueueIfPresented()
                 }
                 .store(in: &cancellables)
+            NotificationCenter.default.publisher(for: .verodromeQueueChanged)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.catalog.refreshQueueIfPresented()
+                }
+                .store(in: &cancellables)
         }
 
         PlaylistMembershipIndex.shared.$version

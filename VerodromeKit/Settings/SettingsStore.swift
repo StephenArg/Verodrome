@@ -42,6 +42,12 @@ public final class SettingsStore: ObservableObject {
     @Published public var showArtistTopSongs: Bool = true
     /// Background fill of Popular lists for likely next artists and the play-queue window.
     @Published public var autoCacheArtistPopularSongs: Bool = true
+    @Published public var explicitDetectionEnabled: Bool = true
+    @Published public var explicitSensitivity: LyricsExplicitSensitivity = .default
+    @Published public var explicitBlacklistWords: [String] = []
+    @Published public var explicitWhitelistWords: [String] = []
+    @Published public var explicitWordListChangedAt: Date? = nil
+    @Published public var hideExplicitSongs: Bool = false
     /// Hold skip jumps by `miniSkipInterval` instead of changing playback speed.
     @Published public var miniSkipEnabled: Bool = true
     @Published public var miniSkipInterval: MiniSkipInterval = .default
@@ -90,6 +96,12 @@ public final class SettingsStore: ObservableObject {
         var showSongInfo: Bool
         var showArtistTopSongs: Bool
         var autoCacheArtistPopularSongs: Bool
+        var explicitDetectionEnabled: Bool
+        var explicitSensitivity: LyricsExplicitSensitivity
+        var explicitBlacklistWords: [String]
+        var explicitWhitelistWords: [String]
+        var explicitWordListChangedAt: Date?
+        var hideExplicitSongs: Bool
         var miniSkipEnabled: Bool
         var miniSkipInterval: MiniSkipInterval
         var carPlayMiniSkipEnabled: Bool
@@ -134,6 +146,12 @@ public final class SettingsStore: ObservableObject {
             showSongInfo: Bool,
             showArtistTopSongs: Bool,
             autoCacheArtistPopularSongs: Bool,
+            explicitDetectionEnabled: Bool,
+            explicitSensitivity: LyricsExplicitSensitivity,
+            explicitBlacklistWords: [String],
+            explicitWhitelistWords: [String],
+            explicitWordListChangedAt: Date?,
+            hideExplicitSongs: Bool,
             miniSkipEnabled: Bool,
             miniSkipInterval: MiniSkipInterval,
             carPlayMiniSkipEnabled: Bool,
@@ -177,6 +195,12 @@ public final class SettingsStore: ObservableObject {
             self.showSongInfo = showSongInfo
             self.showArtistTopSongs = showArtistTopSongs
             self.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
+            self.explicitDetectionEnabled = explicitDetectionEnabled
+            self.explicitSensitivity = explicitSensitivity
+            self.explicitBlacklistWords = explicitBlacklistWords
+            self.explicitWhitelistWords = explicitWhitelistWords
+            self.explicitWordListChangedAt = explicitWordListChangedAt
+            self.hideExplicitSongs = hideExplicitSongs
             self.miniSkipEnabled = miniSkipEnabled
             self.miniSkipInterval = miniSkipInterval
             self.carPlayMiniSkipEnabled = carPlayMiniSkipEnabled
@@ -222,6 +246,12 @@ public final class SettingsStore: ObservableObject {
             case showSongInfo
             case showArtistTopSongs
             case autoCacheArtistPopularSongs
+            case explicitDetectionEnabled
+            case explicitSensitivity
+            case explicitBlacklistWords
+            case explicitWhitelistWords
+            case explicitWordListChangedAt
+            case hideExplicitSongs
             case miniSkipEnabled
             case miniSkipInterval
             case carPlayMiniSkipEnabled
@@ -269,6 +299,16 @@ public final class SettingsStore: ObservableObject {
             showSongInfo = try c.decodeIfPresent(Bool.self, forKey: .showSongInfo) ?? false
             showArtistTopSongs = try c.decodeIfPresent(Bool.self, forKey: .showArtistTopSongs) ?? true
             autoCacheArtistPopularSongs = try c.decodeIfPresent(Bool.self, forKey: .autoCacheArtistPopularSongs) ?? true
+            explicitDetectionEnabled = try c.decodeIfPresent(Bool.self, forKey: .explicitDetectionEnabled) ?? true
+            explicitSensitivity = try c.decodeIfPresent(LyricsExplicitSensitivity.self, forKey: .explicitSensitivity) ?? .default
+            explicitBlacklistWords = UserSettings.normalizedWords(
+                try c.decodeIfPresent([String].self, forKey: .explicitBlacklistWords) ?? []
+            )
+            explicitWhitelistWords = UserSettings.normalizedWords(
+                try c.decodeIfPresent([String].self, forKey: .explicitWhitelistWords) ?? []
+            )
+            explicitWordListChangedAt = try c.decodeIfPresent(Date.self, forKey: .explicitWordListChangedAt)
+            hideExplicitSongs = try c.decodeIfPresent(Bool.self, forKey: .hideExplicitSongs) ?? false
             miniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .miniSkipEnabled) ?? true
             miniSkipInterval = try c.decodeIfPresent(MiniSkipInterval.self, forKey: .miniSkipInterval) ?? .default
             carPlayMiniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .carPlayMiniSkipEnabled) ?? false
@@ -330,6 +370,12 @@ public final class SettingsStore: ObservableObject {
             try c.encode(showSongInfo, forKey: .showSongInfo)
             try c.encode(showArtistTopSongs, forKey: .showArtistTopSongs)
             try c.encode(autoCacheArtistPopularSongs, forKey: .autoCacheArtistPopularSongs)
+            try c.encode(explicitDetectionEnabled, forKey: .explicitDetectionEnabled)
+            try c.encode(explicitSensitivity, forKey: .explicitSensitivity)
+            try c.encode(explicitBlacklistWords, forKey: .explicitBlacklistWords)
+            try c.encode(explicitWhitelistWords, forKey: .explicitWhitelistWords)
+            try c.encodeIfPresent(explicitWordListChangedAt, forKey: .explicitWordListChangedAt)
+            try c.encode(hideExplicitSongs, forKey: .hideExplicitSongs)
             try c.encode(miniSkipEnabled, forKey: .miniSkipEnabled)
             try c.encode(miniSkipInterval, forKey: .miniSkipInterval)
             try c.encode(carPlayMiniSkipEnabled, forKey: .carPlayMiniSkipEnabled)
@@ -380,6 +426,13 @@ public final class SettingsStore: ObservableObject {
         save()
     }
 
+    /// Records that the explicit-detection word lists or preset changed, so stored
+    /// ratings are rechecked the next time lyrics load.
+    public func markExplicitWordListChanged() {
+        explicitWordListChangedAt = .now
+        save()
+    }
+
     public func save() {
         let snapshot = Snapshot(
             themePreference: themePreference,
@@ -396,6 +449,12 @@ public final class SettingsStore: ObservableObject {
             showSongInfo: showSongInfo,
             showArtistTopSongs: showArtistTopSongs,
             autoCacheArtistPopularSongs: autoCacheArtistPopularSongs,
+            explicitDetectionEnabled: explicitDetectionEnabled,
+            explicitSensitivity: explicitSensitivity,
+            explicitBlacklistWords: UserSettings.normalizedWords(explicitBlacklistWords),
+            explicitWhitelistWords: UserSettings.normalizedWords(explicitWhitelistWords),
+            explicitWordListChangedAt: explicitWordListChangedAt,
+            hideExplicitSongs: hideExplicitSongs,
             miniSkipEnabled: miniSkipEnabled,
             miniSkipInterval: miniSkipInterval,
             carPlayMiniSkipEnabled: carPlayMiniSkipEnabled,
@@ -472,6 +531,12 @@ public final class SettingsStore: ObservableObject {
         user.showSongInfo = showSongInfo
         user.showArtistTopSongs = showArtistTopSongs
         user.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
+        user.explicitDetectionEnabled = explicitDetectionEnabled
+        user.explicitSensitivity = explicitSensitivity
+        user.explicitBlacklistWords = UserSettings.normalizedWords(explicitBlacklistWords)
+        user.explicitWhitelistWords = UserSettings.normalizedWords(explicitWhitelistWords)
+        user.explicitWordListChangedAt = explicitWordListChangedAt
+        user.hideExplicitSongs = hideExplicitSongs
         return user
     }
 
@@ -502,6 +567,12 @@ public final class SettingsStore: ObservableObject {
         showSongInfo = settings.showSongInfo
         showArtistTopSongs = settings.showArtistTopSongs
         autoCacheArtistPopularSongs = settings.autoCacheArtistPopularSongs
+        explicitDetectionEnabled = settings.explicitDetectionEnabled
+        explicitSensitivity = settings.explicitSensitivity
+        explicitBlacklistWords = settings.explicitBlacklistWords
+        explicitWhitelistWords = settings.explicitWhitelistWords
+        explicitWordListChangedAt = settings.explicitWordListChangedAt
+        hideExplicitSongs = settings.hideExplicitSongs
         save()
     }
 
@@ -541,6 +612,12 @@ public final class SettingsStore: ObservableObject {
             showSongInfo = snapshot.showSongInfo
             showArtistTopSongs = snapshot.showArtistTopSongs
             autoCacheArtistPopularSongs = snapshot.autoCacheArtistPopularSongs
+            explicitDetectionEnabled = snapshot.explicitDetectionEnabled
+            explicitSensitivity = snapshot.explicitSensitivity
+            explicitBlacklistWords = snapshot.explicitBlacklistWords
+            explicitWhitelistWords = snapshot.explicitWhitelistWords
+            explicitWordListChangedAt = snapshot.explicitWordListChangedAt
+            hideExplicitSongs = snapshot.hideExplicitSongs
             miniSkipEnabled = snapshot.miniSkipEnabled
             miniSkipInterval = snapshot.miniSkipInterval
             carPlayMiniSkipEnabled = snapshot.carPlayMiniSkipEnabled
@@ -599,6 +676,12 @@ public final class SettingsStore: ObservableObject {
         showSongInfo = user.showSongInfo
         showArtistTopSongs = user.showArtistTopSongs
         autoCacheArtistPopularSongs = user.autoCacheArtistPopularSongs
+        explicitDetectionEnabled = user.explicitDetectionEnabled
+        explicitSensitivity = user.explicitSensitivity
+        explicitBlacklistWords = user.explicitBlacklistWords
+        explicitWhitelistWords = user.explicitWhitelistWords
+        explicitWordListChangedAt = user.explicitWordListChangedAt
+        hideExplicitSongs = user.hideExplicitSongs
     }
 
     private func syncTypedStoresFromPublished() {
@@ -632,6 +715,12 @@ public final class SettingsStore: ObservableObject {
         user.showSongInfo = showSongInfo
         user.showArtistTopSongs = showArtistTopSongs
         user.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
+        user.explicitDetectionEnabled = explicitDetectionEnabled
+        user.explicitSensitivity = explicitSensitivity
+        user.explicitBlacklistWords = UserSettings.normalizedWords(explicitBlacklistWords)
+        user.explicitWhitelistWords = UserSettings.normalizedWords(explicitWhitelistWords)
+        user.explicitWordListChangedAt = explicitWordListChangedAt
+        user.hideExplicitSongs = hideExplicitSongs
         save(key: Keys.userSettings, value: user)
     }
 

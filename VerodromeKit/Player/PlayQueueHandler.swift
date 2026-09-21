@@ -258,15 +258,36 @@ public final class PlayQueueHandler: ObservableObject {
         remove(at: offsets, writeUserQueueOnly: false, userQueuedOnly: false)
     }
 
+    /// Drops every non-playing copy of a song. The playing track stays so the engine is
+    /// never left pointing at a row the queue no longer lists, and a one-track queue is
+    /// left alone so Hide Explicit cannot empty it.
+    ///
+    /// Does not bump `queueGeneration` — prefetch treats an older generation as obsolete
+    /// and would delete the playing track's cached file. `verodromeQueueChanged` is what
+    /// moves the keep window and starts caching the new neighbors, the same path a skip uses.
+    @discardableResult
+    public func removeNonCurrent(playableId: String) -> [QueueItem] {
+        guard playerMode == .music else { return [] }
+        guard contextQueue.count > 1 else { return [] }
+        let offsets = contextQueue.indices.filter {
+            $0 != currentIndex
+                && contextQueue[$0].kind == .song
+                && contextQueue[$0].playableId == playableId
+        }
+        guard !offsets.isEmpty else { return [] }
+        return remove(at: IndexSet(offsets), writeUserQueueOnly: false, userQueuedOnly: false)
+    }
+
     /// The playing track is never removed: dropping it would leave the engine on a track
     /// the queue no longer lists.
-    private func remove(at offsets: IndexSet, writeUserQueueOnly: Bool, userQueuedOnly: Bool) {
+    @discardableResult
+    private func remove(at offsets: IndexSet, writeUserQueueOnly: Bool, userQueuedOnly: Bool) -> [QueueItem] {
         let removable = offsets.filter {
             contextQueue.indices.contains($0)
                 && $0 != currentIndex
                 && (!userQueuedOnly || contextQueue[$0].isUserQueued)
         }
-        guard !removable.isEmpty else { return }
+        guard !removable.isEmpty else { return [] }
         // Positional arithmetic rather than an id lookup: the same song can sit in the
         // queue twice (context copy plus a queued copy), so ids are not unique.
         let removedBefore = removable.filter { $0 < currentIndex }.count
@@ -279,6 +300,7 @@ public final class PlayQueueHandler: ObservableObject {
             persist()
         }
         NotificationCenter.default.post(name: .verodromeQueueChanged, object: removed)
+        return removed
     }
 
     private static func markUserQueued(_ item: QueueItem) -> QueueItem {
@@ -621,6 +643,25 @@ public final class PlayQueueHandler: ObservableObject {
         let end = min(q.count - 1, currentIndex + next)
         guard start <= end else { return [] }
         return Array(q[start...end])
+    }
+
+    /// Stamps the lyrics explicit flag onto every copy of a song in the live queues.
+    /// Does not bump `queueGeneration` — this is metadata, not a queue edit.
+    public func setLyricsExplicit(_ isExplicit: Bool, playableId: String) {
+        var changed = false
+        func patch(_ items: inout [QueueItem]) {
+            for index in items.indices where items[index].kind == .song && items[index].playableId == playableId {
+                if items[index].isLyricsExplicit != isExplicit {
+                    items[index].isLyricsExplicit = isExplicit
+                    changed = true
+                }
+            }
+        }
+        patch(&contextQueue)
+        patch(&userQueue)
+        patch(&unshuffledContext)
+        patch(&podcastQueue)
+        if changed { persist() }
     }
 
     /// Records where playback sits in the current track, for the next snapshot. Callers

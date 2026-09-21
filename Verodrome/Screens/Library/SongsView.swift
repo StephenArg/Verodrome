@@ -25,6 +25,7 @@ struct SongsView: View {
 
     private var sort: LibrarySortOption { settings.librarySort.songs }
     private var downloadedOnly: Bool { settings.songsDownloadedOnly }
+    private var hideExplicit: Bool { settings.hideExplicitSongs }
 
     /// The filter stays put while it's holding a query — hiding it would leave the
     /// missing rows unexplained — and otherwise leaves with the large title on scroll.
@@ -89,18 +90,29 @@ struct SongsView: View {
         }
         .perfAppear(
             "Songs",
-            details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on") downloadedOnly=\(downloadedOnly)"
+            details: "rows=\(model.rowCount) search=\(searchText.isEmpty ? "off" : "on") downloadedOnly=\(downloadedOnly) hideExplicit=\(hideExplicit)"
         )
         .task(id: LibraryReloadKey(
             search: debouncedSearch,
             sort: sort,
             isSyncing: librarySync.isSyncing,
-            downloadedOnly: downloadedOnly
+            downloadedOnly: downloadedOnly,
+            hideExplicit: hideExplicit
         )) {
-            await model.load(search: debouncedSearch, sort: sort, downloadedOnly: downloadedOnly)
+            await model.load(
+                search: debouncedSearch,
+                sort: sort,
+                downloadedOnly: downloadedOnly,
+                hideExplicit: hideExplicit
+            )
         }
         .refreshable {
-            await model.load(search: debouncedSearch, sort: sort, downloadedOnly: downloadedOnly)
+            await model.load(
+                search: debouncedSearch,
+                sort: sort,
+                downloadedOnly: downloadedOnly,
+                hideExplicit: hideExplicit
+            )
         }
     }
 
@@ -314,28 +326,122 @@ struct SongsView: View {
     /// translatable predicate.
     private static func predicate(for request: LibraryFetchRequest) -> Predicate<Song>? {
         let downloadedOnly = request.downloadedOnly
+        let hideExplicit = request.hideExplicit
         let search = request.search
+        let explicitRaw = LyricsExplicitStatus.explicit.rawValue
 
         if request.isHeadPass {
             guard request.sort.isAlphabetical else {
-                return downloadedOnly ? #Predicate<Song> { $0.relFilePath != nil } : nil
+                return filtersOnlyPredicate(downloadedOnly: downloadedOnly, hideExplicit: hideExplicit, explicitRaw: explicitRaw)
             }
             if request.sort.showsSymbolsFirst {
-                return downloadedOnly
-                    ? #Predicate<Song> { $0.sortTitle < "a" && $0.relFilePath != nil }
-                    : #Predicate<Song> { $0.sortTitle < "a" }
+                return headSymbolsPredicate(
+                    downloadedOnly: downloadedOnly,
+                    hideExplicit: hideExplicit,
+                    explicitRaw: explicitRaw
+                )
             }
-            return downloadedOnly
-                ? #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" && $0.relFilePath != nil }
-                : #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
+            return headLettersPredicate(
+                downloadedOnly: downloadedOnly,
+                hideExplicit: hideExplicit,
+                explicitRaw: explicitRaw
+            )
         }
 
         if search.isEmpty {
-            return downloadedOnly ? #Predicate<Song> { $0.relFilePath != nil } : nil
+            return filtersOnlyPredicate(downloadedOnly: downloadedOnly, hideExplicit: hideExplicit, explicitRaw: explicitRaw)
+        }
+        return searchPredicate(
+            search,
+            downloadedOnly: downloadedOnly,
+            hideExplicit: hideExplicit,
+            explicitRaw: explicitRaw
+        )
+    }
+
+    private static func filtersOnlyPredicate(
+        downloadedOnly: Bool,
+        hideExplicit: Bool,
+        explicitRaw: Int
+    ) -> Predicate<Song>? {
+        if downloadedOnly, hideExplicit {
+            return #Predicate<Song> { $0.relFilePath != nil && $0.lyricsExplicitStatusRaw != explicitRaw }
+        }
+        if downloadedOnly {
+            return #Predicate<Song> { $0.relFilePath != nil }
+        }
+        if hideExplicit {
+            return #Predicate<Song> { $0.lyricsExplicitStatusRaw != explicitRaw }
+        }
+        return nil
+    }
+
+    private static func headSymbolsPredicate(
+        downloadedOnly: Bool,
+        hideExplicit: Bool,
+        explicitRaw: Int
+    ) -> Predicate<Song> {
+        if downloadedOnly, hideExplicit {
+            return #Predicate<Song> {
+                $0.sortTitle < "a" && $0.relFilePath != nil && $0.lyricsExplicitStatusRaw != explicitRaw
+            }
+        }
+        if downloadedOnly {
+            return #Predicate<Song> { $0.sortTitle < "a" && $0.relFilePath != nil }
+        }
+        if hideExplicit {
+            return #Predicate<Song> { $0.sortTitle < "a" && $0.lyricsExplicitStatusRaw != explicitRaw }
+        }
+        return #Predicate<Song> { $0.sortTitle < "a" }
+    }
+
+    private static func headLettersPredicate(
+        downloadedOnly: Bool,
+        hideExplicit: Bool,
+        explicitRaw: Int
+    ) -> Predicate<Song> {
+        if downloadedOnly, hideExplicit {
+            return #Predicate<Song> {
+                $0.sortTitle >= "a" && $0.sortTitle < "{"
+                    && $0.relFilePath != nil
+                    && $0.lyricsExplicitStatusRaw != explicitRaw
+            }
+        }
+        if downloadedOnly {
+            return #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" && $0.relFilePath != nil }
+        }
+        if hideExplicit {
+            return #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" && $0.lyricsExplicitStatusRaw != explicitRaw }
+        }
+        return #Predicate<Song> { $0.sortTitle >= "a" && $0.sortTitle < "{" }
+    }
+
+    private static func searchPredicate(
+        _ search: String,
+        downloadedOnly: Bool,
+        hideExplicit: Bool,
+        explicitRaw: Int
+    ) -> Predicate<Song> {
+        if downloadedOnly, hideExplicit {
+            return #Predicate<Song> { song in
+                song.relFilePath != nil
+                    && song.lyricsExplicitStatusRaw != explicitRaw
+                    && (song.title.localizedStandardContains(search)
+                        || song.artistName?.localizedStandardContains(search) == true
+                        || song.albumTitle?.localizedStandardContains(search) == true)
+            }
         }
         if downloadedOnly {
             return #Predicate<Song> { song in
                 song.relFilePath != nil
+                    && (song.title.localizedStandardContains(search)
+                        || song.artistName?.localizedStandardContains(search) == true
+                        || song.albumTitle?.localizedStandardContains(search) == true)
+            }
+        }
+        if hideExplicit {
+            return #Predicate<Song> { song in
+                song.lyricsExplicitStatusRaw != explicitRaw
                     && (song.title.localizedStandardContains(search)
                         || song.artistName?.localizedStandardContains(search) == true
                         || song.albumTitle?.localizedStandardContains(search) == true)

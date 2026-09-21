@@ -8,6 +8,7 @@ struct SearchView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(\.modelContext) private var modelContext
     @ObservedObject private var downloadCenter = DownloadCenter.shared
 
@@ -127,7 +128,8 @@ struct SearchView: View {
                                         title: row.title,
                                         subtitle: row.subtitle,
                                         artworkURL: row.artworkToken,
-                                        isPlaying: nowPlaying.isCurrent(row.playableId)
+                                        isPlaying: nowPlaying.isCurrent(row.playableId),
+                                        isExplicit: row.isExplicit
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -182,6 +184,9 @@ struct SearchView: View {
         .task(id: debouncedSearch) {
             await reload()
         }
+        .task(id: settings.hideExplicitSongs) {
+            await reload()
+        }
         .task(id: librarySync.isSyncing) {
             if !librarySync.isSyncing {
                 await reload()
@@ -215,7 +220,7 @@ struct SearchView: View {
                 isLocalSearching = false
             }
         }
-        let built = await Self.fetch(searchText: search)
+        let built = await Self.fetch(searchText: search, hideExplicit: settings.hideExplicitSongs)
         guard generation == loadGeneration else { return }
         artistRows = built.artists
         albumRows = built.albums
@@ -223,7 +228,7 @@ struct SearchView: View {
         playlistRows = built.playlists
     }
 
-    private static func fetch(searchText: String) async -> (artists: [LibraryRowSnapshot], albums: [LibraryRowSnapshot], songs: [LibraryRowSnapshot], playlists: [LibraryRowSnapshot]) {
+    private static func fetch(searchText: String, hideExplicit: Bool) async -> (artists: [LibraryRowSnapshot], albums: [LibraryRowSnapshot], songs: [LibraryRowSnapshot], playlists: [LibraryRowSnapshot]) {
         do {
             return try await PersistentStorage.shared.backgroundActor.perform { context in
                 let artists = try context.fetch(FetchDescriptor<Artist>(sortBy: [SortDescriptor(\Artist.name)]))
@@ -254,6 +259,7 @@ struct SearchView: View {
                         $0.title.localizedCaseInsensitiveContains(searchText)
                             || $0.displayArtist.localizedCaseInsensitiveContains(searchText)
                     }
+                    .filter { !hideExplicit || !$0.isLyricsExplicit }
                     .map {
                         LibraryRowSnapshot(
                             id: $0.compoundRemoteId,
@@ -261,6 +267,7 @@ struct SearchView: View {
                             title: $0.title,
                             subtitle: $0.displayArtist,
                             artworkToken: $0.displayArtworkToken,
+                            isExplicit: $0.isLyricsExplicit,
                             playableId: $0.remoteId
                         )
                     }

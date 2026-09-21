@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BCE9D56BA4D8F71526C3E0A8 /* LyricsExplicitMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD8C45A93C7E60415B2D9F7 /* LyricsExplicitMatcherTests.swift */; };
+		DE01F78DC6FA193748E502CA /* LyricsExplicitEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF0E67CB5E9082637D4F1B9 /* LyricsExplicitEvaluatorTests.swift */; };
+		FAC7B34982B6D5F304A1C8E6 /* ExplicitLyricsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9C6A23871A5C4E2F390B7D5 /* ExplicitLyricsSettingsView.swift */; };
+		D2B9F5C10A3E5D7B9C2F406E /* LyricsExplicitWordLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A8E4B09F2D4C6A8B1E3F5D /* LyricsExplicitWordLists.swift */; };
+		D8B5F1276094B3D1E28FA6C4 /* LyricsExplicitScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A4E0165F83A2C0D17E95B3 /* LyricsExplicitScanner.swift */; };
+		F4D1B7E32C507F9DBE4B6280 /* LyricsExplicitMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C0A6D21B4F6E8CAD3A517F /* LyricsExplicitMatcher.swift */; };
+		B6F3D9054E7291BFC06D84A2 /* LyricsExplicitEvaluator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E2C8F43D6180AEBF5C7391 /* LyricsExplicitEvaluator.swift */; };
 		026C06B27AC76431C9013DCC /* LibraryShuffleCountBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8996DC240E1B0EB341F7D7F /* LibraryShuffleCountBar.swift */; };
 		0271BA4A66E55B4F74FFD631 /* PlayerDownloadPreparationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F716E49C739CFF345661C9D3 /* PlayerDownloadPreparationHandler.swift */; };
 		02B29E4D0F5C82E16D7B3F25 /* ArtistTopSongs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A18F3C9E4B71D05C6A2E14 /* ArtistTopSongs.swift */; };
@@ -356,6 +363,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A5E2C8F43D6180AEBF5C7391 /* LyricsExplicitEvaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitEvaluator.swift; sourceTree = "<group>"; };
+		E3C0A6D21B4F6E8CAD3A517F /* LyricsExplicitMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitMatcher.swift; sourceTree = "<group>"; };
+		C7A4E0165F83A2C0D17E95B3 /* LyricsExplicitScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitScanner.swift; sourceTree = "<group>"; };
+		C1A8E4B09F2D4C6A8B1E3F5D /* LyricsExplicitWordLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitWordLists.swift; sourceTree = "<group>"; };
+		E9C6A23871A5C4E2F390B7D5 /* ExplicitLyricsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExplicitLyricsSettingsView.swift; sourceTree = "<group>"; };
+		CDF0E67CB5E9082637D4F1B9 /* LyricsExplicitEvaluatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitEvaluatorTests.swift; sourceTree = "<group>"; };
+		ABD8C45A93C7E60415B2D9F7 /* LyricsExplicitMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsExplicitMatcherTests.swift; sourceTree = "<group>"; };
 		0135B6E030209CE0D321C09D /* SubsonicLibrarySyncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicLibrarySyncer.swift; sourceTree = "<group>"; };
 		01CA414BD026E5C92FF22DFB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		0208F8E2AA5891E4E21D306E /* LibraryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
@@ -794,6 +808,10 @@
 				6E0A80A1B2C3D4E5F6071829 /* ArtistPopularSongsPrefetcher.swift */,
 				F589F990565F1A05408F2309 /* DownloadedShuffleSession.swift */,
 				0208F8E2AA5891E4E21D306E /* LibraryActions.swift */,
+				C1A8E4B09F2D4C6A8B1E3F5D /* LyricsExplicitWordLists.swift */,
+				E3C0A6D21B4F6E8CAD3A517F /* LyricsExplicitMatcher.swift */,
+				A5E2C8F43D6180AEBF5C7391 /* LyricsExplicitEvaluator.swift */,
+				C7A4E0165F83A2C0D17E95B3 /* LyricsExplicitScanner.swift */,
 				E89A508FC0EE0CAE006D5F18 /* LibraryModels.swift */,
 				55062D317451CEA5E7AC4321 /* LibraryMutationOutbox.swift */,
 				1FE7C4E068E03DA2655CB140 /* LibraryMutationSyncer.swift */,
@@ -1261,6 +1279,8 @@
 				02C3A05E1D6B83F27E8C4A36 /* ArtistTopSongsTests.swift */,
 				969121D551683EB70ACB6169 /* DownloadedShuffleSessionTests.swift */,
 				E1B19EA4F3772DE78D4FAB1E /* LibraryMutationOutboxTests.swift */,
+				CDF0E67CB5E9082637D4F1B9 /* LyricsExplicitEvaluatorTests.swift */,
+				ABD8C45A93C7E60415B2D9F7 /* LyricsExplicitMatcherTests.swift */,
 				324AEB27AE028E0D2D97C069 /* PlaylistDownloadCoordinatorTests.swift */,
 				8257EA212A6D9065C58FCCC7 /* ShuffleAllSessionTests.swift */,
 				0D72D96718C2A6C7216A64C3 /* SongRadioQueueTests.swift */,
@@ -1380,6 +1400,7 @@
 				0C92BBDB9FC39F6FC7FB7B8D /* DownloadsSettingsView.swift */,
 				1AF9AC85E0065B96024A63B2 /* EqualizerSettingsView.swift */,
 				75F057916C4439CFA0188162 /* EventLogView.swift */,
+				E9C6A23871A5C4E2F390B7D5 /* ExplicitLyricsSettingsView.swift */,
 				E6988866B3E3897FF6D321B4 /* LayoutSettingsView.swift */,
 				41A6CBD0A436BE4E10BE4BCF /* LibrarySettingsView.swift */,
 				457EFED66924895D6263ECE4 /* NowPlayingSettingsView.swift */,
@@ -1582,6 +1603,8 @@
 				52063389D2F9B2C73A2EC634 /* LibrarySyncProgressTests.swift in Sources */,
 				E21C6779CAD2FD2B9CA86209 /* LrcLibClientTests.swift in Sources */,
 				C178DA72B4CB4AE5C17FCC16 /* LyricsCacheTests.swift in Sources */,
+				BCE9D56BA4D8F71526C3E0A8 /* LyricsExplicitMatcherTests.swift in Sources */,
+				DE01F78DC6FA193748E502CA /* LyricsExplicitEvaluatorTests.swift in Sources */,
 				AD77160452A6DCFEF5E5C25B /* LyricsParserTests.swift in Sources */,
 				25CCF561DC4AD8B7DA4A19A4 /* NavidromeCanonicalIDTests.swift in Sources */,
 				87299B5129F7CD76DDE0C471 /* NavidromeCanonicalIdProbeTests.swift in Sources */,
@@ -1673,6 +1696,10 @@
 				EE4569DD97EC0289922F00C7 /* LoginCredentials.swift in Sources */,
 				9974D4D7F9735D3072017EBB /* LrcLibClient.swift in Sources */,
 				57FC1D976934C821025BDC8F /* LyricsCache.swift in Sources */,
+				D2B9F5C10A3E5D7B9C2F406E /* LyricsExplicitWordLists.swift in Sources */,
+				D8B5F1276094B3D1E28FA6C4 /* LyricsExplicitScanner.swift in Sources */,
+				F4D1B7E32C507F9DBE4B6280 /* LyricsExplicitMatcher.swift in Sources */,
+				B6F3D9054E7291BFC06D84A2 /* LyricsExplicitEvaluator.swift in Sources */,
 				905960C8CBC1C59F4750221C /* LyricsParser.swift in Sources */,
 				8010F72C531350C6B84BEB2A /* MetaManager.swift in Sources */,
 				28F264562F05327B1E07C46C /* Models.swift in Sources */,
@@ -1768,6 +1795,7 @@
 				B1BF888737878E8E2EEB6E82 /* EqualizerSettingsView.swift in Sources */,
 				5C793B5CF49AD6610948C747 /* EqualizerView.swift in Sources */,
 				5467BEF19CB588185B537122 /* EventLogView.swift in Sources */,
+				FAC7B34982B6D5F304A1C8E6 /* ExplicitLyricsSettingsView.swift in Sources */,
 				5A354E5A19A0CECAEB75B519 /* FavoritesView.swift in Sources */,
 				7852ABE5C0E68A3C3F657401 /* GenreDetailView.swift in Sources */,
 				9068E632E9C6F6DAAE3BD4D0 /* GenresView.swift in Sources */,

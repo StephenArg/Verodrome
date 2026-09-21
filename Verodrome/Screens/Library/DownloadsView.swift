@@ -118,7 +118,8 @@ struct DownloadsView: View {
                                     title: row.title,
                                     subtitle: row.subtitle,
                                     artworkURL: row.artworkToken,
-                                    downloadStatus: .waiting
+                                    downloadStatus: .waiting,
+                                    isExplicit: row.isExplicit
                                 )
                             }
                         } header: {
@@ -232,7 +233,8 @@ struct DownloadsView: View {
             subtitle: row.subtitle,
             artworkURL: row.artworkToken,
             isPlaying: nowPlaying.currentItem?.playableId == row.remoteId,
-            trailing: row.durationText
+            trailing: row.durationText,
+            isExplicit: row.isExplicit
         )
         if isSelecting {
             Button {
@@ -606,7 +608,8 @@ private struct DownloadsInProgressSection: View {
                             artworkURL: entry.row.artworkToken,
                             trailing: entry.progress == nil
                                 ? "Waiting"
-                                : "\(Int((entry.progress ?? 0) * 100))%"
+                                : "\(Int((entry.progress ?? 0) * 100))%",
+                            isExplicit: entry.row.isExplicit
                         )
                         ProgressView(value: entry.progress ?? 0)
                             .opacity(entry.progress == nil ? 0.4 : 1)
@@ -637,6 +640,7 @@ struct DownloadedSongRow: Identifiable, Hashable, Sendable {
     let artworkToken: String?
     let duration: TimeInterval
     let durationText: String
+    let isExplicit: Bool
 
     init(song: Song, albumId: String? = nil) {
         id = song.compoundRemoteId
@@ -649,6 +653,7 @@ struct DownloadedSongRow: Identifiable, Hashable, Sendable {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         durationText = String(format: "%d:%02d", minutes, seconds)
+        isExplicit = song.isLyricsExplicit
     }
 
     var queueItem: QueueItem {
@@ -659,7 +664,8 @@ struct DownloadedSongRow: Identifiable, Hashable, Sendable {
             artistName: subtitle,
             albumName: nil,
             duration: duration,
-            artworkId: artworkToken
+            artworkId: artworkToken,
+            isLyricsExplicit: isExplicit
         )
     }
 }

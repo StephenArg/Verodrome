@@ -17,6 +17,21 @@ struct PlayIndicator: View {
     }
 }
 
+struct ExplicitBadge: View {
+    var body: some View {
+        Text("E")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(.secondary, lineWidth: 1)
+            )
+            .accessibilityLabel("Explicit")
+    }
+}
+
 struct EntityRow: View {
     let title: String
     let subtitle: String
@@ -34,6 +49,7 @@ struct EntityRow: View {
     /// Per-track download state, drawn to the left of the subtitle (artist / album).
     /// `.none` (and nil) leave the subtitle flush with the leading edge.
     var downloadStatus: DownloadStatus? = nil
+    var isExplicit: Bool = false
 
     @EnvironmentObject private var themeManager: ThemeManager
 
@@ -60,6 +76,9 @@ struct EntityRow: View {
                             tint: themeManager.accentColor
                         )
                         .accessibilityLabel(downloadAccessibilityLabel(for: downloadStatus))
+                    }
+                    if isExplicit {
+                        ExplicitBadge()
                     }
                     Text(subtitle)
                         .font(.subheadline)

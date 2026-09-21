@@ -312,7 +312,12 @@ public actor DownloadManager: DownloadManaging {
     private func cacheLyricsIfNeeded(id: String, embedded: String?) async {
         let lyricsCache = await MainActor.run { VerodromeKit.shared.lyricsCache }
         guard let lyricsCache else { return }
-        if lyricsCache.load(id: id) != nil { return }
+        if let cached = lyricsCache.load(id: id) {
+            await MainActor.run {
+                _ = LyricsExplicitEvaluator.applyToLibrary(playableId: id, lyrics: cached)
+            }
+            return
+        }
 
         let syncer = await MainActor.run {
             VerodromeKit.shared.activeLibrarySyncer as? (any LyricsProviding)
@@ -333,7 +338,7 @@ public actor DownloadManager: DownloadManaging {
                 duration: song.playDuration > 0 ? song.playDuration : nil
             )
         }
-        _ = await LyricsLookup.resolve(
+        let text = await LyricsLookup.resolve(
             playableId: id,
             cache: lyricsCache,
             fetchFromServer: syncer.map { provider in
@@ -344,6 +349,11 @@ public actor DownloadManager: DownloadManaging {
             },
             embeddedLyrics: { embedded }
         )
+        if let text {
+            await MainActor.run {
+                _ = LyricsExplicitEvaluator.applyToLibrary(playableId: id, lyrics: text)
+            }
+        }
     }
 
     /// Records the landed file on the library model. `relFilePath` is what the rest of

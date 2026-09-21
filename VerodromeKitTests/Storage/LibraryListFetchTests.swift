@@ -172,4 +172,22 @@ final class LibraryListFetchTests: XCTestCase {
         )
         XCTAssertTrue(try context.fetch(downloadedSearch).isEmpty)
     }
+
+    func testHideExplicitPredicateFiltersInTheStore() throws {
+        let (context, account) = try makeContext()
+        let clean = Song(remoteId: "1", title: "Clean", account: account)
+        clean.lyricsExplicitStatusRaw = LyricsExplicitStatus.clean.rawValue
+        let flagged = Song(remoteId: "2", title: "Flagged", account: account)
+        flagged.lyricsExplicitStatusRaw = LyricsExplicitStatus.explicit.rawValue
+        let unknown = Song(remoteId: "3", title: "Unknown", account: account)
+        for song in [clean, flagged, unknown] { context.insert(song) }
+        try context.save()
+
+        let explicitRaw = LyricsExplicitStatus.explicit.rawValue
+        let visible = FetchDescriptor<Song>(
+            predicate: #Predicate<Song> { $0.lyricsExplicitStatusRaw != explicitRaw },
+            sortBy: [SortDescriptor(\Song.sortTitle)]
+        )
+        XCTAssertEqual(try context.fetch(visible).map(\.remoteId), ["1", "3"])
+    }
 }

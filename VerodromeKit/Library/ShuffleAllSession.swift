@@ -27,6 +27,7 @@ public actor ShuffleAllSession {
     private let provider: any RandomSongProviding
     private let resolver: (any ShuffleAllSongResolving)?
     private let ingestor: (any LibraryIngesting)?
+    private let hideExplicit: Bool
 
     private var cursor: RandomSongCursor?
     private var seen: Set<String> = []
@@ -35,11 +36,13 @@ public actor ShuffleAllSession {
     public init(
         provider: any RandomSongProviding,
         resolver: (any ShuffleAllSongResolving)? = nil,
-        ingestor: (any LibraryIngesting)? = nil
+        ingestor: (any LibraryIngesting)? = nil,
+        hideExplicit: Bool = false
     ) {
         self.provider = provider
         self.resolver = resolver
         self.ingestor = ingestor
+        self.hideExplicit = hideExplicit
     }
 
     /// True once the backend has nothing left that this session hasn't already queued.
@@ -83,8 +86,16 @@ public actor ShuffleAllSession {
             }
         }
 
-        guard let resolver else { return fresh.map(QueueItem.from) }
-        return await resolver.queueItems(for: fresh)
+        var items: [QueueItem]
+        if let resolver {
+            items = await resolver.queueItems(for: fresh)
+        } else {
+            items = fresh.map(QueueItem.from)
+        }
+        if hideExplicit {
+            items.removeAll { $0.isLyricsExplicit }
+        }
+        return items
     }
 }
 

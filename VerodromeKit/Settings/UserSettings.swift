@@ -37,6 +37,15 @@ public struct UserSettings: Codable, Equatable, Sendable {
     /// Background fill of Popular lists for likely next artists and the play-queue window.
     public var autoCacheArtistPopularSongs: Bool
     public var equalizerBands: [Float]
+    /// Scan lyrics for explicit language when they load.
+    public var explicitDetectionEnabled: Bool
+    public var explicitSensitivity: LyricsExplicitSensitivity
+    public var explicitBlacklistWords: [String]
+    public var explicitWhitelistWords: [String]
+    /// Bumped when the preset or custom word lists change so stored ratings can go stale.
+    public var explicitWordListChangedAt: Date?
+    /// Hide songs confirmed explicit from catalog song lists (not albums, playlists, or the queue).
+    public var hideExplicitSongs: Bool
 
     public init(
         isOfflineMode: Bool = false,
@@ -65,7 +74,13 @@ public struct UserSettings: Codable, Equatable, Sendable {
         showSongInfo: Bool = false,
         showArtistTopSongs: Bool = true,
         autoCacheArtistPopularSongs: Bool = true,
-        equalizerBands: [Float] = Array(repeating: 0, count: 10)
+        equalizerBands: [Float] = Array(repeating: 0, count: 10),
+        explicitDetectionEnabled: Bool = true,
+        explicitSensitivity: LyricsExplicitSensitivity = .default,
+        explicitBlacklistWords: [String] = [],
+        explicitWhitelistWords: [String] = [],
+        explicitWordListChangedAt: Date? = nil,
+        hideExplicitSongs: Bool = false
     ) {
         self.isOfflineMode = isOfflineMode
         self.cacheLimitBytes = cacheLimitBytes
@@ -94,6 +109,12 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.showArtistTopSongs = showArtistTopSongs
         self.autoCacheArtistPopularSongs = autoCacheArtistPopularSongs
         self.equalizerBands = equalizerBands
+        self.explicitDetectionEnabled = explicitDetectionEnabled
+        self.explicitSensitivity = explicitSensitivity
+        self.explicitBlacklistWords = Self.normalizedWords(explicitBlacklistWords)
+        self.explicitWhitelistWords = Self.normalizedWords(explicitWhitelistWords)
+        self.explicitWordListChangedAt = explicitWordListChangedAt
+        self.hideExplicitSongs = hideExplicitSongs
     }
 
     public static let `default` = UserSettings()
@@ -109,6 +130,19 @@ public struct UserSettings: Codable, Equatable, Sendable {
 
     public static func clampedBehind(_ value: Int) -> Int {
         min(max(value, 0), maxSongsBehind)
+    }
+
+    public static func normalizedWords(_ words: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for word in words {
+            let folded = word
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !folded.isEmpty, seen.insert(folded).inserted else { continue }
+            result.append(folded)
+        }
+        return result
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -139,6 +173,12 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case showArtistTopSongs
         case autoCacheArtistPopularSongs
         case equalizerBands
+        case explicitDetectionEnabled
+        case explicitSensitivity
+        case explicitBlacklistWords
+        case explicitWhitelistWords
+        case explicitWordListChangedAt
+        case hideExplicitSongs
         // Legacy keys (decode-only)
         case streamingBitrateWifi
         case streamingBitrateCellular
@@ -185,6 +225,16 @@ public struct UserSettings: Codable, Equatable, Sendable {
         showArtistTopSongs = try c.decodeIfPresent(Bool.self, forKey: .showArtistTopSongs) ?? true
         autoCacheArtistPopularSongs = try c.decodeIfPresent(Bool.self, forKey: .autoCacheArtistPopularSongs) ?? true
         equalizerBands = try c.decodeIfPresent([Float].self, forKey: .equalizerBands) ?? Array(repeating: 0, count: 10)
+        explicitDetectionEnabled = try c.decodeIfPresent(Bool.self, forKey: .explicitDetectionEnabled) ?? true
+        explicitSensitivity = try c.decodeIfPresent(LyricsExplicitSensitivity.self, forKey: .explicitSensitivity) ?? .default
+        explicitBlacklistWords = Self.normalizedWords(
+            try c.decodeIfPresent([String].self, forKey: .explicitBlacklistWords) ?? []
+        )
+        explicitWhitelistWords = Self.normalizedWords(
+            try c.decodeIfPresent([String].self, forKey: .explicitWhitelistWords) ?? []
+        )
+        explicitWordListChangedAt = try c.decodeIfPresent(Date.self, forKey: .explicitWordListChangedAt)
+        hideExplicitSongs = try c.decodeIfPresent(Bool.self, forKey: .hideExplicitSongs) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -216,5 +266,11 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(showArtistTopSongs, forKey: .showArtistTopSongs)
         try c.encode(autoCacheArtistPopularSongs, forKey: .autoCacheArtistPopularSongs)
         try c.encode(equalizerBands, forKey: .equalizerBands)
+        try c.encode(explicitDetectionEnabled, forKey: .explicitDetectionEnabled)
+        try c.encode(explicitSensitivity, forKey: .explicitSensitivity)
+        try c.encode(explicitBlacklistWords, forKey: .explicitBlacklistWords)
+        try c.encode(explicitWhitelistWords, forKey: .explicitWhitelistWords)
+        try c.encodeIfPresent(explicitWordListChangedAt, forKey: .explicitWordListChangedAt)
+        try c.encode(hideExplicitSongs, forKey: .hideExplicitSongs)
     }
 }

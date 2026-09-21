@@ -83,9 +83,9 @@ struct ArtistDetailView: View {
                     }
                 }
 
-                if !artistSongs.isEmpty {
+                if !displayedArtistSongs.isEmpty {
                     Section("Songs") {
-                        ForEach(artistSongs, id: \.compoundRemoteId) { song in
+                        ForEach(displayedArtistSongs, id: \.compoundRemoteId) { song in
                             Button { playSong(song) } label: {
                                 EntityRow(
                                     title: song.title,
@@ -96,7 +96,8 @@ struct ArtistDetailView: View {
                                     downloadStatus: downloadCenter.status(
                                         for: song.remoteId,
                                         isDownloaded: song.isDownloadedLocally
-                                    )
+                                    ),
+                                    isExplicit: song.isLyricsExplicit
                                 )
                             }
                             .buttonStyle(.plain)
@@ -131,6 +132,9 @@ struct ArtistDetailView: View {
             reloadArtistContent()
             startTrackFillIfNeeded()
             await loadTopSongsIfNeeded()
+        }
+        .onChange(of: settings.hideExplicitSongs) { _, _ in
+            reloadArtistContent()
         }
         .onChange(of: settings.showArtistTopSongs) { _, enabled in
             if enabled, isPopularAvailable {
@@ -230,8 +234,16 @@ struct ArtistDetailView: View {
         }
     }
 
+    private var displayedArtistSongs: [Song] {
+        settings.hideExplicitSongs ? artistSongs.filter { !$0.isLyricsExplicit } : artistSongs
+    }
+
     private var displayedPopularSongs: [IngestSong] {
-        ArtistTopSongs.displayedSongs(from: topSongs, expanded: showAllPopular)
+        let songs = ArtistTopSongs.displayedSongs(from: topSongs, expanded: showAllPopular)
+        guard settings.hideExplicitSongs else { return songs }
+        return songs.filter { ingest in
+            localSong(for: ingest)?.isLyricsExplicit != true
+        }
     }
 
     @ViewBuilder
@@ -248,7 +260,8 @@ struct ArtistDetailView: View {
                 showsArtworkBesideNumber: true,
                 downloadStatus: local.map {
                     downloadCenter.status(for: $0.remoteId, isDownloaded: $0.isDownloadedLocally)
-                }
+                },
+                isExplicit: local?.isLyricsExplicit ?? false
             )
         }
         .buttonStyle(.plain)
@@ -386,7 +399,7 @@ struct ArtistDetailView: View {
             details: "artist=\(artist.name)"
         )
         Task {
-            var songs = artistSongs
+            var songs = displayedArtistSongs
             if songs.isEmpty {
                 // Play was tapped before the soft fill finished — load tracks now.
                 trackFillTask?.cancel()
@@ -397,7 +410,7 @@ struct ArtistDetailView: View {
                     }
                 }
                 reloadArtistContent()
-                songs = artistSongs
+                songs = displayedArtistSongs
             }
             PlayTrace.mark("mapping QueueItems", details: "count=\(songs.count)")
             let items = songs.map(QueueItem.from)
@@ -411,8 +424,8 @@ struct ArtistDetailView: View {
 
     private func playSong(_ song: Song) {
         PlayTrace.begin("ArtistDetail track tap", details: "song=\(song.title)")
-        let items = artistSongs.map(QueueItem.from)
-        let index = artistSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
+        let items = displayedArtistSongs.map(QueueItem.from)
+        let index = displayedArtistSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         PlayTrace.mark("calling player.play", details: "count=\(items.count) startAt=\(index)")
         let origin = artists.first.map { QueueOrigin.artist($0.name) }
             ?? song.artistName.map { QueueOrigin.artist($0) }
@@ -421,7 +434,7 @@ struct ArtistDetailView: View {
 
     private func playTopSong(at index: Int) {
         PlayTrace.begin("ArtistDetail top song tap", details: "index=\(index)")
-        let items = topSongs.map { ingest in
+        let items = displayedPopularSongs.map { ingest in
             if let local = localSong(for: ingest) {
                 return QueueItem.from(local)
             }
