@@ -44,20 +44,37 @@ public enum LyricsExplicitMatcher {
 
     /// Letter runs, keeping `*` so starred spellings on the lists can match.
     public static func tokens(in text: String) -> [String] {
-        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        var tokens: [String] = []
-        var current = ""
-        for character in folded {
+        tokenRanges(in: text).map { foldedToken(in: text, range: $0) }
+    }
+
+    /// Original-text ranges of tokens that match `words`, for highlighting lyrics.
+    public static func matchingRanges(in text: String, words: Set<String>) -> [Range<String.Index>] {
+        guard !words.isEmpty, !text.isEmpty else { return [] }
+        return tokenRanges(in: text).filter { words.contains(foldedToken(in: text, range: $0)) }
+    }
+
+    /// Letter / `*` runs in `text`, in original indices so highlights can keep the written casing.
+    public static func tokenRanges(in text: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var start: String.Index?
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
             if character.isLetter || character == "*" {
-                current.append(character)
-            } else if !current.isEmpty {
-                tokens.append(current)
-                current = ""
+                if start == nil { start = index }
+            } else if let tokenStart = start {
+                ranges.append(tokenStart..<index)
+                start = nil
             }
+            index = text.index(after: index)
         }
-        if !current.isEmpty {
-            tokens.append(current)
+        if let tokenStart = start {
+            ranges.append(tokenStart..<text.endIndex)
         }
-        return tokens
+        return ranges
+    }
+
+    private static func foldedToken(in text: String, range: Range<String.Index>) -> String {
+        String(text[range]).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 }

@@ -22,7 +22,8 @@ struct FavoritesView: View {
                                 title: row.title,
                                 subtitle: row.subtitle,
                                 artworkURL: row.artworkToken,
-                                downloadStatus: albumDownloadStatus(for: row)
+                                downloadStatus: albumDownloadStatus(for: row),
+                                isExplicit: row.isExplicit
                             )
                         }
                         .buttonStyle(.plain)
@@ -64,6 +65,7 @@ struct FavoritesView: View {
     }
 
     private func reload() async {
+        await AlbumExplicitTrackSync.backfillIfNeeded()
         let built = await Self.fetch(hideExplicit: settings.hideExplicitSongs)
         guard !Task.isCancelled else { return }
         albumRows = built.albums
@@ -87,6 +89,7 @@ struct FavoritesView: View {
                         title: album.title,
                         subtitle: album.displayArtist,
                         artworkToken: album.artworkToken,
+                        isExplicit: album.hasExplicitTrack,
                         songRemoteIds: songs.map(\.remoteId),
                         downloadedSongIds: Set(songs.compactMap { $0.relFilePath != nil ? $0.remoteId : nil }),
                         trackTotal: max(album.trackCount, songs.count)

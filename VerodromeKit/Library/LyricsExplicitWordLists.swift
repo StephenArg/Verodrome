@@ -46,8 +46,9 @@ public enum LyricsExplicitWordLists {
     public static let average: Set<String> = loose.union([
         "pussy", "pussies",
         "cock", "cocks",
-        "f*ck", "f*cker", "f*cking",
+        "f*ck", "f*cker", "f*cking", "sex",
         "rape", "raped", "raping", "rapist",
+        "bitch", "bitches", "bitchy", "b*tch",
         // Spanish
         "carajo", "gilipollas", "cojones", "hijueputa",
         // French
@@ -55,7 +56,7 @@ public enum LyricsExplicitWordLists {
         // German
         "scheiße", "scheisse", "schlampe", "wichser", "arschloch",
         // Italian
-        "cazzo", "puttana", "stronzo", "coglione",
+        "cazzo",
         // Portuguese
         "caralho", "porra", "buceta",
         // Dutch
@@ -74,7 +75,6 @@ public enum LyricsExplicitWordLists {
         "whore", "whores",
         "slut", "sluts",
         "shit", "shits", "shitty", "bullshit", "horseshit", "sh*t",
-        "bitch", "bitches", "bitchy", "b*tch",
         "asshole", "assholes", "a**hole", "a**holes",
         "dick", "dicks", "dickhead", "dickheads",
         "bastard", "bastards",
@@ -96,7 +96,7 @@ public enum LyricsExplicitWordLists {
         // German
         "arsch", "verdammt",
         // Italian
-        "minchia", "merda",
+        "minchia", "merda", "puttana", "stronzo", "coglione",
         // Dutch
         "godverdomme",
     ])

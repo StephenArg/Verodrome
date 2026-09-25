@@ -111,6 +111,7 @@ public enum LyricsExplicitScanner {
             song.lyricsExplicitStatus = status
             song.lyricsExplicitCheckedAt = .now
             if changed {
+                AlbumExplicitTrackSync.refresh(for: song)
                 song.updatedAt = .now
                 try? repository.save()
                 NotificationCenter.default.post(name: .songMetadataRefreshed, object: remoteId)

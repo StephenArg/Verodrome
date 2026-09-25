@@ -264,4 +264,7 @@ public protocol LibraryIngesting: AnyObject, Sendable {
     func applyFavoriteAlbums(_ remoteIds: [String]) async throws
     /// Marks songs as favorites; clears the flag on songs no longer starred on the server.
     func applyFavoriteSongs(_ remoteIds: [String]) async throws
+
+    /// The subset of these remote album ids that already have at least one song stored.
+    func albumRemoteIdsWithSongs(_ remoteIds: [String]) async throws -> Set<String>
 }

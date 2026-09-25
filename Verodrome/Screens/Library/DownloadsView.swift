@@ -205,7 +205,8 @@ struct DownloadsView: View {
             subtitle: row.subtitle,
             artworkURL: row.artworkToken,
             symbol: "square.stack.fill",
-            downloadStatus: albumDownloadStatus(for: row)
+            downloadStatus: albumDownloadStatus(for: row),
+            isExplicit: row.isExplicit
         )
         if isSelecting {
             Button {
@@ -427,6 +428,7 @@ struct DownloadsView: View {
     }
 
     private func reload() async {
+        await AlbumExplicitTrackSync.backfillIfNeeded()
         loadGeneration += 1
         let generation = loadGeneration
         let fetched = await Self.fetchDownloadedLibrary()
@@ -488,6 +490,7 @@ struct DownloadsView: View {
                         // relationship doesn't fault every album during the map.
                         subtitle: album.artistName ?? "Unknown Artist",
                         artworkToken: album.artworkToken,
+                        isExplicit: album.hasExplicitTrack,
                         // Only the downloaded tracks we already loaded — not the full
                         // album relationship, which can be much larger on partial albums.
                         songRemoteIds: downloadedList,
@@ -625,6 +628,7 @@ struct DownloadedAlbumRow: Identifiable, Hashable, Sendable {
     let title: String
     let subtitle: String
     let artworkToken: String?
+    let isExplicit: Bool
     var songRemoteIds: [String]
     var downloadedSongIds: Set<String>
     let trackTotal: Int

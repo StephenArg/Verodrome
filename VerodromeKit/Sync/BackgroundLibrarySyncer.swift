@@ -27,7 +27,10 @@ public final class BackgroundLibrarySyncer {
 
     public func syncNewest() async {
         guard let syncer = syncerProvider() else { return }
-        let songIds = (try? await syncer.syncNewestAlbums(limit: newestLimit)) ?? []
+        // Auto-download needs every newest album's song ids; without it, only albums
+        // with nothing stored are worth a track request.
+        let tracks: NewestAlbumTracks = autoCacheNewestProvider() ? .all : .missing
+        let songIds = (try? await syncer.syncNewestAlbums(limit: newestLimit, tracks: tracks)) ?? []
 
         if let account = try? VerodromeKit.shared.activeAccount(),
            let storage = VerodromeKit.shared.storage {

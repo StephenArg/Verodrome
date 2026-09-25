@@ -42,6 +42,7 @@ final class CarPlayCatalog {
     }
 
     func makeHomeSectionsLoaded() async -> [CPListSection] {
+        await AlbumExplicitTrackSync.backfillIfNeeded()
         let recents = recentsHomeTiles()
         let added = Array(newestAlbums().prefix(homeStripCap))
         let playlists = homePlaylists()
@@ -338,7 +339,9 @@ final class CarPlayCatalog {
             style: .strip,
             images: images,
             titles: slice.map(\.title),
-            subtitles: slice.map { $0.artistName ?? $0.artist?.name },
+            subtitles: slice.map {
+                carPlayArtistDetail($0.artistName ?? $0.artist?.name, isExplicit: $0.hasExplicitTrack)
+            },
             onSelect: { [weak self] index in
                 if ids.indices.contains(index) {
                     self?.playAlbum(compoundRemoteId: ids[index])
@@ -501,12 +504,15 @@ final class CarPlayCatalog {
     }
 
     func pushAlbums(newestOnly: Bool) {
-        let albums = newestOnly ? newestAlbums() : allAlbums()
-        guard !albums.isEmpty else {
-            pushEmpty(title: newestOnly ? "Recently Added" : "Albums")
-            return
+        Task { @MainActor in
+            await AlbumExplicitTrackSync.backfillIfNeeded()
+            let albums = newestOnly ? self.newestAlbums() : self.allAlbums()
+            guard !albums.isEmpty else {
+                self.pushEmpty(title: newestOnly ? "Recently Added" : "Albums")
+                return
+            }
+            self.pushList(title: newestOnly ? "Recently Added" : "Albums", items: self.albumItems(albums))
         }
-        pushList(title: newestOnly ? "Recently Added" : "Albums", items: albumItems(albums))
     }
 
     func pushArtists() {
@@ -769,7 +775,9 @@ final class CarPlayCatalog {
             return
         }
         guard let song = currentSong(), let album = song.album else { return }
-        let songs = album.songs.sorted { ($0.disc ?? 0, $0.track ?? 0) < ($1.disc ?? 0, $1.track ?? 0) }
+        let songs = Self.visibleAlbumTracks(album.songs.sorted {
+            ($0.disc ?? 0, $0.track ?? 0) < ($1.disc ?? 0, $1.track ?? 0)
+        })
         pushList(title: album.title, items: songItems(songs, among: songs))
     }
 
@@ -796,7 +804,7 @@ final class CarPlayCatalog {
         guard let album = try? VerodromeKit.shared.repository()?.fetchAlbum(compoundRemoteId: compoundRemoteId) else {
             return
         }
-        let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+        let songs = Self.visibleAlbumTracks(album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) })
         RecentQueueStore.shared.record(album: album)
         play(
             songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) },
@@ -875,6 +883,7 @@ final class CarPlayCatalog {
     }
 
     private func fetchSearchSnapshot(query: String) async -> CarPlaySearchSnapshot {
+        await AlbumExplicitTrackSync.backfillIfNeeded()
         guard let accountID = catalogAccount()?.persistentModelID else {
             return CarPlaySearchSnapshot(artists: [], albums: [], songs: [])
         }
@@ -906,12 +915,15 @@ final class CarPlayCatalog {
                                 || $0.displayArtist.localizedCaseInsensitiveContains(query))
                     }
                     .prefix(min(albumCap, remainingAfterArtists))
-                    .map {
+                    .map { album in
                         CarPlaySearchHit(
-                            compoundRemoteId: $0.compoundRemoteId,
-                            title: $0.title,
-                            subtitle: $0.displayArtist,
-                            artworkToken: $0.artworkToken
+                            compoundRemoteId: album.compoundRemoteId,
+                            title: album.title,
+                            subtitle: carPlayArtistDetail(
+                                album.displayArtist,
+                                isExplicit: album.hasExplicitTrack
+                            ),
+                            artworkToken: album.artworkToken
                         )
                     }
 
@@ -1131,7 +1143,10 @@ final class CarPlayCatalog {
         albums.prefix(itemCap).map { album in
             let item = CPListItem(
                 text: album.title,
-                detailText: album.artistName ?? album.artist?.name
+                detailText: Self.artistDetail(
+                    album.artistName ?? album.artist?.name,
+                    isExplicit: album.hasExplicitTrack
+                )
             )
             let albumID = album.compoundRemoteId
             let token = album.artworkToken
@@ -1241,14 +1256,26 @@ final class CarPlayCatalog {
         return item
     }
 
+    /// Confirmed-explicit tracks stay off album lists and album playback when Hide Explicit is on.
+    private static func visibleAlbumTracks(_ songs: [Song]) -> [Song] {
+        guard SettingsStore.shared.hideExplicitSongs else { return songs }
+        return songs.filter { !$0.isLyricsExplicit }
+    }
+
     /// CarPlay list rows can't host `ExplicitBadge`, so the letter leads the artist line.
     private static func artistDetail(_ artist: String?, isExplicit: Bool) -> String? {
-        let name = artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if isExplicit {
-            return name.isEmpty ? "E" : "E  \(name)"
-        }
-        return name.isEmpty ? nil : name
+        carPlayArtistDetail(artist, isExplicit: isExplicit)
     }
+}
+
+/// CarPlay list rows can't host `ExplicitBadge`, so the letter leads the artist line.
+/// File-level so album search snapshots can format it off the main actor.
+private func carPlayArtistDetail(_ artist: String?, isExplicit: Bool) -> String? {
+    let name = artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if isExplicit {
+        return name.isEmpty ? "E" : "E  \(name)"
+    }
+    return name.isEmpty ? nil : name
 }
 
 private struct CarPlaySearchHit: Sendable {
@@ -1306,7 +1333,10 @@ private struct ResolvedRecent {
             kind: .album,
             compoundRemoteId: album.compoundRemoteId,
             title: album.title,
-            subtitle: album.artistName ?? album.artist?.name,
+            subtitle: carPlayArtistDetail(
+                album.artistName ?? album.artist?.name,
+                isExplicit: album.hasExplicitTrack
+            ),
             artworkToken: album.artworkToken
         )
     }

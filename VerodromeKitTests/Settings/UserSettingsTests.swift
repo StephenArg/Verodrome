@@ -70,6 +70,7 @@ final class UserSettingsTests: XCTestCase {
         XCTAssertTrue(UserSettings.default.explicitDetectionEnabled)
         XCTAssertEqual(UserSettings.default.explicitSensitivity, .average)
         XCTAssertFalse(UserSettings.default.hideExplicitSongs)
+        XCTAssertFalse(UserSettings.default.highlightExplicitLyrics)
         XCTAssertTrue(UserSettings.default.explicitBlacklistWords.isEmpty)
         XCTAssertTrue(UserSettings.default.explicitWhitelistWords.isEmpty)
     }
@@ -82,6 +83,7 @@ final class UserSettingsTests: XCTestCase {
         XCTAssertTrue(decoded.explicitDetectionEnabled)
         XCTAssertEqual(decoded.explicitSensitivity, .average)
         XCTAssertFalse(decoded.hideExplicitSongs)
+        XCTAssertFalse(decoded.highlightExplicitLyrics)
         XCTAssertTrue(decoded.explicitBlacklistWords.isEmpty)
         XCTAssertTrue(decoded.explicitWhitelistWords.isEmpty)
         XCTAssertNil(decoded.explicitWordListChangedAt)
@@ -94,6 +96,7 @@ final class UserSettingsTests: XCTestCase {
         settings.explicitBlacklistWords = ["Banana", "banana"]
         settings.explicitWhitelistWords = ["Fuck"]
         settings.hideExplicitSongs = true
+        settings.highlightExplicitLyrics = true
         let changedAt = Date(timeIntervalSince1970: 1_700_000_000)
         settings.explicitWordListChangedAt = changedAt
         let data = try JSONEncoder().encode(settings)
@@ -103,6 +106,7 @@ final class UserSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.explicitBlacklistWords, ["banana"])
         XCTAssertEqual(decoded.explicitWhitelistWords, ["fuck"])
         XCTAssertTrue(decoded.hideExplicitSongs)
+        XCTAssertTrue(decoded.highlightExplicitLyrics)
         XCTAssertEqual(decoded.explicitWordListChangedAt, changedAt)
     }
 }

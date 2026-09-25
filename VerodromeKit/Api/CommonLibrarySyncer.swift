@@ -44,6 +44,53 @@ public enum CommonLibrarySyncer {
         return all
     }
 
+    /// How many album-detail requests a Home prefetch keeps in flight at once.
+    public static let albumDetailConcurrency = 4
+
+    /// Newest-album ids to pull tracks for, in list order. `.missing` drops albums that
+    /// already have songs stored, which after a full sync is nearly all of them.
+    public static func albumIds(
+        _ albumIds: [String],
+        needingTracks tracks: NewestAlbumTracks,
+        ingestor: LibraryIngesting
+    ) async throws -> [String] {
+        switch tracks {
+        case .all:
+            return albumIds
+        case .missing:
+            let stored = try await ingestor.albumRemoteIdsWithSongs(albumIds)
+            return albumIds.filter { !stored.contains($0) }
+        }
+    }
+
+    /// Runs `fetch` for each id with at most `maxConcurrent` in flight, returning the
+    /// results in the order of `ids`. The first failure cancels the rest and is rethrown.
+    public static func fetchEach<T: Sendable>(
+        _ ids: [String],
+        maxConcurrent: Int = albumDetailConcurrency,
+        fetch: @escaping @Sendable (String) async throws -> T
+    ) async throws -> [T] {
+        guard !ids.isEmpty else { return [] }
+        return try await withThrowingTaskGroup(of: (Int, T).self) { group in
+            var results = [T?](repeating: nil, count: ids.count)
+            var next = 0
+            while next < min(max(1, maxConcurrent), ids.count) {
+                let index = next
+                group.addTask { (index, try await fetch(ids[index])) }
+                next += 1
+            }
+            while let (index, value) = try await group.next() {
+                results[index] = value
+                if next < ids.count {
+                    let index = next
+                    group.addTask { (index, try await fetch(ids[index])) }
+                    next += 1
+                }
+            }
+            return results.compactMap { $0 }
+        }
+    }
+
     public static func report(
         _ progress: LibrarySyncProgressHandler?,
         _ message: String,

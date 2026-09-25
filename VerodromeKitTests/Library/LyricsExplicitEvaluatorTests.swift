@@ -156,4 +156,48 @@ final class LyricsExplicitEvaluatorTests: XCTestCase {
             )
         )
     }
+
+    func testRadioContinuationDropsConfirmedExplicitSongsWhileHideIsOn() {
+        let clean = QueueItem(playableId: "clean", title: "Clean")
+        let flagged = QueueItem(playableId: "flagged", title: "Flagged", isLyricsExplicit: true)
+        let known = QueueItem(playableId: "known", title: "Known")
+
+        let hidden = LyricsExplicitEvaluator.filteringRadioContinuation(
+            [clean, flagged, known],
+            hideExplicit: true,
+            suppressedIds: ["known"]
+        )
+        XCTAssertEqual(hidden.map(\.playableId), ["clean"])
+
+        let kept = LyricsExplicitEvaluator.filteringRadioContinuation(
+            [clean, flagged, known],
+            hideExplicit: false,
+            suppressedIds: ["known"]
+        )
+        XCTAssertEqual(kept.map(\.playableId), ["clean", "flagged", "known"])
+    }
+
+    func testAlbumFlagFollowsConfirmedTracks() throws {
+        let album = Album(remoteId: "album", title: "Album", account: account)
+        let first = Song(remoteId: "1", title: "One", account: account)
+        let second = Song(remoteId: "2", title: "Two", account: account)
+        album.songs = [first, second]
+        repository.context.insert(album)
+        repository.context.insert(first)
+        repository.context.insert(second)
+
+        first.lyricsExplicitStatus = .explicit
+        AlbumExplicitTrackSync.refresh(for: first)
+        XCTAssertTrue(album.hasExplicitTrack)
+
+        second.lyricsExplicitStatus = .explicit
+        AlbumExplicitTrackSync.refresh(for: second)
+        first.lyricsExplicitStatus = .clean
+        AlbumExplicitTrackSync.refresh(for: first)
+        XCTAssertTrue(album.hasExplicitTrack)
+
+        second.lyricsExplicitStatus = .clean
+        AlbumExplicitTrackSync.refresh(for: second)
+        XCTAssertFalse(album.hasExplicitTrack)
+    }
 }

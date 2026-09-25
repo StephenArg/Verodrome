@@ -463,6 +463,34 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertEqual(handler.currentItem?.playableId, "0")
     }
 
+    func testRemoveNonCurrentRadioContinuationLeavesTheOriginalContextCopy() {
+        let handler = PlayQueueHandler()
+        let albumCopy = QueueItem(playableId: "explicit", title: "Album")
+        let radioCopy = QueueItem(playableId: "explicit", title: "Radio", isRadioContinuation: true)
+        let otherRadio = QueueItem(playableId: "other", title: "Other", isRadioContinuation: true)
+        handler.replaceContext(with: [albumCopy, radioCopy, otherRadio], startAt: 0)
+
+        let removed = handler.removeNonCurrentRadioContinuation(playableId: "explicit")
+
+        XCTAssertEqual(removed.map(\.title), ["Radio"])
+        XCTAssertEqual(handler.activeQueue.map(\.title), ["Album", "Other"])
+        XCTAssertEqual(handler.currentItem?.playableId, "explicit")
+        XCTAssertFalse(handler.currentItem?.isRadioContinuation ?? true)
+    }
+
+    func testRemoveNonCurrentRadioContinuationKeepsThePlayingRadioTrack() {
+        let handler = PlayQueueHandler()
+        let playing = QueueItem(playableId: "explicit", title: "Playing", isRadioContinuation: true)
+        let upcoming = QueueItem(playableId: "explicit", title: "Upcoming", isRadioContinuation: true)
+        handler.replaceContext(with: [playing, upcoming], startAt: 0)
+
+        let removed = handler.removeNonCurrentRadioContinuation(playableId: "explicit")
+
+        XCTAssertEqual(removed.map(\.title), ["Upcoming"])
+        XCTAssertEqual(handler.currentItem?.title, "Playing")
+        XCTAssertEqual(handler.activeQueue.count, 1)
+    }
+
     func testRemoveNonCurrentPostsQueueChangedWithRemovedItems() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(3), startAt: 0)

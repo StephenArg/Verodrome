@@ -18,3 +18,37 @@ struct LibrarySyncProgressBar: View {
         }
     }
 }
+
+/// The library-sync status shown in Settings and, while a sync is running, at the top of Home.
+struct LibrarySyncStatusView: View {
+    let progressText: String
+    let fraction: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(progressText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            LibrarySyncProgressBar(fraction: fraction)
+            Text("This usually takes less than a minute.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Home's pinned copy of the settings sync status.
+struct LibrarySyncHomeBanner: View {
+    let progressText: String
+    let fraction: Double?
+
+    var body: some View {
+        LibrarySyncStatusView(progressText: progressText, fraction: fraction)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .background(Color(.systemBackground))
+    }
+}

@@ -64,7 +64,7 @@ struct ArtistDetailView: View {
                 }
 
                 Section("Albums") {
-                    ForEach(artistAlbums, id: \.compoundRemoteId) { album in
+                    ForEach(displayedArtistAlbums, id: \.compoundRemoteId) { album in
                         Button {
                             openAlbum(album)
                         } label: {
@@ -74,7 +74,8 @@ struct ArtistDetailView: View {
                                 artworkURL: album.artworkToken,
                                 // Avoid `SongsDownloadSummary(album:)` — it faults every
                                 // track relationship on each body pass while sync merges.
-                                downloadStatus: downloadStatus(for: album)
+                                downloadStatus: downloadStatus(for: album),
+                                isExplicit: album.hasExplicitTrack
                             )
                         }
                         .buttonStyle(.plain)
@@ -236,6 +237,31 @@ struct ArtistDetailView: View {
 
     private var displayedArtistSongs: [Song] {
         settings.hideExplicitSongs ? artistSongs.filter { !$0.isLyricsExplicit } : artistSongs
+    }
+
+    /// Albums with a confirmed-explicit track among songs already loaded for this artist.
+    /// Matched from those songs so the list doesn't fault every album's tracks.
+    private var displayedArtistAlbums: [Album] {
+        guard settings.hideExplicitSongs else { return artistAlbums }
+        let hidden = Self.albumsContainingExplicitSongs(artistSongs)
+        guard !hidden.ids.isEmpty || !hidden.titles.isEmpty else { return artistAlbums }
+        return artistAlbums.filter { album in
+            !hidden.ids.contains(album.compoundRemoteId) && !hidden.titles.contains(album.title)
+        }
+    }
+
+    /// Album ids from the song's album relationship, or titles when that link isn't loaded.
+    private static func albumsContainingExplicitSongs(_ songs: [Song]) -> (ids: Set<String>, titles: Set<String>) {
+        var ids = Set<String>()
+        var titles = Set<String>()
+        for song in songs where song.isLyricsExplicit {
+            if let id = song.album?.compoundRemoteId {
+                ids.insert(id)
+            } else if let title = song.albumTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                titles.insert(title)
+            }
+        }
+        return (ids, titles)
     }
 
     private var displayedPopularSongs: [IngestSong] {

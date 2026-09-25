@@ -205,21 +205,28 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 
     @discardableResult
-    public func syncNewestAlbums(limit: Int) async throws -> [String] {
+    public func syncNewestAlbums(limit: Int, tracks: NewestAlbumTracks) async throws -> [String] {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let data = try await server.getAlbumList(type: "newest", size: max(1, limit), offset: 0)
         let albums = try SubsonicParsers.parseAlbumList(data: data)
         try await ingestor.ingest(albums: albums)
         try await ingestor.applyNewestAlbumRanks(albums.map(\.id))
 
-        var songIds: [String] = []
-        for album in albums.prefix(limit) {
-            let detail = try await server.getAlbum(id: album.id)
-            let parsed = try SubsonicParsers.parseAlbumDetail(data: detail)
-            try await ingestor.ingest(songs: parsed.songs)
-            songIds.append(contentsOf: parsed.songs.map(\.id))
+        let albumIds = try await CommonLibrarySyncer.albumIds(
+            albums.prefix(limit).map(\.id),
+            needingTracks: tracks,
+            ingestor: ingestor
+        )
+        let songs = try await CommonLibrarySyncer.fetchEach(albumIds) { albumId in
+            let detail = try await self.server.getAlbum(id: albumId)
+            return try SubsonicParsers.parseAlbumDetail(data: detail).songs
+        }.flatMap { $0 }
+        // One ingest for every album: each call opens its own batch, and a batch
+        // preloads the whole library.
+        if !songs.isEmpty {
+            try await ingestor.ingest(songs: songs)
         }
-        return songIds
+        return songs.map(\.id)
     }
 
     @discardableResult

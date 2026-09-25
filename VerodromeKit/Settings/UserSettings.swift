@@ -46,6 +46,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
     public var explicitWordListChangedAt: Date?
     /// Hide songs confirmed explicit from catalog song lists (not albums, playlists, or the queue).
     public var hideExplicitSongs: Bool
+    /// Marks matching words in on-screen lyrics. Off by default.
+    public var highlightExplicitLyrics: Bool
 
     public init(
         isOfflineMode: Bool = false,
@@ -80,7 +82,8 @@ public struct UserSettings: Codable, Equatable, Sendable {
         explicitBlacklistWords: [String] = [],
         explicitWhitelistWords: [String] = [],
         explicitWordListChangedAt: Date? = nil,
-        hideExplicitSongs: Bool = false
+        hideExplicitSongs: Bool = false,
+        highlightExplicitLyrics: Bool = false
     ) {
         self.isOfflineMode = isOfflineMode
         self.cacheLimitBytes = cacheLimitBytes
@@ -115,6 +118,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         self.explicitWhitelistWords = Self.normalizedWords(explicitWhitelistWords)
         self.explicitWordListChangedAt = explicitWordListChangedAt
         self.hideExplicitSongs = hideExplicitSongs
+        self.highlightExplicitLyrics = highlightExplicitLyrics
     }
 
     public static let `default` = UserSettings()
@@ -179,6 +183,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         case explicitWhitelistWords
         case explicitWordListChangedAt
         case hideExplicitSongs
+        case highlightExplicitLyrics
         // Legacy keys (decode-only)
         case streamingBitrateWifi
         case streamingBitrateCellular
@@ -235,6 +240,7 @@ public struct UserSettings: Codable, Equatable, Sendable {
         )
         explicitWordListChangedAt = try c.decodeIfPresent(Date.self, forKey: .explicitWordListChangedAt)
         hideExplicitSongs = try c.decodeIfPresent(Bool.self, forKey: .hideExplicitSongs) ?? false
+        highlightExplicitLyrics = try c.decodeIfPresent(Bool.self, forKey: .highlightExplicitLyrics) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -272,5 +278,6 @@ public struct UserSettings: Codable, Equatable, Sendable {
         try c.encode(explicitWhitelistWords, forKey: .explicitWhitelistWords)
         try c.encodeIfPresent(explicitWordListChangedAt, forKey: .explicitWordListChangedAt)
         try c.encode(hideExplicitSongs, forKey: .hideExplicitSongs)
+        try c.encode(highlightExplicitLyrics, forKey: .highlightExplicitLyrics)
     }
 }

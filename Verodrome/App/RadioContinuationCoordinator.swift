@@ -104,8 +104,11 @@ final class RadioContinuationCoordinator: ObservableObject {
             guard player.repeatMode == .off else { return }
             guard self.shuffleAll?.context != .shuffleAll else { return }
 
-            if case .ready(let items) = outcome, !items.isEmpty {
-                player.appendToQueue(items)
+            if case .ready(let items) = outcome {
+                let visible = LyricsExplicitEvaluator.radioContinuationItems(items)
+                if !visible.isEmpty {
+                    player.appendToQueue(visible)
+                }
             } else {
                 await EventLogger.shared.info(
                     "radio",

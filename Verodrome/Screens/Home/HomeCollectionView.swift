@@ -32,6 +32,12 @@ struct HomeStatsBarState: Equatable {
     var isShuffleDisabled: Bool
 }
 
+/// Library sync status pinned to the top of Home. Nil hides the bar.
+struct HomeSyncStatus: Equatable {
+    var progressText: String
+    var fraction: Double?
+}
+
 /// Home's carousels, rendered by a single `UICollectionView`.
 ///
 /// Every section is one orthogonally-scrolling row of the same collection view, which is
@@ -41,6 +47,7 @@ struct HomeCollectionView: UIViewControllerRepresentable, Equatable {
     let sections: [HomeSection]
     let tiles: [HomeSection: [HomeTileItem]]
     let stats: HomeStatsBarState
+    var syncStatus: HomeSyncStatus?
     var onSelectTile: (HomeSection, HomeTileItem) -> Void
     var onPlayAlbum: (_ compoundId: String, _ remoteId: String) -> Void
     var onSeeAll: (HomeSection) -> Void
@@ -51,6 +58,7 @@ struct HomeCollectionView: UIViewControllerRepresentable, Equatable {
         lhs.sections == rhs.sections
             && lhs.tiles == rhs.tiles
             && lhs.stats == rhs.stats
+            && lhs.syncStatus == rhs.syncStatus
     }
 
     func makeUIViewController(context: Context) -> HomeCollectionViewController {
@@ -60,6 +68,7 @@ struct HomeCollectionView: UIViewControllerRepresentable, Equatable {
         controller.onSeeAll = onSeeAll
         controller.onShuffle = onShuffle
         controller.onRefresh = onRefresh
+        controller.setSyncStatus(syncStatus)
         return controller
     }
 
@@ -70,6 +79,7 @@ struct HomeCollectionView: UIViewControllerRepresentable, Equatable {
         controller.onShuffle = onShuffle
         controller.onRefresh = onRefresh
         controller.apply(sections: sections, tiles: tiles, stats: stats)
+        controller.setSyncStatus(syncStatus)
     }
 }
 
@@ -105,6 +115,12 @@ final class HomeCollectionViewController: UIViewController, UICollectionViewDele
     private var hasStartedPullSpin = false
     private var isDismissingRefresh = false
     private let refreshPullThreshold: CGFloat = 64
+    /// Pinned under the navigation bar. The collection view is edge-pinned and owns
+    /// the large-title inset itself, so this bar adds its height to `contentInset`
+    /// instead of sitting in a SwiftUI safe-area inset the scroll view never sees.
+    private var syncBannerHost: UIHostingController<LibrarySyncHomeBanner>?
+    private var displayedSyncStatus: HomeSyncStatus?
+    private var isUpdatingSyncBannerInset = false
 
     private struct PendingHomeApply {
         let visibleSections: [HomeSection]
@@ -188,9 +204,82 @@ final class HomeCollectionViewController: UIViewController, UICollectionViewDele
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         attachRefreshIndicatorToTitle()
+        updateSyncBannerInset()
         guard !didNormalizeInitialOffset, !isRefreshing else { return }
         didNormalizeInitialOffset = true
         normalizeScrollPosition(animated: false)
+    }
+
+    func setSyncStatus(_ status: HomeSyncStatus?) {
+        guard status != displayedSyncStatus else { return }
+        let textChanged = displayedSyncStatus?.progressText != status?.progressText
+        let visibilityChanged = (displayedSyncStatus != nil) != (status != nil)
+        displayedSyncStatus = status
+        let host = ensureSyncBannerHost()
+        if let status {
+            host.rootView = LibrarySyncHomeBanner(
+                progressText: status.progressText,
+                fraction: status.fraction
+            )
+            host.view.isHidden = false
+        } else {
+            host.view.isHidden = true
+        }
+        // Percent ticks only refresh the bar. Relayout when the caption can change height.
+        guard visibilityChanged || textChanged else { return }
+        host.view.invalidateIntrinsicContentSize()
+        view.layoutIfNeeded()
+        updateSyncBannerInset()
+    }
+
+    private func ensureSyncBannerHost() -> UIHostingController<LibrarySyncHomeBanner> {
+        if let syncBannerHost { return syncBannerHost }
+        let host = UIHostingController(
+            rootView: LibrarySyncHomeBanner(progressText: "", fraction: nil)
+        )
+        host.safeAreaRegions = []
+        host.sizingOptions = .intrinsicContentSize
+        host.view.backgroundColor = .systemBackground
+        host.view.isHidden = true
+        // Let drags that start on the bar scroll the board underneath.
+        host.view.isUserInteractionEnabled = false
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        syncBannerHost = host
+        addChild(host)
+        view.addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        host.didMove(toParent: self)
+        return host
+    }
+
+    private func updateSyncBannerInset() {
+        guard !isUpdatingSyncBannerInset else { return }
+        let height = syncBannerHeight()
+        guard abs(collectionView.contentInset.top - height) > 0.5 else { return }
+        isUpdatingSyncBannerInset = true
+        defer { isUpdatingSyncBannerInset = false }
+        let wasAtTop = collectionView.contentOffset.y <= -collectionView.adjustedContentInset.top + 1
+        collectionView.contentInset.top = height
+        guard wasAtTop else { return }
+        collectionView.setContentOffset(
+            CGPoint(x: 0, y: -collectionView.adjustedContentInset.top),
+            animated: false
+        )
+    }
+
+    private func syncBannerHeight() -> CGFloat {
+        guard let host = syncBannerHost, !host.view.isHidden else { return 0 }
+        if host.view.bounds.height > 0.5, host.view.bounds.width > 0.5 {
+            return host.view.bounds.height
+        }
+        guard view.bounds.width > 0.5 else { return 0 }
+        return host.sizeThatFits(
+            in: CGSize(width: view.bounds.width, height: UIView.layoutFittingExpandedSize.height)
+        ).height
     }
 
     /// Pins the spinner to the large-title band of the navigation bar so it paints
@@ -848,6 +937,8 @@ final class HomeTileCell: UICollectionViewCell {
     private let artworkView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+    private let explicitBadge = ExplicitBadgeView()
+    private let subtitleRow = UIStackView()
     private var symbol = "music.note"
     private var artworkToken: String?
     private var artworkTask: Task<Void, Never>?
@@ -900,10 +991,19 @@ final class HomeTileCell: UICollectionViewCell {
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 1
         subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        explicitBadge.isHidden = true
+        subtitleRow.axis = .horizontal
+        subtitleRow.spacing = 5
+        subtitleRow.alignment = .center
+        subtitleRow.translatesAutoresizingMaskIntoConstraints = false
+        subtitleRow.addArrangedSubview(explicitBadge)
+        subtitleRow.addArrangedSubview(subtitleLabel)
 
         contentView.addSubview(artworkView)
         contentView.addSubview(titleLabel)
-        contentView.addSubview(subtitleLabel)
+        contentView.addSubview(subtitleRow)
 
         artworkWidthConstraint = artworkView.widthAnchor.constraint(
             equalToConstant: HomeCollectionViewController.tileWidth
@@ -924,19 +1024,20 @@ final class HomeTileCell: UICollectionViewCell {
             titleLabel.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
             titleHeightConstraint,
 
-            subtitleLabel.topAnchor.constraint(
+            subtitleRow.topAnchor.constraint(
                 equalTo: titleLabel.bottomAnchor,
                 constant: Self.subtitleSpacing
             ),
-            subtitleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            subtitleLabel.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
-            subtitleLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            subtitleRow.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            subtitleRow.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
+            subtitleRow.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
 
         updateTitleHeight()
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
             (cell: Self, _: UITraitCollection) in
             cell.updateTitleHeight()
+            cell.explicitBadge.applyBorderColor()
         }
 
         isAccessibilityElement = true
@@ -957,6 +1058,7 @@ final class HomeTileCell: UICollectionViewCell {
         artworkView.image = nil
         titleLabel.text = nil
         subtitleLabel.text = nil
+        explicitBadge.isHidden = true
     }
 
     func configure(with tile: HomeTileItem, width: CGFloat) {
@@ -964,9 +1066,17 @@ final class HomeTileCell: UICollectionViewCell {
         artworkWidthConstraint.constant = width
         titleLabel.text = tile.title
         subtitleLabel.text = tile.subtitle
+        explicitBadge.isHidden = !tile.isExplicit
+        explicitBadge.applyBorderColor()
         symbol = tile.symbol
         artworkToken = tile.artworkToken
-        accessibilityLabel = tile.subtitle.isEmpty ? tile.title : "\(tile.title), \(tile.subtitle)"
+        if tile.isExplicit {
+            accessibilityLabel = tile.subtitle.isEmpty
+                ? "\(tile.title), Explicit"
+                : "\(tile.title), Explicit, \(tile.subtitle)"
+        } else {
+            accessibilityLabel = tile.subtitle.isEmpty ? tile.title : "\(tile.title), \(tile.subtitle)"
+        }
 
         // Synchronous cache probe, so a tile scrolling back in shows its art in the same
         // frame instead of flashing a placeholder. Any cached size counts —

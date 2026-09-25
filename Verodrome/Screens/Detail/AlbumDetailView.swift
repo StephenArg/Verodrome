@@ -55,6 +55,7 @@ struct AlbumDetailView: View {
                         },
                         artworkURL: album.artworkToken,
                         tintKey: tintKey,
+                        showsExplicitBadge: album.hasExplicitTrack,
                         onPlay: { play(shuffle: false) },
                         onShuffle: { play(shuffle: true) },
                         accessory: { albumStatusBar(for: album) }
@@ -126,6 +127,11 @@ struct AlbumDetailView: View {
             loadTracks(for: album)
             guard let remoteId = albums.first?.remoteId else { return }
             try? await VerodromeKit.shared.ensureActiveLibrarySyncer()?.sync(albumId: remoteId)
+            if let album = albums.first {
+                loadTracks(for: album)
+            }
+        }
+        .onChange(of: settings.hideExplicitSongs) { _, _ in
             if let album = albums.first {
                 loadTracks(for: album)
             }
@@ -304,9 +310,13 @@ struct AlbumDetailView: View {
     // MARK: - Playback
 
     private func loadTracks(for album: Album) {
-        tracks = album.songs.sorted {
+        var songs = album.songs.sorted {
             ($0.disc ?? 0, $0.track ?? 0) < ($1.disc ?? 0, $1.track ?? 0)
         }
+        if settings.hideExplicitSongs {
+            songs.removeAll { $0.isLyricsExplicit }
+        }
+        tracks = songs
     }
 
     private func play(shuffle: Bool) {

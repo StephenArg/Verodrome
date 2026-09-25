@@ -35,9 +35,9 @@ struct GenreDetailView: View {
                     .listRowBackground(Color.clear)
                 }
 
-                if !genreAlbums.isEmpty {
+                if !displayedGenreAlbums.isEmpty {
                     Section("Albums") {
-                        ForEach(genreAlbums, id: \.compoundRemoteId) { album in
+                        ForEach(displayedGenreAlbums, id: \.compoundRemoteId) { album in
                             NavigationLink {
                                 AlbumDetailView(albumID: album.compoundRemoteId)
                             } label: {
@@ -45,7 +45,8 @@ struct GenreDetailView: View {
                                     title: album.title,
                                     subtitle: album.displayArtist,
                                     artworkURL: album.artworkToken,
-                                    downloadStatus: SongsDownloadSummary(album: album, center: downloadCenter).status
+                                    downloadStatus: SongsDownloadSummary(album: album, center: downloadCenter).status,
+                                    isExplicit: album.hasExplicitTrack
                                 )
                             }
                         }
@@ -134,6 +135,29 @@ struct GenreDetailView: View {
 
     private var displayedGenreSongs: [Song] {
         settings.hideExplicitSongs ? genreSongs.filter { !$0.isLyricsExplicit } : genreSongs
+    }
+
+    /// Albums with a confirmed-explicit track among songs already gathered for this genre.
+    private var displayedGenreAlbums: [Album] {
+        guard settings.hideExplicitSongs else { return genreAlbums }
+        let hidden = Self.albumsContainingExplicitSongs(genreSongs)
+        guard !hidden.ids.isEmpty || !hidden.titles.isEmpty else { return genreAlbums }
+        return genreAlbums.filter { album in
+            !hidden.ids.contains(album.compoundRemoteId) && !hidden.titles.contains(album.title)
+        }
+    }
+
+    private static func albumsContainingExplicitSongs(_ songs: [Song]) -> (ids: Set<String>, titles: Set<String>) {
+        var ids = Set<String>()
+        var titles = Set<String>()
+        for song in songs where song.isLyricsExplicit {
+            if let id = song.album?.compoundRemoteId {
+                ids.insert(id)
+            } else if let title = song.albumTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                titles.insert(title)
+            }
+        }
+        return (ids, titles)
     }
 
     private func play(shuffle: Bool, genre: Genre) {

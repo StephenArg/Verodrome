@@ -34,6 +34,7 @@ struct AlbumsGridView<MenuContent: View>: View {
                 title: album.title,
                 subtitle: album.subtitle,
                 artworkURL: album.artworkToken,
+                isExplicit: album.isExplicit,
                 showsText: showsText
             )
         }

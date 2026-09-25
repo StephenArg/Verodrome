@@ -187,6 +187,7 @@ public final class VerodromeKit: ObservableObject {
         }
         remoteCommandHandler.bind(player: facade)
         refreshLaunchPhase()
+        await AlbumExplicitTrackSync.backfillIfNeeded()
         isInitialized = true
 
         if accountStore.activeAccountKey() != nil {
@@ -293,7 +294,31 @@ public final class VerodromeKit: ObservableObject {
         librarySync.runBackground()
     }
 
-    /// Background catalog sync + low-priority track backfill. Does not block the UI.
+    /// Whether a background sync will crawl every song, not just the catalog and home lists.
+    ///
+    /// The song crawl runs once per backfill version, and only while the network is up.
+    /// Home uses this so its progress bar stays hidden for the quicker pass.
+    public func willBackfillAllSongs() -> Bool {
+        settings.loadAppSettings().tracksBackfillVersion < AppSettings.currentTracksBackfillVersion
+            && networkMonitor.isConnected
+    }
+
+    /// Whether the background pass has to walk the whole catalog before Home.
+    ///
+    /// Once a library is stored and its track backfill has run, the catalog belongs to
+    /// Sync Now: paging every album on each launch was most of the routine refresh.
+    /// New albums still land through the newest list below.
+    func needsCatalogSync() -> Bool {
+        guard settings.isLibrarySynced,
+              settings.loadAppSettings().tracksBackfillVersion >= AppSettings.currentTracksBackfillVersion,
+              let account = try? activeAccount(),
+              let hasAlbums = try? repository()?.hasAlbums(account: account)
+        else { return true }
+        return !hasAlbums
+    }
+
+    /// Background refresh: catalog when `needsCatalogSync`, then Home lists, then the
+    /// track backfill when it is still due. Does not block the UI.
     public func startBackgroundLibrarySync() async throws {
         guard let storage else { throw BackendError.unsupported }
         let syncer = try await ensureActiveLibrarySyncer()
@@ -309,33 +334,29 @@ public final class VerodromeKit: ObservableObject {
             }
         }
 
-        try await syncer.syncCatalog(progress: progress)
+        if needsCatalogSync() {
+            try await syncer.syncCatalog(progress: progress)
 
-        if let account = try? activeAccount() {
-            _ = try? DuplicateMaintenance.resolveAll(account: account, context: storage.mainContext)
+            if let account = try? activeAccount() {
+                _ = try? DuplicateMaintenance.resolveAll(account: account, context: storage.mainContext)
+            }
+
+            settings.isLibrarySynced = true
+            settings.save()
+            observableSettings.markLibrarySynced(version: max(1, settings.loadAppSettings().librarySyncVersion))
         }
-
-        settings.isLibrarySynced = true
-        settings.save()
-        observableSettings.markLibrarySynced(version: max(1, settings.loadAppSettings().librarySyncVersion))
         launchPhase = .main
 
         // Populate Home section ranks (newest / recent / favorites) without blocking browse.
         // Three unsized calls, so the bar holds at the end of the catalog phase rather
         // than sitting under a stale stage name.
         progress(LibrarySyncProgress(message: "Updating home…", fraction: LibrarySyncPhase.catalog.end))
-        _ = try? await syncer.syncNewestAlbums(limit: 40)
+        _ = try? await syncer.syncNewestAlbums(limit: 40, tracks: .missing)
         _ = try? await syncer.syncRecentAlbums(limit: 40)
         try? await syncer.syncFavoriteAlbums()
         popularPrefetch?.warmupLikelyArtists()
 
-        let backfillVersion = settings.loadAppSettings().tracksBackfillVersion
-        guard backfillVersion < AppSettings.currentTracksBackfillVersion else {
-            return
-        }
-        guard networkMonitor.isConnected else {
-            return
-        }
+        guard willBackfillAllSongs() else { return }
 
         // Yield so Home / player UI can breathe before the heavy track crawl.
         try? await Task.sleep(nanoseconds: 500_000_000)

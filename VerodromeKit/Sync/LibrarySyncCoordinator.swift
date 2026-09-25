@@ -6,9 +6,11 @@ public final class LibrarySyncCoordinator: ObservableObject {
     public static let shared = LibrarySyncCoordinator()
 
     @Published public private(set) var isSyncing = false
-    /// The step a sync is on, manual or background. Nothing shows this on its own —
-    /// Library settings is the only screen that surfaces it, so a background sync
-    /// still doesn't interrupt anyone.
+    /// True when this sync crawls every song. Catalog refreshes and the home-list
+    /// update leave this false, so Home can ignore those quicker passes.
+    @Published public private(set) var isFullSync = false
+    /// The step a sync is on, manual or background. Library settings always shows it.
+    /// Home shows it only for a full song sync, and only while that toggle is on.
     @Published public private(set) var syncProgressText = ""
     /// Overall completion, 0...1. Nil until the first step that can size itself.
     @Published public private(set) var syncFraction: Double?
@@ -20,10 +22,14 @@ public final class LibrarySyncCoordinator: ObservableObject {
     public func syncLibrary() async throws {
         guard !isSyncing else { return }
         isSyncing = true
+        isFullSync = true
         lastError = nil
         syncProgressText = "Starting…"
         syncFraction = nil
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            isFullSync = false
+        }
         do {
             try await VerodromeKit.shared.performInitialSync()
             syncProgressText = "Done"
@@ -35,16 +41,21 @@ public final class LibrarySyncCoordinator: ObservableObject {
         }
     }
 
-    /// Non-blocking background catalog + optional track backfill. Safe to call repeatedly.
-    /// Does not surface a banner — library UI stays usable while this runs.
+    /// Non-blocking background refresh: catalog only when needed, Home lists, and the track
+    /// backfill when it is still due. Safe to call repeatedly.
+    /// Home shows progress only when this pass will crawl every song.
     public func runBackground() {
         guard !isSyncing else { return }
         Task {
             isSyncing = true
+            isFullSync = VerodromeKit.shared.willBackfillAllSongs()
             lastError = nil
             syncProgressText = "Starting…"
             syncFraction = nil
-            defer { isSyncing = false }
+            defer {
+                isSyncing = false
+                isFullSync = false
+            }
             do {
                 // Ingest runs on its own background ModelActor now; this pause just keeps
                 // its disk and SQLite traffic away from first paint and artwork loads.
@@ -59,6 +70,7 @@ public final class LibrarySyncCoordinator: ObservableObject {
 
     public func cancelSync() {
         isSyncing = false
+        isFullSync = false
         syncProgressText = "Cancelled"
     }
 

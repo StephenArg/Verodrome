@@ -8,6 +8,7 @@ struct SyncedLyricsView: View {
     /// the lyrics, not the whole player screen.
     @EnvironmentObject private var progress: PlayerProgressModel
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var settings: SettingsStore
 
     var horizontalPadding: CGFloat = VerodromeTheme.playerContentHorizontalPadding
     var alignment: TextAlignment = .leading
@@ -122,7 +123,7 @@ struct SyncedLyricsView: View {
     @ViewBuilder
     private func lineView(_ line: LyricLine) -> some View {
         let isActive = activeIndex == line.id
-        let styledText = Text(line.text.isEmpty ? " " : line.text)
+        let styledText = lineText(line)
             .font(.title3.weight(isActive ? .bold : .semibold))
             .multilineTextAlignment(alignment)
             .foregroundStyle(.primary)
@@ -158,6 +159,28 @@ struct SyncedLyricsView: View {
     private var anchor: UnitPoint {
         alignment == .center ? .center : .leading
     }
+
+    private func lineText(_ line: LyricLine) -> Text {
+        let display = line.text.isEmpty ? " " : line.text
+        guard settings.highlightExplicitLyrics else { return Text(display) }
+        return Text(highlightedLine(display))
+    }
+
+    private func highlightedLine(_ text: String) -> AttributedString {
+        var attributed = AttributedString(text)
+        let words = LyricsExplicitMatcher.activeWords(
+            sensitivity: settings.explicitSensitivity,
+            blacklist: settings.explicitBlacklistWords,
+            whitelist: settings.explicitWhitelistWords
+        )
+        for range in LyricsExplicitMatcher.matchingRanges(in: text, words: words) {
+            guard let attributedRange = Range(range, in: attributed) else { continue }
+            attributed[attributedRange].backgroundColor = Self.explicitHighlightColor
+        }
+        return attributed
+    }
+
+    private static let explicitHighlightColor = Color.yellow.opacity(0.55)
 
     private func beginHoldSpeed(at point: CGPoint, width: CGFloat) {
         guard !isHoldSpeed else { return }

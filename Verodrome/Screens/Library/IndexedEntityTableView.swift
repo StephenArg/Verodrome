@@ -594,7 +594,7 @@ enum VisibleArtworkLoader {
 
 /// Inset letter plus a stroked capsule. A bordered `UILabel` has no padding, and
 /// trailing spaces in `" E "` are trimmed, which parks the letter against the right edge.
-private final class ExplicitBadgeView: UIView {
+final class ExplicitBadgeView: UIView {
     private let letter = UILabel()
 
     override init(frame: CGRect) {

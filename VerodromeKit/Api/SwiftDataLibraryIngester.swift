@@ -326,10 +326,12 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
         onProgress?("Radios: \(radios.count)")
     }
 
+    // The rank and favorite appliers resolve each row by a direct fetch, so they skip
+    // `beginBatch`: its lookup tables load every artist, album and song in the library,
+    // which these never read.
+
     public func applyNewestAlbumRanks(_ orderedRemoteIds: [String]) async throws {
         let (repository, account) = try makeSession()
-        try repository.beginBatch()
-        defer { try? repository.endBatch() }
         // Only touch previously ranked + newly ranked rows (not the entire library).
         let previouslyRanked = try repository.fetchAlbums(newestIndexPositive: true)
         for album in previouslyRanked {
@@ -340,12 +342,11 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 album.newestIndex = offset + 1
             }
         }
+        try repository.saveIfNotBatching()
     }
 
     public func applyRecentAlbumRanks(_ orderedRemoteIds: [String]) async throws {
         let (repository, account) = try makeSession()
-        try repository.beginBatch()
-        defer { try? repository.endBatch() }
         let previouslyRanked = try repository.fetchAlbums(recentIndexPositive: true)
         for album in previouslyRanked {
             album.recentIndex = 0
@@ -355,12 +356,11 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 album.recentIndex = offset + 1
             }
         }
+        try repository.saveIfNotBatching()
     }
 
     public func applyFavoriteAlbums(_ remoteIds: [String]) async throws {
         let (repository, account) = try makeSession()
-        try repository.beginBatch()
-        defer { try? repository.endBatch() }
         let favored = Set(remoteIds)
         let currentlyFavorite = try repository.fetchAlbums(favoritesOnly: true)
         for album in currentlyFavorite where !favored.contains(album.remoteId) {
@@ -371,12 +371,11 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 album.isFavorite = true
             }
         }
+        try repository.saveIfNotBatching()
     }
 
     public func applyFavoriteSongs(_ remoteIds: [String]) async throws {
         let (repository, account) = try makeSession()
-        try repository.beginBatch()
-        defer { try? repository.endBatch() }
         let favored = Set(remoteIds)
         // Account-scoped: another library's likes must not clear this one's.
         let currentlyFavorite = try repository.fetchSongs(account: account, favoritesOnly: true)
@@ -388,6 +387,19 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
                 song.isFavorite = true
             }
         }
+        try repository.saveIfNotBatching()
+    }
+
+    public func albumRemoteIdsWithSongs(_ remoteIds: [String]) async throws -> Set<String> {
+        let (repository, account) = try makeSession()
+        var stored = Set<String>()
+        for remoteId in remoteIds {
+            if let album = try repository.resolveAlbum(remoteId: remoteId, account: account),
+               !album.songs.isEmpty {
+                stored.insert(remoteId)
+            }
+        }
+        return stored
     }
 
     private func assignGenreArtwork(_ genre: Genre, from artId: String?) {

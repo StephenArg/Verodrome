@@ -12,6 +12,7 @@ struct HomeTileItem: Identifiable, Hashable {
     /// When set, context-menu Play uses this album remote/compound id.
     var albumCompoundId: String? = nil
     var albumRemoteId: String? = nil
+    var isExplicit: Bool = false
 }
 
 /// Everything that should cause a tile reload, collapsed into one `.task(id:)` key so
@@ -94,6 +95,10 @@ struct HomeView: View {
         HomeLoadTrigger(sections: settings.enabledHomeSections)
     }
 
+    private var showsHomeSyncProgress: Bool {
+        librarySync.isSyncing && librarySync.isFullSync && settings.showLibrarySyncProgressOnHome
+    }
+
     var body: some View {
         HomeCollectionView(
             sections: settings.enabledHomeSections,
@@ -105,6 +110,12 @@ struct HomeView: View {
                 isShuffleBusy: shuffle.isStarting,
                 isShuffleDisabled: libraryTotals.songs == 0
             ),
+            syncStatus: showsHomeSyncProgress
+                ? HomeSyncStatus(
+                    progressText: librarySync.syncProgressText,
+                    fraction: librarySync.syncFraction
+                )
+                : nil,
             onSelectTile: select,
             onPlayAlbum: playAlbum,
             onSeeAll: { section in
@@ -153,6 +164,7 @@ struct HomeView: View {
         .navigationDestination(item: $selectedSectionList) { sectionList(for: $0) }
         .task(id: loadTrigger) {
             await HomeArtistNameBackfill.runIfNeeded()
+            await AlbumExplicitTrackSync.backfillIfNeeded()
             await loadTiles()
             await loadLibraryTotals()
             // Server top-up runs once per view lifetime, after local tiles are on screen.
@@ -417,7 +429,8 @@ struct HomeView: View {
             subtitle: album.artistName ?? "Unknown Artist",
             artworkToken: album.artworkToken,
             albumCompoundId: album.compoundRemoteId,
-            albumRemoteId: album.remoteId
+            albumRemoteId: album.remoteId,
+            isExplicit: album.hasExplicitTrack
         )
     }
 
@@ -430,7 +443,7 @@ struct HomeView: View {
 
     private func refreshHomeLists() async {
         guard let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() else { return }
-        _ = try? await syncer.syncNewestAlbums(limit: 40)
+        _ = try? await syncer.syncNewestAlbums(limit: 40, tracks: .missing)
         _ = try? await syncer.syncRecentAlbums(limit: 40)
         try? await syncer.syncFavoriteAlbums()
     }

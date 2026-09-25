@@ -79,6 +79,18 @@ public enum LibrarySyncCatalogStage: Int, Sendable, CaseIterable {
     }
 }
 
+/// Which of the newest albums `syncNewestAlbums` also pulls tracks for.
+///
+/// Ranking the Home carousel only needs the album list. Tracks are a per-album request,
+/// so only callers that use the returned song ids should ask for all of them.
+public enum NewestAlbumTracks: Sendable {
+    /// Only albums with no songs stored yet. A Home tile needs title and artwork, and
+    /// playing an album with no local songs fetches it on demand.
+    case missing
+    /// Every album in the list, so the returned ids cover all of them (auto-download).
+    case all
+}
+
 /// What a favorite or rating write applies to. Backends address these differently:
 /// Subsonic uses separate `id` / `albumId` / `artistId` parameters, Ampache an
 /// `object_type`.
@@ -120,9 +132,10 @@ public protocol LibrarySyncer: Sendable {
     /// Used when the play queue advances so hearts stay in sync without a catalog sync.
     func fetchSongUserState(playableId: String) async throws -> SongUserState
 
-    /// Fetches newest albums, ingests them (with tracks when available), and returns song remote ids.
+    /// Fetches newest albums, ingests them and their Home ranks, then fetches tracks for the
+    /// albums `tracks` selects. Returns the remote ids of the songs it fetched.
     @discardableResult
-    func syncNewestAlbums(limit: Int) async throws -> [String]
+    func syncNewestAlbums(limit: Int, tracks: NewestAlbumTracks) async throws -> [String]
 
     /// Fetches recently played albums from the server and updates local recent ranks for Home.
     @discardableResult

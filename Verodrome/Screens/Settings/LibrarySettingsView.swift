@@ -15,18 +15,17 @@ struct LibrarySettingsView: View {
                 }
                 Button(isSyncing ? "Syncing…" : "Sync Now") { syncNow() }
                     .disabled(isSyncing || librarySync.isSyncing)
+                Toggle("Show Sync Progress on Home", isOn: $settings.showLibrarySyncProgressOnHome)
+                    .onChange(of: settings.showLibrarySyncProgressOnHome) { _, _ in
+                        settings.save()
+                    }
                 // Covers the background sync too, which holds the same lock and is what
                 // disables the button — without this it looked like nothing was happening.
                 if librarySync.isSyncing {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(librarySync.syncProgressText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        LibrarySyncProgressBar(fraction: librarySync.syncFraction)
-                        Text("This usually takes less than a minute.")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                    LibrarySyncStatusView(
+                        progressText: librarySync.syncProgressText,
+                        fraction: librarySync.syncFraction
+                    )
                 }
             }
 

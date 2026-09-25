@@ -177,6 +177,9 @@ public final class Album {
     public var newestIndex: Int = 0
     /// Rank from server `getAlbumList2 type=recent` (1-based). 0 = not in recent set.
     public var recentIndex: Int = 0
+    /// True when any track is confirmed explicit. Default is required for lightweight
+    /// migration of existing stores. List rows read this instead of faulting `songs`.
+    public var hasExplicitTrack: Bool = false
 
     public var account: Account?
     public var artist: Artist?
@@ -196,6 +199,7 @@ public final class Album {
         self.updatedAt = .now
         self.newestIndex = 0
         self.recentIndex = 0
+        self.hasExplicitTrack = false
         self.account = account
         self.artist = artist
         self.compoundRemoteId = Album.makeCompoundRemoteId(account: account, remoteId: remoteId)

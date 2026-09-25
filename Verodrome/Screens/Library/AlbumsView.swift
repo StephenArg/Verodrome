@@ -91,6 +91,7 @@ struct AlbumsView: View {
         }
         .perfAppear("Albums", details: "rows=\(model.rowCount) display=\(settings.libraryDisplayType.rawValue)")
         .task(id: reloadKey) {
+            await AlbumExplicitTrackSync.backfillIfNeeded()
             await model.load(search: debouncedSearch, sort: sort, randomSeed: randomSeed)
         }
         .refreshable {
@@ -337,6 +338,7 @@ struct AlbumsView: View {
                         // Ordering by rating sorts on a value the row otherwise never
                         // shows, which reads as arbitrary without the key on screen.
                         trailingRating: request.sort == .ratingHighest ? album.rating : nil,
+                        isExplicit: album.hasExplicitTrack,
                         songRemoteIds: songIds,
                         downloadedSongIds: downloadedIds,
                         trackTotal: max(album.trackCount, songs.count)
@@ -424,11 +426,13 @@ struct AlbumGridSnapshot: Identifiable, Hashable {
     let title: String
     let subtitle: String
     let artworkToken: String?
+    let isExplicit: Bool
 
     init(_ row: LibraryRowSnapshot) {
         id = row.id
         title = row.title
         subtitle = row.subtitle
         artworkToken = row.artworkToken
+        isExplicit = row.isExplicit
     }
 }

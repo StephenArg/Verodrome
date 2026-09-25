@@ -5,6 +5,7 @@ struct AlbumGridCell: View {
     let subtitle: String
     var artworkURL: String? = nil
     var symbol: String = "music.note"
+    var isExplicit: Bool = false
     /// When false, only the cover is shown (compact “no text” album grids).
     var showsText: Bool = true
 
@@ -19,11 +20,16 @@ struct AlbumGridCell: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 5) {
+                        if isExplicit {
+                            ExplicitBadge()
+                        }
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
                 // Keep the text column from growing past the artwork width so
                 // long titles truncate instead of stretching the grid cell.

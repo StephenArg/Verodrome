@@ -408,7 +408,29 @@ public final class LibraryActions {
         }
 
         guard !combined.isEmpty else { return .noSimilarSongs }
-        return .ready(combined)
+        let visible = radioItemsHidingExplicit(combined)
+        guard !visible.isEmpty else { return .noSimilarSongs }
+        return .ready(visible)
+    }
+
+    /// Confirmed-explicit library songs, and ids already rejected this session, stay out
+    /// of a radio top-up while Hide Explicit is on.
+    private func radioItemsHidingExplicit(_ items: [QueueItem]) -> [QueueItem] {
+        guard SettingsStore.shared.hideExplicitSongs else {
+            return LyricsExplicitEvaluator.radioContinuationItems(items)
+        }
+        if let repository, let account = try? kit.activeAccount() {
+            for item in items {
+                guard let song = try? repository.resolveSong(remoteId: item.playableId, account: account),
+                      song.isLyricsExplicit
+                else { continue }
+                LyricsExplicitEvaluator.noteRadioExplicit(item.playableId)
+            }
+        }
+        for item in items where item.isLyricsExplicit {
+            LyricsExplicitEvaluator.noteRadioExplicit(item.playableId)
+        }
+        return LyricsExplicitEvaluator.radioContinuationItems(items)
     }
 
     /// Similar-song path. Nil when the API is unavailable or every request fails;

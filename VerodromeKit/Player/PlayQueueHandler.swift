@@ -278,6 +278,23 @@ public final class PlayQueueHandler: ObservableObject {
         return remove(at: IndexSet(offsets), writeUserQueueOnly: false, userQueuedOnly: false)
     }
 
+    /// Drops radio-continuation copies of a song. The playing track stays, and a copy that
+    /// belongs to the original album or playlist stays — Hide Explicit only refuses the
+    /// rows radio appended after the context was already playing.
+    @discardableResult
+    public func removeNonCurrentRadioContinuation(playableId: String) -> [QueueItem] {
+        guard playerMode == .music else { return [] }
+        guard contextQueue.count > 1 else { return [] }
+        let offsets = contextQueue.indices.filter {
+            $0 != currentIndex
+                && contextQueue[$0].kind == .song
+                && contextQueue[$0].isRadioContinuation
+                && contextQueue[$0].playableId == playableId
+        }
+        guard !offsets.isEmpty else { return [] }
+        return remove(at: IndexSet(offsets), writeUserQueueOnly: false, userQueuedOnly: false)
+    }
+
     /// The playing track is never removed: dropping it would leave the engine on a track
     /// the queue no longer lists.
     @discardableResult

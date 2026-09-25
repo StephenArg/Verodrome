@@ -193,6 +193,16 @@ public final class LibraryRepository {
         }
     }
 
+    /// Whether the account has any album stored, without loading the album table.
+    public func hasAlbums(account: Account) throws -> Bool {
+        let prefix = Album.makeCompoundRemoteId(account: account, remoteId: "")
+        var descriptor = FetchDescriptor<Album>(
+            predicate: #Predicate { $0.compoundRemoteId.starts(with: prefix) }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetchCount(descriptor) > 0
+    }
+
     /// Albums currently marked favorite (any account). Used for differential home updates.
     public func fetchAlbums(favoritesOnly: Bool) throws -> [Album] {
         guard favoritesOnly else {

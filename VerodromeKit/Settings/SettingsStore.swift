@@ -48,6 +48,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var explicitWhitelistWords: [String] = []
     @Published public var explicitWordListChangedAt: Date? = nil
     @Published public var hideExplicitSongs: Bool = false
+    /// Marks matching words in on-screen lyrics. Off by default.
+    @Published public var highlightExplicitLyrics: Bool = false
     /// Hold skip jumps by `miniSkipInterval` instead of changing playback speed.
     @Published public var miniSkipEnabled: Bool = true
     @Published public var miniSkipInterval: MiniSkipInterval = .default
@@ -80,6 +82,8 @@ public final class SettingsStore: ObservableObject {
     @Published public var enabledHomeSections: [HomeSection] = HomeSection.allCases
     @Published public var enabledRootTabs: [RootTabItem] = RootTabItem.defaultVisible
     @Published public var enabledLibraryCategories: [LibraryCategory] = LibraryCategory.defaultVisible
+    /// Library sync progress at the top of Home. Settings always shows the same bar.
+    @Published public var showLibrarySyncProgressOnHome: Bool = true
 
     private struct Snapshot: Codable {
         var themePreference: ThemePreference
@@ -102,6 +106,7 @@ public final class SettingsStore: ObservableObject {
         var explicitWhitelistWords: [String]
         var explicitWordListChangedAt: Date?
         var hideExplicitSongs: Bool
+        var highlightExplicitLyrics: Bool
         var miniSkipEnabled: Bool
         var miniSkipInterval: MiniSkipInterval
         var carPlayMiniSkipEnabled: Bool
@@ -130,6 +135,7 @@ public final class SettingsStore: ObservableObject {
         var enabledHomeSections: [HomeSection]
         var enabledRootTabs: [RootTabItem]
         var enabledLibraryCategories: [LibraryCategory]
+        var showLibrarySyncProgressOnHome: Bool
 
         init(
             themePreference: ThemePreference,
@@ -152,6 +158,7 @@ public final class SettingsStore: ObservableObject {
             explicitWhitelistWords: [String],
             explicitWordListChangedAt: Date?,
             hideExplicitSongs: Bool,
+            highlightExplicitLyrics: Bool,
             miniSkipEnabled: Bool,
             miniSkipInterval: MiniSkipInterval,
             carPlayMiniSkipEnabled: Bool,
@@ -179,7 +186,8 @@ public final class SettingsStore: ObservableObject {
             developerWindowSizes: Bool,
             enabledHomeSections: [HomeSection],
             enabledRootTabs: [RootTabItem],
-            enabledLibraryCategories: [LibraryCategory]
+            enabledLibraryCategories: [LibraryCategory],
+            showLibrarySyncProgressOnHome: Bool
         ) {
             self.themePreference = themePreference
             self.isLibrarySynced = isLibrarySynced
@@ -201,6 +209,7 @@ public final class SettingsStore: ObservableObject {
             self.explicitWhitelistWords = explicitWhitelistWords
             self.explicitWordListChangedAt = explicitWordListChangedAt
             self.hideExplicitSongs = hideExplicitSongs
+            self.highlightExplicitLyrics = highlightExplicitLyrics
             self.miniSkipEnabled = miniSkipEnabled
             self.miniSkipInterval = miniSkipInterval
             self.carPlayMiniSkipEnabled = carPlayMiniSkipEnabled
@@ -229,6 +238,7 @@ public final class SettingsStore: ObservableObject {
             self.enabledHomeSections = enabledHomeSections
             self.enabledRootTabs = enabledRootTabs
             self.enabledLibraryCategories = enabledLibraryCategories
+            self.showLibrarySyncProgressOnHome = showLibrarySyncProgressOnHome
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -252,6 +262,7 @@ public final class SettingsStore: ObservableObject {
             case explicitWhitelistWords
             case explicitWordListChangedAt
             case hideExplicitSongs
+            case highlightExplicitLyrics
             case miniSkipEnabled
             case miniSkipInterval
             case carPlayMiniSkipEnabled
@@ -280,6 +291,7 @@ public final class SettingsStore: ObservableObject {
             case enabledHomeSections
             case enabledRootTabs
             case enabledLibraryCategories
+            case showLibrarySyncProgressOnHome
             case streamFormat // legacy
         }
 
@@ -309,6 +321,7 @@ public final class SettingsStore: ObservableObject {
             )
             explicitWordListChangedAt = try c.decodeIfPresent(Date.self, forKey: .explicitWordListChangedAt)
             hideExplicitSongs = try c.decodeIfPresent(Bool.self, forKey: .hideExplicitSongs) ?? false
+            highlightExplicitLyrics = try c.decodeIfPresent(Bool.self, forKey: .highlightExplicitLyrics) ?? false
             miniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .miniSkipEnabled) ?? true
             miniSkipInterval = try c.decodeIfPresent(MiniSkipInterval.self, forKey: .miniSkipInterval) ?? .default
             carPlayMiniSkipEnabled = try c.decodeIfPresent(Bool.self, forKey: .carPlayMiniSkipEnabled) ?? false
@@ -352,6 +365,10 @@ public final class SettingsStore: ObservableObject {
                 try c.decodeIfPresent([LibraryCategory].self, forKey: .enabledLibraryCategories)
                     ?? LibraryCategory.defaultVisible
             )
+            showLibrarySyncProgressOnHome = try c.decodeIfPresent(
+                Bool.self,
+                forKey: .showLibrarySyncProgressOnHome
+            ) ?? true
         }
 
         func encode(to encoder: Encoder) throws {
@@ -376,6 +393,7 @@ public final class SettingsStore: ObservableObject {
             try c.encode(explicitWhitelistWords, forKey: .explicitWhitelistWords)
             try c.encodeIfPresent(explicitWordListChangedAt, forKey: .explicitWordListChangedAt)
             try c.encode(hideExplicitSongs, forKey: .hideExplicitSongs)
+            try c.encode(highlightExplicitLyrics, forKey: .highlightExplicitLyrics)
             try c.encode(miniSkipEnabled, forKey: .miniSkipEnabled)
             try c.encode(miniSkipInterval, forKey: .miniSkipInterval)
             try c.encode(carPlayMiniSkipEnabled, forKey: .carPlayMiniSkipEnabled)
@@ -404,6 +422,7 @@ public final class SettingsStore: ObservableObject {
             try c.encode(enabledHomeSections, forKey: .enabledHomeSections)
             try c.encode(enabledRootTabs, forKey: .enabledRootTabs)
             try c.encode(enabledLibraryCategories, forKey: .enabledLibraryCategories)
+            try c.encode(showLibrarySyncProgressOnHome, forKey: .showLibrarySyncProgressOnHome)
         }
     }
 
@@ -455,6 +474,7 @@ public final class SettingsStore: ObservableObject {
             explicitWhitelistWords: UserSettings.normalizedWords(explicitWhitelistWords),
             explicitWordListChangedAt: explicitWordListChangedAt,
             hideExplicitSongs: hideExplicitSongs,
+            highlightExplicitLyrics: highlightExplicitLyrics,
             miniSkipEnabled: miniSkipEnabled,
             miniSkipInterval: miniSkipInterval,
             carPlayMiniSkipEnabled: carPlayMiniSkipEnabled,
@@ -482,7 +502,8 @@ public final class SettingsStore: ObservableObject {
             developerWindowSizes: developerWindowSizes,
             enabledHomeSections: enabledHomeSections,
             enabledRootTabs: RootTabItem.normalized(enabledRootTabs),
-            enabledLibraryCategories: LibraryCategory.normalized(enabledLibraryCategories)
+            enabledLibraryCategories: LibraryCategory.normalized(enabledLibraryCategories),
+            showLibrarySyncProgressOnHome: showLibrarySyncProgressOnHome
         )
         save(key: Keys.snapshot, value: snapshot)
         syncTypedStoresFromPublished()
@@ -537,6 +558,7 @@ public final class SettingsStore: ObservableObject {
         user.explicitWhitelistWords = UserSettings.normalizedWords(explicitWhitelistWords)
         user.explicitWordListChangedAt = explicitWordListChangedAt
         user.hideExplicitSongs = hideExplicitSongs
+        user.highlightExplicitLyrics = highlightExplicitLyrics
         return user
     }
 
@@ -573,6 +595,7 @@ public final class SettingsStore: ObservableObject {
         explicitWhitelistWords = settings.explicitWhitelistWords
         explicitWordListChangedAt = settings.explicitWordListChangedAt
         hideExplicitSongs = settings.hideExplicitSongs
+        highlightExplicitLyrics = settings.highlightExplicitLyrics
         save()
     }
 
@@ -618,6 +641,7 @@ public final class SettingsStore: ObservableObject {
             explicitWhitelistWords = snapshot.explicitWhitelistWords
             explicitWordListChangedAt = snapshot.explicitWordListChangedAt
             hideExplicitSongs = snapshot.hideExplicitSongs
+            highlightExplicitLyrics = snapshot.highlightExplicitLyrics
             miniSkipEnabled = snapshot.miniSkipEnabled
             miniSkipInterval = snapshot.miniSkipInterval
             carPlayMiniSkipEnabled = snapshot.carPlayMiniSkipEnabled
@@ -646,6 +670,7 @@ public final class SettingsStore: ObservableObject {
             enabledHomeSections = snapshot.enabledHomeSections
             enabledRootTabs = RootTabItem.normalized(snapshot.enabledRootTabs)
             enabledLibraryCategories = LibraryCategory.normalized(snapshot.enabledLibraryCategories)
+            showLibrarySyncProgressOnHome = snapshot.showLibrarySyncProgressOnHome
             return
         }
         let app = loadAppSettings()
@@ -682,6 +707,7 @@ public final class SettingsStore: ObservableObject {
         explicitWhitelistWords = user.explicitWhitelistWords
         explicitWordListChangedAt = user.explicitWordListChangedAt
         hideExplicitSongs = user.hideExplicitSongs
+        highlightExplicitLyrics = user.highlightExplicitLyrics
     }
 
     private func syncTypedStoresFromPublished() {
@@ -721,6 +747,7 @@ public final class SettingsStore: ObservableObject {
         user.explicitWhitelistWords = UserSettings.normalizedWords(explicitWhitelistWords)
         user.explicitWordListChangedAt = explicitWordListChangedAt
         user.hideExplicitSongs = hideExplicitSongs
+        user.highlightExplicitLyrics = highlightExplicitLyrics
         save(key: Keys.userSettings, value: user)
     }
 

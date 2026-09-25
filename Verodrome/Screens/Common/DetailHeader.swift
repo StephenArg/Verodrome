@@ -20,6 +20,8 @@ struct DetailHeader<Accessory: View>: View {
     let symbol: String
     let onPlay: () -> Void
     let onShuffle: () -> Void
+    /// Confirmed-explicit album. Drawn in the centered artist row, before the name.
+    let showsExplicitBadge: Bool
     /// Optional row between the title and the action buttons — the album's rating,
     /// download, and favorite controls. Most screens leave it empty.
     @ViewBuilder let accessory: () -> Accessory
@@ -33,6 +35,7 @@ struct DetailHeader<Accessory: View>: View {
         tintToken: String? = nil,
         tintKey: ArtworkTintKey? = nil,
         symbol: String = "music.note",
+        showsExplicitBadge: Bool = false,
         onPlay: @escaping () -> Void,
         onShuffle: @escaping () -> Void,
         @ViewBuilder accessory: @escaping () -> Accessory
@@ -45,6 +48,7 @@ struct DetailHeader<Accessory: View>: View {
         self.tintToken = tintToken
         self.tintKey = tintKey
         self.symbol = symbol
+        self.showsExplicitBadge = showsExplicitBadge
         self.onPlay = onPlay
         self.onShuffle = onShuffle
         self.accessory = accessory
@@ -63,6 +67,10 @@ struct DetailHeader<Accessory: View>: View {
     @ViewBuilder
     private var subtitleLine: some View {
         HStack(spacing: 0) {
+            if showsExplicitBadge {
+                ExplicitBadge()
+                    .padding(.trailing, 6)
+            }
             if let onArtistTap {
                 Button(action: onArtistTap) {
                     Text(subtitle)
@@ -432,6 +440,7 @@ extension DetailHeader where Accessory == EmptyView {
         tintToken: String? = nil,
         tintKey: ArtworkTintKey? = nil,
         symbol: String = "music.note",
+        showsExplicitBadge: Bool = false,
         onPlay: @escaping () -> Void,
         onShuffle: @escaping () -> Void
     ) {
@@ -444,6 +453,7 @@ extension DetailHeader where Accessory == EmptyView {
             tintToken: tintToken,
             tintKey: tintKey,
             symbol: symbol,
+            showsExplicitBadge: showsExplicitBadge,
             onPlay: onPlay,
             onShuffle: onShuffle,
             accessory: { EmptyView() }

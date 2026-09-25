@@ -25,7 +25,15 @@ final class LyricsExplicitMatcherTests: XCTestCase {
         settings.explicitSensitivity = .average
         settings.explicitWhitelistWords = ["fuck"]
         XCTAssertFalse(LyricsExplicitMatcher.isExplicit("what the fuck", settings: settings))
-        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("this is shit", settings: settings))
+        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("this is pussy", settings: settings))
+    }
+
+    func testWhitelistOverridesTheSameBlacklistedWord() {
+        var settings = UserSettings.default
+        settings.explicitSensitivity = .loose
+        settings.explicitBlacklistWords = ["banana"]
+        settings.explicitWhitelistWords = ["banana"]
+        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("banana phone", settings: settings))
     }
 
     func testBlacklistAddsCustomWords() {
@@ -41,9 +49,11 @@ final class LyricsExplicitMatcherTests: XCTestCase {
         XCTAssertTrue(LyricsExplicitWordLists.conservative.isSuperset(of: LyricsExplicitWordLists.average))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("oh hell no", words: LyricsExplicitWordLists.conservative))
         XCTAssertFalse(LyricsExplicitMatcher.isExplicit("oh hell no", words: LyricsExplicitWordLists.average))
-        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("this is shit", words: LyricsExplicitWordLists.average))
-        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("this is shit", words: LyricsExplicitWordLists.loose))
+        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("this is pussy", words: LyricsExplicitWordLists.average))
+        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("this is pussy", words: LyricsExplicitWordLists.loose))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("what the fuck", words: LyricsExplicitWordLists.loose))
+        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("this is shit", words: LyricsExplicitWordLists.conservative))
+        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("this is shit", words: LyricsExplicitWordLists.average))
     }
 
     func testStarredSpellingMatchesAverageList() {
@@ -61,15 +71,41 @@ final class LyricsExplicitMatcherTests: XCTestCase {
         let conservative = LyricsExplicitWordLists.words(for: .conservative)
 
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("no me joder", words: loose))
-        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("qué mierda", words: average))
-        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("qué mierda", words: loose))
-        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("putain de merde", words: average))
+        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("qué mierda", words: conservative))
+        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("qué mierda", words: average))
+        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("putain de merde", words: conservative))
+        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("putain de merde", words: average))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("scheiße drauf", words: average))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("che cazzo fai", words: average))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("porcodio", words: loose))
-        XCTAssertTrue(LyricsExplicitMatcher.isExplicit("tante bestemmie", words: average))
-        XCTAssertFalse(LyricsExplicitMatcher.isExplicit("tante bestemmie", words: loose))
         XCTAssertFalse(LyricsExplicitMatcher.isExplicit("pinche canción", words: average))
         XCTAssertTrue(LyricsExplicitMatcher.isExplicit("pinche canción", words: conservative))
+    }
+
+    func testMatchingRangesHighlightWholeTokensOnly() {
+        let words = LyricsExplicitWordLists.words(for: .conservative)
+        let text = "kiss my ass goodbye in a first-class cabin"
+        let hits = LyricsExplicitMatcher.matchingRanges(in: text, words: words).map { String(text[$0]) }
+        XCTAssertEqual(hits, ["ass"])
+    }
+
+    func testMatchingRangesKeepOriginalCasing() {
+        let text = "what the FUCK"
+        let ranges = LyricsExplicitMatcher.matchingRanges(in: text, words: ["fuck"])
+        XCTAssertEqual(ranges.map { String(text[$0]) }, ["FUCK"])
+    }
+
+    func testMatchingRangesFollowWhitelistAndBlacklist() {
+        var settings = UserSettings.default
+        settings.explicitSensitivity = .average
+        settings.explicitWhitelistWords = ["fuck"]
+        settings.explicitBlacklistWords = ["banana"]
+        let words = LyricsExplicitMatcher.activeWords(in: settings)
+        XCTAssertTrue(LyricsExplicitMatcher.matchingRanges(in: "what the fuck", words: words).isEmpty)
+        let banana = "banana phone"
+        XCTAssertEqual(
+            LyricsExplicitMatcher.matchingRanges(in: banana, words: words).map { String(banana[$0]) },
+            ["banana"]
+        )
     }
 }

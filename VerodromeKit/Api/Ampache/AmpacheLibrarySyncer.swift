@@ -163,21 +163,28 @@ public final class AmpacheLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     }
 
     @discardableResult
-    public func syncNewestAlbums(limit: Int) async throws -> [String] {
+    public func syncNewestAlbums(limit: Int, tracks: NewestAlbumTracks) async throws -> [String] {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let data = try await server.getNewestAlbums(limit: max(1, limit), offset: 0)
         let albums = try AmpacheParsers.parseAlbums(data: data)
         try await ingestor.ingest(albums: albums)
         try await ingestor.applyNewestAlbumRanks(albums.map(\.id))
 
-        var songIds: [String] = []
-        for album in albums.prefix(limit) {
-            let songsData = try await server.getSongs(albumId: album.id)
-            let songs = try AmpacheParsers.parseSongs(data: songsData)
+        let albumIds = try await CommonLibrarySyncer.albumIds(
+            albums.prefix(limit).map(\.id),
+            needingTracks: tracks,
+            ingestor: ingestor
+        )
+        let songs = try await CommonLibrarySyncer.fetchEach(albumIds) { albumId in
+            let songsData = try await self.server.getSongs(albumId: albumId)
+            return try AmpacheParsers.parseSongs(data: songsData)
+        }.flatMap { $0 }
+        // One ingest for every album: each call opens its own batch, and a batch
+        // preloads the whole library.
+        if !songs.isEmpty {
             try await ingestor.ingest(songs: songs)
-            songIds.append(contentsOf: songs.map(\.id))
         }
-        return songIds
+        return songs.map(\.id)
     }
 
     @discardableResult
