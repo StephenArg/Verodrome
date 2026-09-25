@@ -138,6 +138,9 @@ public final class VerodromeKit: ObservableObject {
             syncerProvider: { [weak self] in self?.activeLibrarySyncer }
         )
         self.playlistDownloads = playlistDownloads
+        // Builds in the background, so the player's first look at the add-to-playlist
+        // button finds an answer rather than starting the read itself.
+        PlaylistMembershipIndex.shared.rebuildIfNeeded()
 
         let networkPolicy = DownloadNetworkPolicy(
             downloader: downloader,

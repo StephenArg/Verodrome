@@ -9,7 +9,6 @@ struct PopupPlayerView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
-    @ObservedObject private var playlistMembership = PlaylistMembershipIndex.shared
     @ObservedObject private var tintResolver = ArtworkTintResolver.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @Environment(\.dismiss) private var dismiss
@@ -81,7 +80,13 @@ struct PopupPlayerView: View {
                 case .addToPlaylist:
                     if let song = currentSong {
                         PlaylistMembershipView(song: song)
-                            .presentationDetents([.medium, .large])
+                            // Opens below the halfway mark so more of the player stays in
+                            // view.
+                            .presentationDetents([.fraction(0.4), .large])
+                            // A swipe anywhere on the list grows the sheet to full height
+                            // before the list itself starts scrolling.
+                            .presentationContentInteraction(.resizes)
+                            .presentationDragIndicator(.visible)
                     }
                 case .equalizer:
                     NavigationStack {
@@ -629,20 +634,9 @@ struct PopupPlayerView: View {
                     .frame(width: icon, height: icon)
             }
 
-            Button {
+            PlayerPlaylistButton(songId: currentSong?.remoteId, iconSize: icon) {
                 bottomPanel = .addToPlaylist
-            } label: {
-                Image(systemName: isInAnyPlaylist ? "checkmark.circle.fill" : "plus.circle")
-                    .font(PlayerChrome.bottomIconFont)
-                    // Theme accent — not `.tint` / `Color.accentColor`, and not under the
-                    // bar-wide `.foregroundStyle(.primary)` that used to paint over it.
-                    .foregroundStyle(isInAnyPlaylist ? themeManager.accentColor : Color.primary)
-                    .symbolRenderingMode(.monochrome)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: icon, height: icon)
             }
-            .disabled(currentSong == nil)
-            .accessibilityLabel(isInAnyPlaylist ? "Edit Playlists" : "Add to Playlist")
 
             Button {
                 bottomPanel = .queue
@@ -654,13 +648,6 @@ struct PopupPlayerView: View {
             }
         }
         .buttonStyle(.plain)
-    }
-
-    /// Whether the track sits in at least one playlist, which is what switches the bottom
-    /// bar button between the plus and the check.
-    private var isInAnyPlaylist: Bool {
-        guard let song = currentSong else { return false }
-        return playlistMembership.isInAnyPlaylist(songId: song.remoteId)
     }
 
     // MARK: - Favorite
@@ -1738,6 +1725,41 @@ private struct SleepTimerChip: View {
 private enum BottomPanel: Identifiable {
     case queue, equalizer, addToPlaylist
     var id: Int { hashValue }
+}
+
+// MARK: - Add to playlist button
+
+/// Plus when the track is in no playlist, check when it's in at least one.
+///
+/// Its own view so that only this icon observes the membership index. A toggle in the
+/// sheet publishes several times while its write is in flight, and each one used to
+/// redraw the whole player underneath the sheet.
+private struct PlayerPlaylistButton: View {
+    let songId: String?
+    let iconSize: CGFloat
+    let action: () -> Void
+
+    @ObservedObject private var membership = PlaylistMembershipIndex.shared
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    var body: some View {
+        let isInAnyPlaylist = songId.map { membership.isInAnyPlaylist(songId: $0) } ?? false
+        Button(action: action) {
+            Image(systemName: isInAnyPlaylist ? "checkmark.circle.fill" : "plus.circle")
+                .font(PlayerChrome.bottomIconFont)
+                // Theme accent — not `.tint` / `Color.accentColor`, and not under the
+                // bar-wide `.foregroundStyle(.primary)` that used to paint over it.
+                .foregroundStyle(isInAnyPlaylist ? themeManager.accentColor : Color.primary)
+                .symbolRenderingMode(.monochrome)
+                .contentTransition(.symbolEffect(.replace))
+                // The index publishes outside any transaction, so without this the replace
+                // transition above has nothing to animate with.
+                .animation(.snappy, value: isInAnyPlaylist)
+                .frame(width: iconSize, height: iconSize)
+        }
+        .disabled(songId == nil)
+        .accessibilityLabel(isInAnyPlaylist ? "Edit Playlists" : "Add to Playlist")
+    }
 }
 
 // MARK: - AirPlay route picker

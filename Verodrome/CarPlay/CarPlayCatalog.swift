@@ -697,16 +697,16 @@ final class CarPlayCatalog {
         let membership = PlaylistMembershipIndex.shared
         let playlistRemoteId = playlist.remoteId
         let isMember = membership.isMember(songId: songId, playlistId: playlistRemoteId)
-        membership.setMembership(songId: songId, playlistId: playlistRemoteId, isMember: !isMember)
-        refreshPlaylistMembershipIfPresented()
         do {
-            if isMember {
-                try await LibraryActions.shared.removeSong(song, from: playlist)
-            } else {
-                try await LibraryActions.shared.addSongs([song], to: playlist)
+            try await membership.setMembership(songId: songId, playlistId: playlistRemoteId, isMember: !isMember) {
+                refreshPlaylistMembershipIfPresented()
+                if isMember {
+                    try await LibraryActions.shared.removeSong(song, from: playlist)
+                } else {
+                    try await LibraryActions.shared.addSongs([song], to: playlist)
+                }
             }
         } catch {
-            membership.setMembership(songId: songId, playlistId: playlistRemoteId, isMember: isMember)
             _ = LibraryActions.shared.notePlaylistEditRejected(playlist, error: error)
             refreshPlaylistMembershipIfPresented()
         }

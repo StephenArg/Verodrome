@@ -397,7 +397,22 @@ public final class LibraryRepository {
         return try context.fetch(descriptor).first
     }
 
+    /// The playlist's songs in order, as the store has them now.
+    ///
+    /// Refetched first because a context doesn't see another context's writes on a model
+    /// it already holds until it fetches that model again, and the ingester rewrites every
+    /// playlist it pulls. Reading `playlist.items` straight off a main-context model after
+    /// a pull returns the entries from before it.
+    public func orderedSongs(of playlist: Playlist) throws -> [Song] {
+        _ = try fetchPlaylist(compoundRemoteId: playlist.compoundRemoteId)
+        return playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+    }
+
     public func replacePlaylistItems(_ playlist: Playlist, with songs: [Song]) throws {
+        // A batch has just fetched everything in `loadBatch`.
+        if batchDepth == 0 {
+            try refetchForEntryRewrite(of: playlist, with: songs)
+        }
         for item in playlist.items {
             context.delete(item)
         }
@@ -420,6 +435,31 @@ public final class LibraryRepository {
         playlist.updatedAt = .now
         try save()
         NotificationCenter.default.post(name: .playlistItemsChanged, object: nil)
+    }
+
+    /// Brings the playlist and every song whose entries are about to change up to date
+    /// with the store.
+    ///
+    /// Adding or deleting an entry saves that song's whole `playlistItems` list as this
+    /// context last fetched it, and a context never sees entries another one inserts until
+    /// it fetches again. The main context never saw the rows the ingester makes when it
+    /// pulls a playlist, so adding a song to a second playlist here cut the first
+    /// playlist's entry loose from the song — ticking three playlists in a row left only
+    /// the last one holding it.
+    private func refetchForEntryRewrite(of playlist: Playlist, with songs: [Song]) throws {
+        _ = try fetchPlaylist(compoundRemoteId: playlist.compoundRemoteId)
+        var songIds = Set(songs.map(\.compoundRemoteId))
+        for item in playlist.items {
+            if let id = item.song?.compoundRemoteId { songIds.insert(id) }
+        }
+        let all = Array(songIds)
+        // Chunked to stay under SQLite's bound-variable limit on long playlists.
+        for start in stride(from: 0, to: all.count, by: 500) {
+            let chunk = Array(all[start..<min(start + 500, all.count)])
+            _ = try context.fetch(FetchDescriptor<Song>(
+                predicate: #Predicate { chunk.contains($0.compoundRemoteId) }
+            ))
+        }
     }
 
     // MARK: - Podcasts & Radios

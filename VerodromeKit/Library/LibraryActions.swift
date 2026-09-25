@@ -626,7 +626,7 @@ public final class LibraryActions {
         let songIds = songs.map(\.remoteId)
 
         if shouldDeferRemoteMutation {
-            var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+            var existing = try orderedSongs(of: playlist)
             let existingIds = Set(existing.map(\.compoundRemoteId))
             for song in songs where !existingIds.contains(song.compoundRemoteId) {
                 existing.append(song)
@@ -643,7 +643,7 @@ public final class LibraryActions {
                 try await syncer.addToPlaylist(playlistId: playlist.remoteId, songIds: songIds)
             } catch {
                 if LibraryMutationSyncer.isRetriableNetworkError(error) {
-                    var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+                    var existing = try orderedSongs(of: playlist)
                     let existingIds = Set(existing.map(\.compoundRemoteId))
                     for song in songs where !existingIds.contains(song.compoundRemoteId) {
                         existing.append(song)
@@ -657,7 +657,7 @@ public final class LibraryActions {
                 throw error
             }
         }
-        var existing = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        var existing = try orderedSongs(of: playlist)
         let existingIds = Set(existing.map(\.compoundRemoteId))
         for song in songs where !existingIds.contains(song.compoundRemoteId) {
             existing.append(song)
@@ -670,6 +670,15 @@ public final class LibraryActions {
             try await syncer.syncPlaylistDown(id: playlist.remoteId)
             kit.storage?.mainContext.processPendingChanges()
         }
+    }
+
+    /// The playlist's current entries. See `LibraryRepository.orderedSongs(of:)` for why
+    /// `playlist.items` can't be read directly after a pull.
+    private func orderedSongs(of playlist: Playlist) throws -> [Song] {
+        guard let repository else {
+            return playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        }
+        return try repository.orderedSongs(of: playlist)
     }
 
     /// Playlists the server refused to change during this run.
@@ -706,7 +715,7 @@ public final class LibraryActions {
         if !shouldDeferRemoteMutation, let syncer {
             try? await syncer.syncPlaylistDown(id: playlist.remoteId)
         }
-        let ordered = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
+        let ordered = try orderedSongs(of: playlist)
         let indices = ordered.indices.filter { ordered[$0].remoteId == song.remoteId }
         guard !indices.isEmpty else { return }
         try await removeSongs(at: indices, from: playlist)

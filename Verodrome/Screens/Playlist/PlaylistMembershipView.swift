@@ -22,10 +22,15 @@ struct PlaylistMembershipView: View {
     /// `@Query` models. Keyed by playlist remote id.
     @State private var presentation: [String: RowPresentation] = [:]
 
+    /// When each account's playlist catalog was last pulled for this sheet. Adding a run
+    /// of songs means reopening it once per track, and every pull re-ingests the catalog.
+    private static var lastCatalogRefresh: [String: Date] = [:]
+    private static let catalogRefreshInterval: TimeInterval = 30
+
     /// Only what this user can actually change. Smart playlists are rebuilt from rules by
     /// the server and other people's playlists are refused outright, so listing either one
     /// would offer an add that can't happen.
-    private var playlists: [Playlist] {
+    private var editablePlaylists: [Playlist] {
         let accountKey = AccountStore.shared.activeAccountKey()?.storageKey
         let rejected = LibraryActions.shared.playlistsRejectedByServer
         return allPlaylists.filter {
@@ -39,6 +44,7 @@ struct PlaylistMembershipView: View {
     private var songArtworkToken: String? { song.displayArtworkToken }
 
     var body: some View {
+        let playlists = editablePlaylists
         NavigationStack {
             List {
                 Section {
@@ -59,7 +65,6 @@ struct PlaylistMembershipView: View {
                     }
                     ForEach(playlists) { playlist in
                         row(for: playlist)
-                            .id(rowIdentity(for: playlist))
                     }
                 }
             }
@@ -81,33 +86,22 @@ struct PlaylistMembershipView: View {
             .task { await refreshMembership() }
             .onReceive(NotificationCenter.default.publisher(for: .playlistItemsChanged)) { _ in
                 VerodromeKit.shared.storage?.mainContext.processPendingChanges()
-                // Once the store has caught up, drop the stand-ins so `@Query` owns the row.
-                presentation = presentation.filter { id, value in
-                    guard let playlist = playlists.first(where: { $0.remoteId == id }) else { return false }
-                    let storeArt = playlist.displayArtworkToken
-                    let artMatches = value.artworkToken == storeArt
-                        || (value.artworkToken == nil && storeArt == nil)
-                    return playlist.songCount != value.songCount || !artMatches
-                }
+                dropSettledPresentation()
             }
         }
     }
 
     // MARK: - Rows
 
-    private func rowIdentity(for playlist: Playlist) -> String {
-        let shown = presentation[playlist.remoteId]
-        let count = shown?.songCount ?? playlist.songCount
-        let art = shown?.artworkToken ?? playlist.displayArtworkToken ?? ""
-        return "\(playlist.remoteId)-\(membership.version)-\(count)-\(art)"
-    }
-
     @ViewBuilder
     private func row(for playlist: Playlist) -> some View {
         let isMember = membership.isMember(songId: song.remoteId, playlistId: playlist.remoteId)
         let isPending = pending.contains(playlist.remoteId)
         let shown = presentation[playlist.remoteId]
-        let songCount = shown?.songCount ?? displaySongCount(for: playlist, isMember: isMember)
+        // `presentation` already carries the count through a toggle, so this doesn't walk
+        // `playlist.items` per row per redraw — that faulted every entry of every visible
+        // playlist on the main thread and made the list stutter while scrolling.
+        let songCount = shown?.songCount ?? playlist.songCount
         let artwork = shown?.artworkToken
             ?? playlist.displayArtworkToken
             ?? (isMember ? songArtworkToken : nil)
@@ -142,15 +136,6 @@ struct PlaylistMembershipView: View {
         .accessibilityValue(isMember ? "In playlist" : "Not in playlist")
     }
 
-    /// songCount lags the optimistic membership flip until `replacePlaylistItems` lands,
-    /// so adjust by whether the local items already agree with the membership index.
-    private func displaySongCount(for playlist: Playlist, isMember: Bool) -> Int {
-        let inItems = playlist.items.contains { $0.song?.remoteId == song.remoteId }
-        if isMember && !inItems { return playlist.songCount + 1 }
-        if !isMember && inItems { return max(0, playlist.songCount - 1) }
-        return playlist.songCount
-    }
-
     // MARK: - Actions
 
     private func toggle(_ playlist: Playlist, isMember: Bool) async {
@@ -173,15 +158,19 @@ struct PlaylistMembershipView: View {
         }()
         presentation[playlistId] = RowPresentation(songCount: nextCount, artworkToken: nextArt)
 
-        // Flip first so the row answers the tap immediately; the server round trip below
-        // can take a while, and a failure puts it back.
-        membership.setMembership(songId: song.remoteId, playlistId: playlistId, isMember: !isMember)
         do {
+            // Flipped first so the row answers the tap immediately; the server round trip
+            // can take a while, and a failure puts it back.
+            try await membership.setMembership(songId: song.remoteId, playlistId: playlistId, isMember: !isMember) {
+                if isMember {
+                    try await LibraryActions.shared.removeSong(song, from: playlist)
+                } else {
+                    try await LibraryActions.shared.addSongs([song], to: playlist)
+                }
+            }
             if isMember {
-                try await LibraryActions.shared.removeSong(song, from: playlist)
                 ActionToast.show("Removed from \(playlist.name)")
             } else {
-                try await LibraryActions.shared.addSongs([song], to: playlist)
                 ActionToast.addedToPlaylist(playlist.name)
             }
             // Prefer whatever the write just persisted on this model instance.
@@ -190,12 +179,7 @@ struct PlaylistMembershipView: View {
                 artworkToken: playlist.displayArtworkToken ?? nextArt
             )
         } catch {
-            if let previous {
-                presentation[playlistId] = previous
-            } else {
-                presentation[playlistId] = nil
-            }
-            membership.setMembership(songId: song.remoteId, playlistId: playlistId, isMember: isMember)
+            presentation[playlistId] = previous
             // A rejection is the only way to learn this on a server that reports neither
             // `readonly` nor an owner, and recording it drops the row from the list.
             if LibraryActions.shared.notePlaylistEditRejected(playlist, error: error) {
@@ -221,8 +205,9 @@ struct PlaylistMembershipView: View {
             artworkToken: songArtworkToken
         )
         do {
-            try await LibraryActions.shared.addSongs([song], to: playlist)
-            membership.setMembership(songId: song.remoteId, playlistId: playlist.remoteId, isMember: true)
+            try await membership.setMembership(songId: song.remoteId, playlistId: playlist.remoteId, isMember: true) {
+                try await LibraryActions.shared.addSongs([song], to: playlist)
+            }
             presentation[playlist.remoteId] = RowPresentation(
                 songCount: playlist.songCount,
                 artworkToken: playlist.displayArtworkToken ?? songArtworkToken
@@ -231,6 +216,20 @@ struct PlaylistMembershipView: View {
         } catch {
             presentation[playlist.remoteId] = nil
             ActionToast.show("Couldn't add to \(name)")
+        }
+    }
+
+    /// Drops the stand-in count / art for rows the store has caught up with, so `@Query`
+    /// owns them again.
+    private func dropSettledPresentation() {
+        guard !presentation.isEmpty else { return }
+        let byId = Dictionary(editablePlaylists.map { ($0.remoteId, $0) }, uniquingKeysWith: { first, _ in first })
+        presentation = presentation.filter { id, value in
+            guard let playlist = byId[id] else { return false }
+            let storeArt = playlist.displayArtworkToken
+            let artMatches = value.artworkToken == storeArt
+                || (value.artworkToken == nil && storeArt == nil)
+            return playlist.songCount != value.songCount || !artMatches
         }
     }
 
@@ -243,10 +242,14 @@ struct PlaylistMembershipView: View {
     /// time the sheet is opened rather than a fan-out on every appearance.
     private func refreshMembership() async {
         guard let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer(),
-              let account = try? VerodromeKit.shared.activeAccount() else { return }
+              let account = try? VerodromeKit.shared.activeAccount(),
+              let storage = VerodromeKit.shared.storage else { return }
+        let accountKey = account.compoundKey
 
-        if let remoteIds = try? await syncer.syncPlaylistCatalog(),
-           let storage = VerodromeKit.shared.storage {
+        let lastRefresh = Self.lastCatalogRefresh[accountKey]
+        if lastRefresh.map({ Date().timeIntervalSince($0) >= Self.catalogRefreshInterval }) ?? true,
+           let remoteIds = try? await syncer.syncPlaylistCatalog() {
+            Self.lastCatalogRefresh[accountKey] = Date()
             _ = try? LibraryPruner.prunePlaylists(
                 account: account,
                 keepingRemoteIds: Set(remoteIds),
@@ -254,13 +257,14 @@ struct PlaylistMembershipView: View {
             )
         }
 
-        // Read back through the repository rather than the query: the sync above may have
-        // added playlists that the view's snapshot hasn't picked up yet, and those are
-        // precisely the ones with nothing cached.
-        let stored = (try? VerodromeKit.shared.repository()?.fetchPlaylists(account: account)) ?? []
-        let unsynced = stored
-            .filter { $0.isEditable && !$0.isSmart && $0.songCount > 0 && $0.items.isEmpty }
-            .map(\.remoteId)
+        // Read on a fresh background context rather than through the query: the sync above
+        // may have added playlists the view's snapshot hasn't picked up yet, and those are
+        // precisely the ones with nothing cached. Off the main thread because asking a
+        // playlist whether it has items loads its whole track list.
+        let container = storage.container
+        let unsynced = await Task.detached(priority: .utility) {
+            Self.playlistsWithoutLocalItems(container: container, accountKey: accountKey)
+        }.value
         guard !unsynced.isEmpty else { return }
 
         await withTaskGroup(of: Void.self) { group in
@@ -278,6 +282,20 @@ struct PlaylistMembershipView: View {
             }
         }
         membership.invalidate()
+    }
+
+    private nonisolated static func playlistsWithoutLocalItems(
+        container: ModelContainer,
+        accountKey: String
+    ) -> [String] {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<Playlist>(
+            predicate: #Predicate { $0.isEditable && !$0.isSmart && $0.songCount > 0 }
+        )
+        let playlists = (try? context.fetch(descriptor)) ?? []
+        return playlists
+            .filter { $0.account?.compoundKey == accountKey && $0.items.isEmpty }
+            .map(\.remoteId)
     }
 }
 

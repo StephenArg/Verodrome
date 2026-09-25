@@ -103,4 +103,40 @@ final class PlaylistIngestTests: XCTestCase {
         XCTAssertTrue(playlist.items.isEmpty)
         XCTAssertEqual(playlist.songCount, 0)
     }
+
+    /// Adding a song to a playlist writes the entry on the main context, then pulls the
+    /// playlist, which the ingester rewrites on its own context. The main context never
+    /// saw the ingester's rows, and adding the same song to the next playlist saved its
+    /// stale list of them back — cutting the earlier playlists' entries loose from the
+    /// song, so ticking several playlists in the add-to-playlist sheet left only the last.
+    @MainActor
+    func testAddingASongToSeveralPlaylistsKeepsEveryEntry() async throws {
+        let storage = PersistentStorage(inMemory: true)
+        let ingester = makeIngester(storage)
+        let ids = ["A", "B", "C"]
+        try await ingester.ingest(songs: [IngestSong(id: "x", title: "New"), IngestSong(id: "s", title: "Shared")]
+            + ids.map { IngestSong(id: "\($0)1", title: $0) })
+        try await ingester.ingest(playlists: ids.map {
+            IngestPlaylist(id: $0, name: $0, songCount: 2, songIds: ["\($0)1", "s"])
+        })
+
+        let main = LibraryRepository(context: storage.mainContext)
+        let account = try XCTUnwrap(storage.mainContext.fetch(FetchDescriptor<Account>()).first)
+        let song = try XCTUnwrap(main.resolveSong(remoteId: "x", account: account))
+        for id in ids {
+            // What `LibraryActions.addSongs` does: a local write, then a pull.
+            let playlist = try XCTUnwrap(main.fetchPlaylists(account: account).first { $0.remoteId == id })
+            try main.replacePlaylistItems(playlist, with: main.orderedSongs(of: playlist) + [song])
+            try await ingester.ingest(playlists: [
+                IngestPlaylist(id: id, name: id, songCount: 3, songIds: ["\(id)1", "s", "x"])
+            ])
+        }
+
+        let items = try ModelContext(storage.container).fetch(FetchDescriptor<PlaylistItem>())
+        XCTAssertFalse(items.contains { $0.song == nil })
+        for songId in ["x", "s"] {
+            let holding = Set(items.filter { $0.song?.remoteId == songId }.compactMap { $0.playlist?.remoteId })
+            XCTAssertEqual(holding, Set(ids), "playlists holding \(songId)")
+        }
+    }
 }
