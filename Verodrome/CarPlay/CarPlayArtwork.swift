@@ -124,6 +124,15 @@ enum CarPlayArtwork {
         isInPlaylist ? playlistMembershipCheckSymbol() : barSymbol("plus")
     }
 
+    /// Now Playing like control. Filled vs outline for the same `isSelected` reason.
+    static func nowPlayingFavoriteSymbol(isFavorite: Bool) -> UIImage {
+        barSymbol(isFavorite ? "heart.fill" : "heart")
+    }
+
+    static var nowPlayingRadioSymbol: UIImage {
+        barSymbol("dot.radiowaves.left.and.right")
+    }
+
     /// Filled circle with the checkmark erased, so the Now Playing chrome shows through.
     /// A template SF Symbol does not punch holes — draw the check as an opaque stroke.
     private static func playlistMembershipCheckSymbol(size: CGFloat = 48) -> UIImage {

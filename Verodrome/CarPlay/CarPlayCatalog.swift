@@ -781,7 +781,7 @@ final class CarPlayCatalog {
         pushList(title: album.title, items: songItems(songs, among: songs))
     }
 
-    private func currentSong() -> Song? {
+    func currentSong() -> Song? {
         guard let playableId = VerodromeKit.shared.player?.currentItem?.playableId,
               VerodromeKit.shared.player?.currentItem?.kind == .song,
               let account = try? VerodromeKit.shared.activeAccount(),
@@ -833,6 +833,34 @@ final class CarPlayCatalog {
         let index = songs.firstIndex(where: { $0.compoundRemoteId == compoundRemoteId }) ?? 0
         let seed = items.indices.contains(index) ? items[index] : items.first
         play(items, startAt: index, origin: seed.map { .song($0.title) })
+    }
+
+    /// Same queue as the phone's Start Radio: the seed first, then similar songs.
+    /// CarPlay has no toast, so a radio that can't start says why in an alert.
+    func startRadio(seed: QueueItem) async {
+        let outcome = await LibraryActions.shared.prepareRadioQueue(seed: seed)
+        switch outcome {
+        case .ready(let items):
+            play(items, shuffle: .off, origin: .song(seed.title))
+        case .noSimilarSongs:
+            presentAlert("No similar songs found")
+        case .unavailable, .failed:
+            presentAlert("Couldn't start radio")
+        }
+    }
+
+    private func presentAlert(_ title: String) {
+        guard let interfaceController else { return }
+        let ok = CPAlertAction(title: "OK", style: .cancel) { [weak interfaceController] _ in
+            interfaceController?.dismissTemplate(animated: true, completion: nil)
+        }
+        let alert = CPAlertTemplate(titleVariants: [title], actions: [ok])
+        interfaceController.presentTemplate(alert, animated: true) { success, error in
+            guard !success else { return }
+            CarPlayLog.error(
+                "presentTemplate(Alert) failed: \(error?.localizedDescription ?? "unknown error")"
+            )
+        }
     }
 
     /// Artists, albums, and songs matching `query`. Snapshot is taken on the

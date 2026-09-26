@@ -20,6 +20,8 @@ public final class LibraryActions {
         song.isFavorite = isFavorite
         song.updatedAt = .now
         try repository?.save()
+        // Before the server round trip, so CarPlay's heart flips on tap.
+        NotificationCenter.default.post(name: .songMetadataRefreshed, object: song.remoteId)
         try await syncOrEnqueue(
             .setFavorite(entityId: song.remoteId, type: .song, isFavorite: isFavorite)
         ) {

@@ -46,6 +46,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// Shuffle / repeat selected state is reported via `MPRemoteCommandCenter`, not by
     /// replacing the buttons. Rebuilding the row on every tap is the blink.
     private var nowPlayingButtonLayout: NowPlayingButtonLayout?
+    /// True while Start Radio is waiting on the server for similar songs.
+    private var isStartingRadio = false
 
     /// Audio apps may stack at most 5 templates; pushing past that is rejected.
     private static let templateDepthLimit = 5
@@ -296,6 +298,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
+                    // Start Radio keeps the same song playing, so `$currentItem` above
+                    // does not fire even though the new origin can drop shuffle.
+                    self?.refreshNowPlayingButtons()
                     self?.catalog.refreshQueueIfPresented()
                 }
                 .store(in: &cancellables)
@@ -306,6 +311,16 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 }
                 .store(in: &cancellables)
         }
+
+        NotificationCenter.default.publisher(for: .songMetadataRefreshed)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] note in
+                guard let playableId = note.object as? String,
+                      playableId == VerodromeKit.shared.player?.currentItem?.playableId
+                else { return }
+                self?.refreshNowPlayingButtons()
+            }
+            .store(in: &cancellables)
 
         PlaylistMembershipIndex.shared.$version
             .dropFirst()
@@ -326,23 +341,44 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             .store(in: &cancellables)
     }
 
+    /// CarPlay shows at most five: like, add to playlist, radio, shuffle, repeat.
     private func refreshNowPlayingButtons() {
+        let song = catalog.currentSong()
         let layout = NowPlayingButtonLayout(
-            showPlaylist: isCurrentItemSong,
+            showSongActions: isCurrentItemSong,
+            canFavorite: song != nil,
+            isFavorite: song?.isFavorite == true,
             inPlaylist: isCurrentSongInAnyPlaylist,
+            isStartingRadio: isStartingRadio,
             showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true
         )
         guard layout != nowPlayingButtonLayout else { return }
         nowPlayingButtonLayout = layout
 
         var buttons: [CPNowPlayingButton] = []
-        if layout.showPlaylist {
+        if layout.showSongActions {
+            let favorite = CPNowPlayingImageButton(
+                image: CarPlayArtwork.nowPlayingFavoriteSymbol(isFavorite: layout.isFavorite)
+            ) { [weak self] _ in
+                self?.toggleCurrentSongFavorite()
+            }
+            // A queued song missing from the local library has no model to like.
+            favorite.isEnabled = layout.canFavorite
+            buttons.append(favorite)
+
             let add = CPNowPlayingImageButton(
                 image: CarPlayArtwork.nowPlayingPlaylistSymbol(isInPlaylist: layout.inPlaylist)
             ) { [weak self] _ in
                 self?.catalog.pushPlaylistMembership()
             }
             buttons.append(add)
+
+            let radio = CPNowPlayingImageButton(image: CarPlayArtwork.nowPlayingRadioSymbol) { [weak self] _ in
+                self?.startRadioFromCurrentSong()
+            }
+            // Dimmed while similar songs load; nothing else shows the tap landed.
+            radio.isEnabled = !layout.isStartingRadio
+            buttons.append(radio)
         }
         if layout.showShuffle {
             // Handler (not the no-arg initializer): CarPlay does not reliably send
@@ -360,9 +396,35 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     private struct NowPlayingButtonLayout: Equatable {
-        var showPlaylist: Bool
+        var showSongActions: Bool
+        var canFavorite: Bool
+        var isFavorite: Bool
         var inPlaylist: Bool
+        var isStartingRadio: Bool
         var showShuffle: Bool
+    }
+
+    /// The heart redraws from the `songMetadataRefreshed` that `setFavorite` posts
+    /// once the change is saved locally, ahead of the server round trip.
+    private func toggleCurrentSongFavorite() {
+        guard let song = catalog.currentSong() else { return }
+        Task {
+            try? await LibraryActions.shared.toggleFavorite(song: song)
+        }
+    }
+
+    private func startRadioFromCurrentSong() {
+        guard !isStartingRadio,
+              let seed = VerodromeKit.shared.player?.currentItem,
+              seed.kind == .song
+        else { return }
+        isStartingRadio = true
+        refreshNowPlayingButtons()
+        Task { [weak self] in
+            await self?.catalog.startRadio(seed: seed)
+            self?.isStartingRadio = false
+            self?.refreshNowPlayingButtons()
+        }
     }
 
     private var isCurrentItemSong: Bool {
