@@ -61,12 +61,16 @@ enum ActionToast {
         router.openPlayer()
         defer { player.endStartingRadio() }
 
+        // The seed leads the radio queue. When it is already playing it keeps playing
+        // while similar songs load, then the queue moves on to the first of them rather
+        // than replaying it. Checked before the load, which can outlast a song's end.
+        let seedIsPlaying = player.currentItem?.id == seed.id
         let outcome = await LibraryActions.shared.prepareRadioQueue(seed: seed)
         let result = StartRadioResult(outcome)
         if case .ready(let items) = outcome {
             player.play(
                 items: items,
-                startAt: 0,
+                startAt: seedIsPlaying ? 1 : 0,
                 shuffle: false,
                 radioSeedTitle: seed.title,
                 origin: .song(seed.title)

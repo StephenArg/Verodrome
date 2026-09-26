@@ -98,10 +98,10 @@ enum CarPlayArtwork {
     }
 
     /// Nav-bar glyphs must be template images or CarPlay drops the button.
-    static func barSymbol(_ name: String) -> UIImage {
+    static func barSymbol(_ name: String, pointSize: CGFloat = 22) -> UIImage {
         let image = UIImage(
             systemName: name,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         ) ?? symbol(name)
         return image.withRenderingMode(.alwaysTemplate)
     }
@@ -126,11 +126,29 @@ enum CarPlayArtwork {
 
     /// Now Playing like control. Filled vs outline for the same `isSelected` reason.
     static func nowPlayingFavoriteSymbol(isFavorite: Bool) -> UIImage {
-        barSymbol(isFavorite ? "heart.fill" : "heart")
+        insetBarSymbol(isFavorite ? "heart.fill" : "heart", pointSize: 20.5)
     }
 
     static var nowPlayingRadioSymbol: UIImage {
-        barSymbol("dot.radiowaves.left.and.right")
+        insetBarSymbol("dot.radiowaves.left.and.right", pointSize: 20)
+    }
+
+    /// `name` at `pointSize`, centered in the canvas of the default-size glyph.
+    /// CarPlay only documents scaling button images down, so a smaller canvas alone
+    /// might be scaled back up to fill the button.
+    private static func insetBarSymbol(_ name: String, pointSize: CGFloat) -> UIImage {
+        let canvas = barSymbol(name).size
+        let glyph = barSymbol(name, pointSize: pointSize).withTintColor(.black)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = 3
+        let image = UIGraphicsImageRenderer(size: canvas, format: format).image { _ in
+            glyph.draw(at: CGPoint(
+                x: (canvas.width - glyph.size.width) / 2,
+                y: (canvas.height - glyph.size.height) / 2
+            ))
+        }
+        return image.withRenderingMode(.alwaysTemplate)
     }
 
     /// Filled circle with the checkmark erased, so the Now Playing chrome shows through.

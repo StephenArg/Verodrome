@@ -836,12 +836,14 @@ final class CarPlayCatalog {
     }
 
     /// Same queue as the phone's Start Radio: the seed first, then similar songs.
+    /// The seed is the song that was playing, which keeps playing while this loads;
+    /// playback then moves on to the first similar song instead of replaying it.
     /// CarPlay has no toast, so a radio that can't start says why in an alert.
     func startRadio(seed: QueueItem) async {
         let outcome = await LibraryActions.shared.prepareRadioQueue(seed: seed)
         switch outcome {
         case .ready(let items):
-            play(items, shuffle: .off, origin: .song(seed.title))
+            play(items, startAt: 1, shuffle: .off, origin: .song(seed.title))
         case .noSimilarSongs:
             presentAlert("No similar songs found")
         case .unavailable, .failed:
