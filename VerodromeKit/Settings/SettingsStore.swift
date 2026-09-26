@@ -77,6 +77,9 @@ public final class SettingsStore: ObservableObject {
     @Published public var automaticDownloadNetwork: AutomaticDownloadNetwork = .wifiOnly
     @Published public var swipeLeftAction: String = "queue"
     @Published public var swipeRightAction: String = "download"
+    /// A playlist's own rows. Same choices as song rows, plus "remove".
+    @Published public var playlistSwipeLeftAction: String = "queue"
+    @Published public var playlistSwipeRightAction: String = "download"
     @Published public var hapticsEnabled: Bool = true
     @Published public var developerWindowSizes: Bool = false
     @Published public var enabledHomeSections: [HomeSection] = HomeSection.allCases
@@ -130,6 +133,8 @@ public final class SettingsStore: ObservableObject {
         var automaticDownloadNetwork: AutomaticDownloadNetwork
         var swipeLeftAction: String
         var swipeRightAction: String
+        var playlistSwipeLeftAction: String
+        var playlistSwipeRightAction: String
         var hapticsEnabled: Bool
         var developerWindowSizes: Bool
         var enabledHomeSections: [HomeSection]
@@ -182,6 +187,8 @@ public final class SettingsStore: ObservableObject {
             automaticDownloadNetwork: AutomaticDownloadNetwork,
             swipeLeftAction: String,
             swipeRightAction: String,
+            playlistSwipeLeftAction: String,
+            playlistSwipeRightAction: String,
             hapticsEnabled: Bool,
             developerWindowSizes: Bool,
             enabledHomeSections: [HomeSection],
@@ -233,6 +240,8 @@ public final class SettingsStore: ObservableObject {
             self.automaticDownloadNetwork = automaticDownloadNetwork
             self.swipeLeftAction = swipeLeftAction
             self.swipeRightAction = swipeRightAction
+            self.playlistSwipeLeftAction = playlistSwipeLeftAction
+            self.playlistSwipeRightAction = playlistSwipeRightAction
             self.hapticsEnabled = hapticsEnabled
             self.developerWindowSizes = developerWindowSizes
             self.enabledHomeSections = enabledHomeSections
@@ -286,6 +295,8 @@ public final class SettingsStore: ObservableObject {
             case automaticDownloadNetwork
             case swipeLeftAction
             case swipeRightAction
+            case playlistSwipeLeftAction
+            case playlistSwipeRightAction
             case hapticsEnabled
             case developerWindowSizes
             case enabledHomeSections
@@ -355,6 +366,12 @@ public final class SettingsStore: ObservableObject {
             ) ?? .wifiOnly
             swipeLeftAction = try c.decode(String.self, forKey: .swipeLeftAction)
             swipeRightAction = try c.decode(String.self, forKey: .swipeRightAction)
+            // Until it's set, a playlist swipes the way song rows do — which is what it
+            // did before it had a setting of its own.
+            playlistSwipeLeftAction = try c.decodeIfPresent(String.self, forKey: .playlistSwipeLeftAction)
+                ?? swipeLeftAction
+            playlistSwipeRightAction = try c.decodeIfPresent(String.self, forKey: .playlistSwipeRightAction)
+                ?? swipeRightAction
             hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
             developerWindowSizes = try c.decode(Bool.self, forKey: .developerWindowSizes)
             enabledHomeSections = try c.decode([HomeSection].self, forKey: .enabledHomeSections)
@@ -417,6 +434,8 @@ public final class SettingsStore: ObservableObject {
             try c.encode(automaticDownloadNetwork, forKey: .automaticDownloadNetwork)
             try c.encode(swipeLeftAction, forKey: .swipeLeftAction)
             try c.encode(swipeRightAction, forKey: .swipeRightAction)
+            try c.encode(playlistSwipeLeftAction, forKey: .playlistSwipeLeftAction)
+            try c.encode(playlistSwipeRightAction, forKey: .playlistSwipeRightAction)
             try c.encode(hapticsEnabled, forKey: .hapticsEnabled)
             try c.encode(developerWindowSizes, forKey: .developerWindowSizes)
             try c.encode(enabledHomeSections, forKey: .enabledHomeSections)
@@ -498,6 +517,8 @@ public final class SettingsStore: ObservableObject {
             automaticDownloadNetwork: automaticDownloadNetwork,
             swipeLeftAction: swipeLeftAction,
             swipeRightAction: swipeRightAction,
+            playlistSwipeLeftAction: playlistSwipeLeftAction,
+            playlistSwipeRightAction: playlistSwipeRightAction,
             hapticsEnabled: hapticsEnabled,
             developerWindowSizes: developerWindowSizes,
             enabledHomeSections: enabledHomeSections,
@@ -665,6 +686,8 @@ public final class SettingsStore: ObservableObject {
             automaticDownloadNetwork = snapshot.automaticDownloadNetwork
             swipeLeftAction = snapshot.swipeLeftAction
             swipeRightAction = snapshot.swipeRightAction
+            playlistSwipeLeftAction = snapshot.playlistSwipeLeftAction
+            playlistSwipeRightAction = snapshot.playlistSwipeRightAction
             hapticsEnabled = snapshot.hapticsEnabled
             developerWindowSizes = snapshot.developerWindowSizes
             enabledHomeSections = snapshot.enabledHomeSections

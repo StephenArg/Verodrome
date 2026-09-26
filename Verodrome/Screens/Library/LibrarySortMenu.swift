@@ -15,12 +15,16 @@ struct LibrarySortMenu: View {
     let options: [LibrarySortOption]
     /// Songs-only. When set, a second section toggles a downloaded-only filter.
     var downloadedOnly: Binding<Bool>? = nil
+    /// For screens that tint their toolbar, which doesn't reach this UIKit button on its
+    /// own. Nil keeps the inherited tint.
+    var tint: Color? = nil
 
     var body: some View {
         LibrarySortMenuButton(
             selection: selection,
             options: options,
             downloadedOnly: downloadedOnly?.wrappedValue,
+            tint: tint,
             onSelect: { option in
                 selection = option
                 settings.save()
@@ -41,6 +45,7 @@ private struct LibrarySortMenuButton: UIViewRepresentable {
     let selection: LibrarySortOption
     let options: [LibrarySortOption]
     let downloadedOnly: Bool?
+    let tint: Color?
     let onSelect: (LibrarySortOption) -> Void
     let onToggleDownloaded: (() -> Void)?
 
@@ -109,6 +114,7 @@ private struct LibrarySortMenuButton: UIViewRepresentable {
         let config = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
         button.setImage(UIImage(systemName: "arrow.up.arrow.down", withConfiguration: config), for: .normal)
         button.showsMenuAsPrimaryAction = true
+        button.tintColor = tint.map(UIColor.init)
         context.coordinator.menuIdentity = context.coordinator.identity()
         button.menu = context.coordinator.makeMenu()
         button.accessibilityLabel = "Sort"
@@ -122,6 +128,7 @@ private struct LibrarySortMenuButton: UIViewRepresentable {
         coordinator.downloadedOnly = downloadedOnly
         coordinator.onSelect = onSelect
         coordinator.onToggleDownloaded = onToggleDownloaded
+        button.tintColor = tint.map(UIColor.init)
 
         let identity = coordinator.identity()
         guard identity != coordinator.menuIdentity else { return }

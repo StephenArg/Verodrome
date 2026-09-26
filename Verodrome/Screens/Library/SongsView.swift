@@ -134,6 +134,7 @@ struct SongsView: View {
             guard let song else { return }
             Task { await ActionToast.toggleFavorite(song: song) }
         })
+        primary.append(SongMenuItems.rate(for: song))
         primary.append(UIAction(
             title: "Add to Queue",
             image: UIImage(systemName: "text.append")
@@ -302,7 +303,7 @@ struct SongsView: View {
     /// instead of coming back in whatever order the store happens to produce.
     private static func sortDescriptors(for sort: LibrarySortOption) -> [SortDescriptor<Song>] {
         switch sort {
-        case .titleAZ, .titleZA, .titleSymbolsFirst, .smartPlaylistsFirst, .recentlyAdded, .random:
+        case .titleAZ, .titleZA, .titleSymbolsFirst, .smartPlaylistsFirst, .recentlyAdded, .oldestAdded, .random:
             [SortDescriptor(\Song.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
         case .durationLongest:
             [SortDescriptor(\Song.playDuration, order: .reverse), SortDescriptor(\Song.sortTitle)]

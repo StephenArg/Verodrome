@@ -681,6 +681,14 @@ public final class LibraryActions {
         return try repository.orderedSongs(of: playlist)
     }
 
+    /// Pins a playlist to the top of the playlist lists, or unpins it. Local only — see
+    /// `Playlist.isFavorite`.
+    public func setFavorite(_ isFavorite: Bool, for playlist: Playlist) throws {
+        playlist.isFavorite = isFavorite
+        try repository?.save()
+        NotificationCenter.default.post(name: .playlistFavoriteChanged, object: nil)
+    }
+
     /// Playlists the server refused to change during this run.
     ///
     /// Deliberately not persisted. It is an inference drawn from one failure, and a wrong

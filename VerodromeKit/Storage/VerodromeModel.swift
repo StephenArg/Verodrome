@@ -535,6 +535,9 @@ public final class Playlist {
     public var artworkToken: String?
     /// Keep every track in this playlist on disk, including ones added later.
     public var keepDownloaded: Bool = false
+    /// Pinned to the top of every playlist list. Kept on this device only: Subsonic can't
+    /// star a playlist, so there's nowhere on the server to put it.
+    public var isFavorite: Bool = false
     public var updatedAt: Date
 
     public var account: Account?

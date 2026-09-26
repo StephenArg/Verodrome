@@ -84,13 +84,12 @@ final class LibrarySectionCache {
         ) { _ in
             Task { @MainActor in LibrarySectionCache.shared.pages.removeAll() }
         }
-        // Playlist song counts (and membership) change without a full library sync.
-        NotificationCenter.default.addObserver(
-            forName: .playlistItemsChanged,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task { @MainActor in LibrarySectionCache.shared.removeKeys(prefixedBy: "playlists.") }
+        // Playlist song counts (and membership) change without a full library sync, and
+        // favoriting one reorders the list.
+        for name in [Notification.Name.playlistItemsChanged, .playlistFavoriteChanged] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                Task { @MainActor in LibrarySectionCache.shared.removeKeys(prefixedBy: "playlists.") }
+            }
         }
     }
 

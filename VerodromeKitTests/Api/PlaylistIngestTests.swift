@@ -139,4 +139,46 @@ final class PlaylistIngestTests: XCTestCase {
             XCTAssertEqual(holding, Set(ids), "playlists holding \(songId)")
         }
     }
+
+    // MARK: - Favorites
+
+    /// Favoriting is local only, so nothing the server sends may clear it: neither the
+    /// catalog pull nor a playlist's detail pull, which rewrites its entries.
+    @MainActor
+    func testFavoriteSurvivesCatalogAndDetailSyncs() async throws {
+        let storage = PersistentStorage(inMemory: true)
+        let ingester = makeIngester(storage)
+        try await ingester.ingest(songs: [IngestSong(id: "s1", title: "Track")])
+        try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix", songCount: 1)])
+
+        let main = LibraryRepository(context: storage.mainContext)
+        let account = try XCTUnwrap(storage.mainContext.fetch(FetchDescriptor<Account>()).first)
+        try XCTUnwrap(main.fetchPlaylists(account: account).first).isFavorite = true
+        try main.save()
+
+        try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix", songCount: 1)])
+        try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix", songCount: 1, songIds: ["s1"])])
+        XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.isFavorite, true)
+    }
+
+    /// Every list built on `fetchPlaylists` (CarPlay, Siri suggestions) puts favorites
+    /// on top, each group still in name order.
+    @MainActor
+    func testFetchPlaylistsListsFavoritesFirst() async throws {
+        let storage = PersistentStorage(inMemory: true)
+        try await makeIngester(storage).ingest(playlists: [
+            IngestPlaylist(id: "a", name: "Alpha"),
+            IngestPlaylist(id: "b", name: "Beta"),
+            IngestPlaylist(id: "c", name: "Charlie"),
+            IngestPlaylist(id: "d", name: "Delta")
+        ])
+        let main = LibraryRepository(context: storage.mainContext)
+        let account = try XCTUnwrap(storage.mainContext.fetch(FetchDescriptor<Account>()).first)
+        for playlist in try main.fetchPlaylists(account: account) where ["d", "b"].contains(playlist.remoteId) {
+            playlist.isFavorite = true
+        }
+        try main.save()
+
+        XCTAssertEqual(try main.fetchPlaylists(account: account).map(\.name), ["Beta", "Delta", "Alpha", "Charlie"])
+    }
 }

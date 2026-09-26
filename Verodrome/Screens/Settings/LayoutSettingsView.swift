@@ -6,6 +6,7 @@ struct LayoutSettingsView: View {
     @EnvironmentObject private var account: AccountStore
 
     private let swipeActions = ["queue", "download", "favorite", "none"]
+    private let playlistSwipeActions = ["queue", "download", "favorite", "remove", "none"]
 
     var body: some View {
         Form {
@@ -55,6 +56,26 @@ struct LayoutSettingsView: View {
                     }
                 }
                 .onChange(of: settings.swipeRightAction) { _, _ in settings.save() }
+            }
+
+            Section {
+                Picker("Swipe Left", selection: $settings.playlistSwipeLeftAction) {
+                    ForEach(playlistSwipeActions, id: \.self) { action in
+                        Text(action.capitalized).tag(action)
+                    }
+                }
+                .onChange(of: settings.playlistSwipeLeftAction) { _, _ in settings.save() }
+
+                Picker("Swipe Right", selection: $settings.playlistSwipeRightAction) {
+                    ForEach(playlistSwipeActions, id: \.self) { action in
+                        Text(action.capitalized).tag(action)
+                    }
+                }
+                .onChange(of: settings.playlistSwipeRightAction) { _, _ in settings.save() }
+            } header: {
+                Text("Playlist Row Swipes")
+            } footer: {
+                Text("Used on songs inside a playlist. Remove takes the song out of that playlist, and only appears on playlists you can edit.")
             }
 
             Section {

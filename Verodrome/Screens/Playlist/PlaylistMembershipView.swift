@@ -12,6 +12,7 @@ struct PlaylistMembershipView: View {
     @Query(sort: \Playlist.sortName) private var allPlaylists: [Playlist]
     @ObservedObject private var membership = PlaylistMembershipIndex.shared
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(\.dismiss) private var dismiss
 
     /// Playlists with a toggle in flight, so a slow server can't be double-tapped.
@@ -29,16 +30,17 @@ struct PlaylistMembershipView: View {
 
     /// Only what this user can actually change. Smart playlists are rebuilt from rules by
     /// the server and other people's playlists are refused outright, so listing either one
-    /// would offer an add that can't happen.
+    /// would offer an add that can't happen. In the Playlists list's order.
     private var editablePlaylists: [Playlist] {
         let accountKey = AccountStore.shared.activeAccountKey()?.storageKey
         let rejected = LibraryActions.shared.playlistsRejectedByServer
-        return allPlaylists.filter {
+        let editable = allPlaylists.filter {
             $0.account?.compoundKey == accountKey
                 && $0.isEditable
                 && !$0.isSmart
                 && !rejected.contains($0.remoteId)
         }
+        return PlaylistListOrder.ordered(editable, by: settings.librarySort.playlists)
     }
 
     private var songArtworkToken: String? { song.displayArtworkToken }
@@ -114,7 +116,8 @@ struct PlaylistMembershipView: View {
                     title: playlist.name,
                     subtitle: "\(songCount) songs",
                     artworkURL: artwork,
-                    symbol: "music.note.house.fill"
+                    symbol: "music.note.house.fill",
+                    isFavorite: playlist.isFavorite
                 )
 
                 if isPending {

@@ -363,9 +363,15 @@ struct HomeView: View {
             )
 
         case .playlists:
-            var desc = FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.name)])
-            desc.fetchLimit = 20
-            return (try context.fetch(desc)).map {
+            // Favorites first, then fill the rest of the row by name.
+            let byName = [SortDescriptor(\Playlist.name)]
+            var favoritesDesc = FetchDescriptor<Playlist>(predicate: #Predicate { $0.isFavorite }, sortBy: byName)
+            favoritesDesc.fetchLimit = 20
+            let favorites = try context.fetch(favoritesDesc)
+            var othersDesc = FetchDescriptor<Playlist>(predicate: #Predicate { !$0.isFavorite }, sortBy: byName)
+            othersDesc.fetchLimit = 20 - favorites.count
+            let others = favorites.count < 20 ? try context.fetch(othersDesc) : []
+            return (favorites + others).map {
                 HomeTileItem(
                     id: $0.compoundRemoteId,
                     title: $0.name,

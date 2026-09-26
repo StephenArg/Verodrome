@@ -15,6 +15,8 @@ public extension Notification.Name {
     static let credentialsRejected = Notification.Name("com.verodrome.credentialsRejected")
     /// A playlist's track list changed, or a playlist was removed.
     static let playlistItemsChanged = Notification.Name("com.verodrome.playlistItemsChanged")
+    /// A playlist was favorited or unfavorited, which moves it in every playlist list.
+    static let playlistFavoriteChanged = Notification.Name("com.verodrome.playlistFavoriteChanged")
     /// A song's favorite/rating was refreshed from the server. `object` is the playable id.
     static let songMetadataRefreshed = Notification.Name("com.verodrome.songMetadataRefreshed")
 

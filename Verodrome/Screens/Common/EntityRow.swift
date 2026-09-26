@@ -39,6 +39,9 @@ struct EntityRow: View {
     var symbol: String = "music.note"
     var isPlaying: Bool = false
     var trailing: String? = nil
+    /// Drawn as five stars in place of `trailing`, the way the Songs list shows the key
+    /// when it's sorted by rating.
+    var trailingRating: Int? = nil
     /// When set, shows this track position instead of artwork (e.g. album track lists).
     /// Combined with `showsArtworkBesideNumber`, the rank sits to the left of the cover.
     var trackNumber: Int? = nil
@@ -50,6 +53,8 @@ struct EntityRow: View {
     /// `.none` (and nil) leave the subtitle flush with the leading edge.
     var downloadStatus: DownloadStatus? = nil
     var isExplicit: Bool = false
+    /// A heart before the subtitle, as the Playlists list draws favorites.
+    var isFavorite: Bool = false
 
     @EnvironmentObject private var themeManager: ThemeManager
 
@@ -80,6 +85,14 @@ struct EntityRow: View {
                     if isExplicit {
                         ExplicitBadge()
                     }
+                    if isFavorite {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            // Theme accent, not `.tint`, for the same reason as the
+                            // download glyph above.
+                            .foregroundStyle(themeManager.accentColor)
+                            .accessibilityLabel("Favorite")
+                    }
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -91,13 +104,25 @@ struct EntityRow: View {
             // subtitle ("12 songs") while empty space still showed past the ellipsis.
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let trailing {
+            if let trailingRating {
+                ratingStars(trailingRating)
+            } else if let trailing {
                 Text(trailing)
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
         .contentShape(Rectangle())
+    }
+
+    private func ratingStars(_ rating: Int) -> some View {
+        let filled = max(0, min(5, rating))
+        return (Text(String(repeating: "★", count: filled))
+            .foregroundStyle(themeManager.accentColor)
+            + Text(String(repeating: "☆", count: 5 - filled))
+            .foregroundStyle(Color(uiColor: .tertiaryLabel)))
+            .font(.subheadline)
+            .accessibilityLabel(filled == 1 ? "1 star" : "\(filled) stars")
     }
 
     private func downloadAccessibilityLabel(for status: DownloadStatus) -> String {

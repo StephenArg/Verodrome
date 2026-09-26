@@ -376,7 +376,7 @@ struct AlbumsView: View {
             // 1-based server newest rank; lower index = newer. Secondary title for ties.
             [SortDescriptor(\Album.newestIndex), SortDescriptor(\Album.sortTitle)]
         case .random, .titleAZ, .titleZA, .titleSymbolsFirst, .durationLongest, .durationShortest,
-             .playsMost, .smartPlaylistsFirst:
+             .playsMost, .smartPlaylistsFirst, .oldestAdded:
             // Random reorders in memory after the fetch; any stable store order is fine.
             [SortDescriptor(\Album.sortTitle, order: sort.sortsTitleDescending ? .reverse : .forward)]
         }

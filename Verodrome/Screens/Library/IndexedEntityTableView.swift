@@ -16,6 +16,10 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
     var trailingRating: Int? { get }
     /// Local lyrics scan marked this song explicit.
     var isExplicit: Bool { get }
+    /// Drawn as a heart in front of the subtitle.
+    var isFavorite: Bool { get }
+    /// Drawn as a gear in front of the subtitle, the way Music marks rule-built playlists.
+    var isSmartPlaylist: Bool { get }
     /// Player identity, for rows that represent something playable. Distinct from
     /// `id`, which is the compound library id and never matches a queue item.
     var playableId: String? { get }
@@ -31,6 +35,8 @@ protocol LibraryRow: Identifiable, Sendable, Hashable where ID == String {
 extension LibraryRow {
     var trailingRating: Int? { nil }
     var isExplicit: Bool { false }
+    var isFavorite: Bool { false }
+    var isSmartPlaylist: Bool { false }
     var playableId: String? { nil }
     var songRemoteIds: [String] { [] }
     var downloadedSongIds: Set<String> { [] }
@@ -40,11 +46,15 @@ extension LibraryRow {
 struct LibraryRowSection<Item: LibraryRow>: Identifiable, Sendable, Hashable {
     let letter: String
     let items: [Item]
+    /// False for a trailing group with a spelled-out header (e.g. "Smart Playlists"),
+    /// which would stretch the A–Z scrubber to fit its title.
+    var showsInIndex = true
     var id: String { letter }
 
-    init(letter: String, items: [Item]) {
+    init(letter: String, items: [Item], showsInIndex: Bool = true) {
         self.letter = letter
         self.items = items
+        self.showsInIndex = showsInIndex
     }
 }
 
@@ -59,6 +69,8 @@ struct LibraryRowSnapshot: LibraryRow {
     let trailingText: String?
     let trailingRating: Int?
     let isExplicit: Bool
+    let isFavorite: Bool
+    let isSmartPlaylist: Bool
     let playableId: String?
     let songRemoteIds: [String]
     let downloadedSongIds: Set<String>
@@ -74,6 +86,8 @@ struct LibraryRowSnapshot: LibraryRow {
         trailingText: String? = nil,
         trailingRating: Int? = nil,
         isExplicit: Bool = false,
+        isFavorite: Bool = false,
+        isSmartPlaylist: Bool = false,
         playableId: String? = nil,
         songRemoteIds: [String] = [],
         downloadedSongIds: Set<String> = [],
@@ -88,6 +102,8 @@ struct LibraryRowSnapshot: LibraryRow {
         self.trailingText = trailingText
         self.trailingRating = trailingRating
         self.isExplicit = isExplicit
+        self.isFavorite = isFavorite
+        self.isSmartPlaylist = isSmartPlaylist
         self.playableId = playableId
         self.songRemoteIds = songRemoteIds
         self.downloadedSongIds = downloadedSongIds
@@ -382,6 +398,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
                     isPlaying: isPlaying(item),
                     downloadStatus: Self.downloadStatus(for: item),
                     isExplicit: item.isExplicit,
+                    isFavorite: item.isFavorite,
+                    isSmartPlaylist: item.isSmartPlaylist,
                     accent: accentUIColor
                 )
             }
@@ -483,7 +501,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
     func sectionIndexTitles(for tableView: UITableView) -> [String]? {
         if showsPlaceholderIndex { return placeholderIndexTitles }
         guard showsActiveIndex else { return nil }
-        return sections.map(\.letter)
+        return sections.filter(\.showsInIndex).map(\.letter)
     }
 
     func tableView(_ tableView: UITableView, sectionForSectionIndexTitle title: String, at index: Int) -> Int {
@@ -492,7 +510,7 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         if showsPlaceholderIndex {
             return tableView.indexPathsForVisibleRows?.first?.section ?? 0
         }
-        return index
+        return sections.firstIndex { $0.letter == title } ?? index
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -511,6 +529,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
             isPlaying: isPlaying(item),
             downloadStatus: Self.downloadStatus(for: item),
             isExplicit: item.isExplicit,
+            isFavorite: item.isFavorite,
+            isSmartPlaylist: item.isSmartPlaylist,
             accent: accentUIColor
         )
         return cell
@@ -647,6 +667,10 @@ final class EntityTableCell: UITableViewCell {
     private let trailingLabel = UILabel()
     private let playingView = UIImageView(image: UIImage(systemName: "waveform"))
     private let explicitBadge = ExplicitBadgeView()
+    /// Theme accent, like the heart that sets it on the playlist screen.
+    private let favoriteView = UIImageView(image: UIImage(systemName: "heart.fill"))
+    /// Secondary, so it marks the row without competing with a favorite's heart.
+    private let smartView = UIImageView(image: UIImage(systemName: "gearshape.fill"))
     private let downloadView = UIImageView()
     private let downloadSpinner = UIActivityIndicatorView(style: .medium)
     /// Holds the download glyph so it can be collapsed out of the subtitle row when idle —
@@ -683,6 +707,18 @@ final class EntityTableCell: UITableViewCell {
 
         explicitBadge.isHidden = true
 
+        for badge in [favoriteView, smartView] {
+            badge.contentMode = .scaleAspectFit
+            badge.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+            badge.setContentHuggingPriority(.required, for: .horizontal)
+            badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+            badge.isAccessibilityElement = true
+            badge.isHidden = true
+        }
+        favoriteView.accessibilityLabel = "Favorite"
+        smartView.accessibilityLabel = "Smart playlist"
+        smartView.tintColor = .secondaryLabel
+
         downloadView.contentMode = .scaleAspectFit
         downloadView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
         downloadView.isHidden = true
@@ -712,7 +748,7 @@ final class EntityTableCell: UITableViewCell {
         titleRow.spacing = 5
         titleRow.alignment = .center
 
-        let subtitleRow = UIStackView(arrangedSubviews: [downloadContainer, explicitBadge, subtitleLabel])
+        let subtitleRow = UIStackView(arrangedSubviews: [downloadContainer, explicitBadge, favoriteView, smartView, subtitleLabel])
         subtitleRow.axis = .horizontal
         subtitleRow.spacing = 5
         subtitleRow.alignment = .center
@@ -794,6 +830,8 @@ final class EntityTableCell: UITableViewCell {
         setPlaying(false, accent: playingView.tintColor ?? .label)
         setDownloadStatus(.none, accent: .clear)
         explicitBadge.isHidden = true
+        favoriteView.isHidden = true
+        smartView.isHidden = true
         trailingLabel.attributedText = nil
         trailingLabel.isHidden = false
     }
@@ -808,12 +846,17 @@ final class EntityTableCell: UITableViewCell {
         isPlaying: Bool,
         downloadStatus: DownloadStatus = .none,
         isExplicit: Bool = false,
+        isFavorite: Bool = false,
+        isSmartPlaylist: Bool = false,
         accent: UIColor
     ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
         explicitBadge.isHidden = !isExplicit
         explicitBadge.applyBorderColor()
+        favoriteView.isHidden = !isFavorite
+        favoriteView.tintColor = accent
+        smartView.isHidden = !isSmartPlaylist
         if let trailingRating {
             trailingLabel.attributedText = ratingStars(trailingRating, accent: accent)
             trailingLabel.isHidden = false

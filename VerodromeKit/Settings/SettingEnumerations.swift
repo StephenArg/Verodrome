@@ -613,8 +613,12 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
     case playsMost
     /// Smart playlists A–Z#, then regular playlists A–Z#.
     case smartPlaylistsFirst
-    /// Albums ranked by the server's newest list (`Album.newestIndex`, 1 = newest).
+    /// Albums ranked by the server's newest list (`Album.newestIndex`, 1 = newest). In a
+    /// playlist's track list, the most recently added entries first.
     case recentlyAdded
+    /// A playlist's track list in its own order, which is the order entries were added
+    /// unless someone has rearranged it.
+    case oldestAdded
     /// Stable pseudo-random order for the current shuffle seed.
     case random
 
@@ -631,6 +635,7 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
         case .playsMost: "Plays (high to low)"
         case .smartPlaylistsFirst: "Smart Playlists"
         case .recentlyAdded: "Recently Added"
+        case .oldestAdded: "Oldest Added"
         case .random: "Random"
         }
     }
@@ -641,7 +646,7 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .titleAZ, .titleZA, .titleSymbolsFirst: true
         case .durationLongest, .durationShortest, .ratingHighest, .playsMost,
-             .smartPlaylistsFirst, .recentlyAdded, .random:
+             .smartPlaylistsFirst, .recentlyAdded, .oldestAdded, .random:
             false
         }
     }
@@ -666,6 +671,92 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
 
     /// Playlists also offer grouping smart lists ahead of regular ones.
     public static let playlistOptions: [LibrarySortOption] = titleOptions + [.smartPlaylistsFirst]
+
+    /// The songs inside one playlist: the Songs list's orderings plus added order, which
+    /// only a playlist has.
+    public static let playlistSongOptions: [LibrarySortOption] =
+        [.recentlyAdded, .oldestAdded] + songOptions
+
+    /// Indices into `keys`, which are in the playlist's own order, arranged for display.
+    ///
+    /// No server says when an entry was added: Subsonic and Ampache both return a
+    /// playlist as a bare ordered list. Both append new songs to the end, though, so
+    /// position is the added order. Titles group the way the Songs list's sections do, and
+    /// every ordering falls back to position on a tie, so equal keys don't swap places
+    /// between reloads.
+    public func playlistDisplayOrder(of keys: [PlaylistEntrySortKey]) -> [Int] {
+        let positions = Array(keys.indices)
+        switch self {
+        case .oldestAdded, .smartPlaylistsFirst, .random:
+            return positions
+        case .recentlyAdded:
+            return positions.reversed()
+        case .titleAZ, .titleZA, .titleSymbolsFirst:
+            let descending = sortsTitleDescending
+            let groupRanks = keys.map { Self.titleGroupRank($0.sortTitle, symbolsFirst: showsSymbolsFirst) }
+            return positions.sorted { a, b in
+                if groupRanks[a] != groupRanks[b] { return groupRanks[a] < groupRanks[b] }
+                let titleA = keys[a].sortTitle, titleB = keys[b].sortTitle
+                if titleA != titleB { return descending ? titleA > titleB : titleA < titleB }
+                return a < b
+            }
+        case .durationLongest, .durationShortest, .ratingHighest, .playsMost:
+            return positions.sorted { a, b in
+                let keyA = keys[a], keyB = keys[b]
+                switch self {
+                case .durationLongest:
+                    if keyA.duration != keyB.duration { return keyA.duration > keyB.duration }
+                case .durationShortest:
+                    if keyA.duration != keyB.duration { return keyA.duration < keyB.duration }
+                case .ratingHighest:
+                    if keyA.rating != keyB.rating { return keyA.rating > keyB.rating }
+                default:
+                    if keyA.playCount != keyB.playCount { return keyA.playCount > keyB.playCount }
+                }
+                // Secondary title, like the Songs list, so ties stay alphabetical.
+                if keyA.sortTitle != keyB.sortTitle { return keyA.sortTitle < keyB.sortTitle }
+                return a < b
+            }
+        }
+    }
+
+    /// Where a title's section falls: A–Z, then digits, other scripts and everything else
+    /// — or those three first for `#A-Z`. Mirrors the app's `sectionInitial`.
+    private static func titleGroupRank(_ sortTitle: String, symbolsFirst: Bool) -> Int {
+        let group: Int
+        if let first = sortTitle.first {
+            let initial = String(first).folding(options: .diacriticInsensitive, locale: nil).uppercased()
+            if initial.rangeOfCharacter(from: .decimalDigits) != nil {
+                group = 1
+            } else if initial.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ")) != nil {
+                group = 0
+            } else if initial.rangeOfCharacter(from: .letters) != nil {
+                group = 2
+            } else {
+                group = 3
+            }
+        } else {
+            group = 3
+        }
+        guard symbolsFirst else { return group }
+        return group == 0 ? 3 : group - 1
+    }
+}
+
+/// What a playlist entry sorts on, read off its song once rather than on every
+/// comparison.
+public struct PlaylistEntrySortKey: Sendable, Equatable {
+    public var sortTitle: String
+    public var duration: TimeInterval
+    public var rating: Int
+    public var playCount: Int
+
+    public init(sortTitle: String, duration: TimeInterval, rating: Int, playCount: Int) {
+        self.sortTitle = sortTitle
+        self.duration = duration
+        self.rating = rating
+        self.playCount = playCount
+    }
 }
 
 /// Per-screen sort choices. Grouped into one value so the settings snapshot needs a
@@ -676,19 +767,38 @@ public struct LibrarySortSelection: Codable, Sendable, Equatable {
     public var songs: LibrarySortOption
     public var genres: LibrarySortOption
     public var playlists: LibrarySortOption
+    /// The track list inside a playlist, shared by every playlist.
+    public var playlistSongs: LibrarySortOption
 
     public init(
         artists: LibrarySortOption = .titleAZ,
         albums: LibrarySortOption = .titleAZ,
         songs: LibrarySortOption = .titleAZ,
         genres: LibrarySortOption = .titleAZ,
-        playlists: LibrarySortOption = .titleAZ
+        playlists: LibrarySortOption = .titleAZ,
+        playlistSongs: LibrarySortOption = .oldestAdded
     ) {
         self.artists = artists
         self.albums = albums
         self.songs = songs
         self.genres = genres
         self.playlists = playlists
+        self.playlistSongs = playlistSongs
+    }
+
+    /// Every field is optional on the way in. Settings saved before a screen had its own
+    /// choice lack that key, and a strict decode would throw away the whole settings blob
+    /// rather than just default the one new field.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = Self.default
+        artists = try c.decodeIfPresent(LibrarySortOption.self, forKey: .artists) ?? fallback.artists
+        albums = try c.decodeIfPresent(LibrarySortOption.self, forKey: .albums) ?? fallback.albums
+        songs = try c.decodeIfPresent(LibrarySortOption.self, forKey: .songs) ?? fallback.songs
+        genres = try c.decodeIfPresent(LibrarySortOption.self, forKey: .genres) ?? fallback.genres
+        playlists = try c.decodeIfPresent(LibrarySortOption.self, forKey: .playlists) ?? fallback.playlists
+        playlistSongs = try c.decodeIfPresent(LibrarySortOption.self, forKey: .playlistSongs)
+            ?? fallback.playlistSongs
     }
 
     public static let `default` = LibrarySortSelection()

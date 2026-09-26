@@ -365,10 +365,13 @@ public final class LibraryRepository {
 
     // MARK: - Playlists
 
+    /// The account's playlists, favorites first and then by name within each group.
     public func fetchPlaylists(account: Account) throws -> [Playlist] {
         let accountID = account.persistentModelID
         let all = try context.fetch(FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.sortName)]))
-        return all.filter { $0.account?.persistentModelID == accountID }
+        let owned = all.filter { $0.account?.persistentModelID == accountID }
+        // SortDescriptor can't order a Bool column, so favorites are lifted out here.
+        return owned.filter(\.isFavorite) + owned.filter { !$0.isFavorite }
     }
 
     @discardableResult

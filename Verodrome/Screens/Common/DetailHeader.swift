@@ -1,5 +1,14 @@
 import SwiftUI
 import UIKit
+import VerodromeKit
+
+/// A heart drawn at the end of the header's subtitle line.
+struct DetailHeaderFavorite {
+    let isFavorite: Bool
+    /// What the heart applies to, for VoiceOver ("Playlist").
+    let noun: String
+    let toggle: () -> Void
+}
 
 struct DetailHeader<Accessory: View>: View {
     let title: String
@@ -22,6 +31,9 @@ struct DetailHeader<Accessory: View>: View {
     let onShuffle: () -> Void
     /// Confirmed-explicit album. Drawn in the centered artist row, before the name.
     let showsExplicitBadge: Bool
+    /// Heart after the subtitle. Playlists put theirs here; albums keep theirs in the
+    /// accessory row beside rating and download.
+    let favorite: DetailHeaderFavorite?
     /// Optional row between the title and the action buttons — the album's rating,
     /// download, and favorite controls. Most screens leave it empty.
     @ViewBuilder let accessory: () -> Accessory
@@ -36,6 +48,7 @@ struct DetailHeader<Accessory: View>: View {
         tintKey: ArtworkTintKey? = nil,
         symbol: String = "music.note",
         showsExplicitBadge: Bool = false,
+        favorite: DetailHeaderFavorite? = nil,
         onPlay: @escaping () -> Void,
         onShuffle: @escaping () -> Void,
         @ViewBuilder accessory: @escaping () -> Accessory
@@ -49,12 +62,14 @@ struct DetailHeader<Accessory: View>: View {
         self.tintKey = tintKey
         self.symbol = symbol
         self.showsExplicitBadge = showsExplicitBadge
+        self.favorite = favorite
         self.onPlay = onPlay
         self.onShuffle = onShuffle
         self.accessory = accessory
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject private var resolver = ArtworkTintResolver.shared
     @State private var tint: ArtworkTint?
     /// Signed list offset relative to rest: negative = rubber-band pull, positive = scrolled down.
@@ -87,6 +102,25 @@ struct DetailHeader<Accessory: View>: View {
                 Text(subtitleSuffix)
                     .font(.title3)
                     .foregroundStyle(.secondary)
+            }
+            if let favorite {
+                Button(action: favorite.toggle) {
+                    Image(systemName: favorite.isFavorite ? "heart.fill" : "heart")
+                        .font(.title3)
+                        // Theme accent like the album's heart; unset it sits with the
+                        // secondary text it follows.
+                        .foregroundStyle(favorite.isFavorite ? themeManager.accentColor : Color.secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(.snappy, value: favorite.isFavorite)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .accessibilityLabel(
+                    favorite.isFavorite
+                        ? "Remove \(favorite.noun) from Favorites"
+                        : "Add \(favorite.noun) to Favorites"
+                )
             }
         }
         .fixedSize(horizontal: true, vertical: false)

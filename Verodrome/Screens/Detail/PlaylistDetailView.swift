@@ -8,11 +8,17 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingModel
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var settings: SettingsStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @Environment(\.colorScheme) private var colorScheme
 
     /// Stable row ids so a playlist can hold the same song twice without ForEach collisions.
+    /// Always the playlist's own order: removing and reordering address the server by
+    /// position in it.
     @State private var entries: [PlaylistRowItem] = []
+    /// `entries` in the chosen sort. Kept alongside rather than computed, since this
+    /// screen redraws on every download progress tick.
+    @State private var displayedEntries: [PlaylistRowItem] = []
     @State private var searchText = ""
     /// True once the in-header filter row has scrolled under the nav.
     @State private var isFilterOffScreen = false
@@ -38,6 +44,18 @@ struct PlaylistDetailView: View {
     }
 
     private var songs: [Song] { entries.map(\.song) }
+
+    /// What playback and the options menu work from — the order on screen.
+    private var displayedSongs: [Song] { displayedEntries.map(\.song) }
+
+    private var sort: LibrarySortOption {
+        let chosen = settings.librarySort.playlistSongs
+        return LibrarySortOption.playlistSongOptions.contains(chosen) ? chosen : .oldestAdded
+    }
+
+    /// Dragging to reorder only means something while the list shows the playlist's
+    /// own order.
+    private var isInPlaylistOrder: Bool { sort == .oldestAdded }
 
     /// Distinct albums among loaded tracks. Partial until `entries` is filled — playlist
     /// metadata only carries a song count, not an album total.
@@ -71,8 +89,8 @@ struct PlaylistDetailView: View {
 
     private var filteredEntries: [PlaylistRowItem] {
         let query = filterQuery
-        guard !query.isEmpty else { return entries }
-        return entries.filter {
+        guard !query.isEmpty else { return displayedEntries }
+        return displayedEntries.filter {
             $0.song.title.localizedCaseInsensitiveContains(query)
                 || $0.song.displayArtist.localizedCaseInsensitiveContains(query)
         }
@@ -101,6 +119,11 @@ struct PlaylistDetailView: View {
                         artworkURL: playlist.displayArtworkToken,
                         tintToken: backgroundArtworkToken,
                         symbol: "music.note.house.fill",
+                        favorite: DetailHeaderFavorite(
+                            isFavorite: playlist.isFavorite,
+                            noun: "Playlist",
+                            toggle: { try? LibraryActions.shared.setFavorite(!playlist.isFavorite, for: playlist) }
+                        ),
                         onPlay: { play(shuffle: false) },
                         onShuffle: { play(shuffle: true) },
                         accessory: { playlistStatusBar }
@@ -131,7 +154,8 @@ struct PlaylistDetailView: View {
                                 .listRowSeparator(.hidden)
                         }
                         // Reorder/delete need the full playlist order; hide while filtered.
-                        .onMove(perform: isEditing && filterQuery.isEmpty ? moveEntries : nil)
+                        // Reorder also needs that order on screen, so not while sorted.
+                        .onMove(perform: isEditing && filterQuery.isEmpty && isInPlaylistOrder ? moveEntries : nil)
                         .onDelete(perform: isEditing && filterQuery.isEmpty ? deleteEntries : nil)
                     }
                 }
@@ -159,7 +183,7 @@ struct PlaylistDetailView: View {
         .onDetailListScrollOffset(handleScroll)
         .sheet(isPresented: $showPlaylistSelector) {
             PlaylistSelectorView { destination in
-                let tracks = songs
+                let tracks = displayedSongs
                 Task {
                     try? await LibraryActions.shared.addSongs(tracks, to: destination)
                     ActionToast.addedToPlaylist(destination.name)
@@ -197,6 +221,9 @@ struct PlaylistDetailView: View {
             }
             hasFinishedLoadingSongs = true
         }
+        .onChange(of: sort) { _, _ in
+            applySort()
+        }
         .onChange(of: canEditPlaylist) { _, canEdit in
             if !canEdit {
                 editMode = .inactive
@@ -229,7 +256,8 @@ struct PlaylistDetailView: View {
                     subtitle: song.displayArtist,
                     artworkURL: song.displayArtworkToken,
                     isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
-                    trailing: formatDuration(song.displayDuration),
+                    trailing: trailingText(for: song),
+                    trailingRating: sort == .ratingHighest ? song.rating : nil,
                     downloadStatus: downloadCenter.status(
                         for: song.remoteId,
                         isDownloaded: song.isDownloadedLocally
@@ -243,7 +271,8 @@ struct PlaylistDetailView: View {
                         subtitle: song.displayArtist,
                         artworkURL: song.displayArtworkToken,
                         isPlaying: nowPlaying.currentItem?.playableId == song.remoteId,
-                        trailing: formatDuration(song.displayDuration),
+                        trailing: trailingText(for: song),
+                        trailingRating: sort == .ratingHighest ? song.rating : nil,
                         downloadStatus: downloadCenter.status(
                             for: song.remoteId,
                             isDownloaded: song.isDownloadedLocally
@@ -252,9 +281,21 @@ struct PlaylistDetailView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .songActions(song)
+                // Removal addresses the server by position, so a second one waits until
+                // the first has landed rather than risk hitting the wrong entry.
+                .playlistSongActions(
+                    song,
+                    onRemove: canEditPlaylist && !isMutating ? { removeEntry(entry.id) } : nil
+                )
             }
         }
+    }
+
+    /// Sorting by plays puts the count where the duration goes, as the Songs list does —
+    /// an order you can't see the key for reads as arbitrary. Rating shows as stars.
+    private func trailingText(for song: Song) -> String {
+        guard sort == .playsMost else { return formatDuration(song.displayDuration) }
+        return song.playCount == 1 ? "1 play" : "\(song.playCount) plays"
     }
 
     // MARK: - Toolbar
@@ -262,6 +303,14 @@ struct PlaylistDetailView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
+            if !isEditing, !entries.isEmpty {
+                LibrarySortMenu(
+                    selection: $settings.librarySort.playlistSongs,
+                    options: LibrarySortOption.playlistSongOptions,
+                    tint: navigationTint
+                )
+            }
+
             if canEditPlaylist {
                 if isEditing {
                     if !selection.isEmpty {
@@ -295,7 +344,7 @@ struct PlaylistDetailView: View {
                     onRename: { showRename = true },
                     onToggleDownload: togglePlaylistDownload,
                     onAddToQueue: {
-                        player.addToQueueTemporarily(songs.map(QueueItem.from))
+                        player.addToQueueTemporarily(displayedSongs.map(QueueItem.from))
                     },
                     onAddToPlaylist: { showPlaylistSelector = true }
                 )
@@ -380,11 +429,19 @@ struct PlaylistDetailView: View {
 
     private func moveEntries(from source: IndexSet, to destination: Int) {
         entries.move(fromOffsets: source, toOffset: destination)
+        applySort()
         scheduleReorderCommit()
     }
 
+    /// `offsets` count rows as sorted on screen; `remove(at:)` wants positions in the
+    /// playlist itself.
     private func deleteEntries(at offsets: IndexSet) {
-        remove(at: offsets)
+        let ids = Set(offsets.map { filteredEntries[$0].id })
+        remove(at: IndexSet(entries.indices.filter { ids.contains(entries[$0].id) }))
+    }
+
+    private func removeEntry(_ id: PlaylistRowItem.ID) {
+        remove(at: IndexSet(entries.indices.filter { entries[$0].id == id }))
     }
 
     private func removeSelected() {
@@ -396,6 +453,7 @@ struct PlaylistDetailView: View {
         guard let playlist = playlists.first, !offsets.isEmpty else { return }
         let indices = Array(offsets)
         entries.remove(atOffsets: offsets)
+        applySort()
         selection.removeAll()
         isMutating = true
         Task {
@@ -483,18 +541,40 @@ struct PlaylistDetailView: View {
     private func loadSongs(for playlist: Playlist) {
         let ordered = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
         entries = ordered.map { PlaylistRowItem(song: $0) }
+        applySort()
+    }
+
+    /// Re-derives `displayedEntries`. Called wherever `entries` changes, in the same pass,
+    /// so a swiped-away row is already gone from what the list is showing.
+    private func applySort() {
+        switch sort {
+        case .oldestAdded:
+            displayedEntries = entries
+        case .recentlyAdded:
+            displayedEntries = entries.reversed()
+        default:
+            let keys = entries.map { entry in
+                PlaylistEntrySortKey(
+                    sortTitle: entry.song.sortTitle,
+                    duration: entry.song.displayDuration,
+                    rating: entry.song.rating,
+                    playCount: entry.song.playCount
+                )
+            }
+            displayedEntries = sort.playlistDisplayOrder(of: keys).map { entries[$0] }
+        }
     }
 
     private func play(shuffle: Bool) {
-        let items = songs.map(QueueItem.from)
+        let items = displayedSongs.map(QueueItem.from)
         guard !items.isEmpty else { return }
         startPlaylistQueue(items: items, shuffle: shuffle)
         router.openPlayer()
     }
 
     private func playSong(_ song: Song, entryId: PlaylistRowItem.ID) {
-        let items = songs.map(QueueItem.from)
-        let index = entries.firstIndex(where: { $0.id == entryId }) ?? 0
+        let items = displayedSongs.map(QueueItem.from)
+        let index = displayedEntries.firstIndex(where: { $0.id == entryId }) ?? 0
         startPlaylistQueue(items: items, startAt: index)
     }
 
