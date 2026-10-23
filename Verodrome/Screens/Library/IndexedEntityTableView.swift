@@ -56,6 +56,13 @@ struct LibraryRowSection<Item: LibraryRow>: Identifiable, Sendable, Hashable {
         self.items = items
         self.showsInIndex = showsInIndex
     }
+
+    /// This section with one row moved, the way a drag rearranges it.
+    func movingRow(from source: Int, to destination: Int) -> LibraryRowSection {
+        var items = items
+        items.insert(items.remove(at: source), at: destination)
+        return LibraryRowSection(letter: letter, items: items, showsInIndex: showsInIndex)
+    }
 }
 
 /// Concrete row for Artists, Albums, Playlists, Genres and any simple library list.
@@ -133,6 +140,9 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     var onSelect: (Item, [Item]) -> Void
     /// Long-press menu for a row. Nil means no context menu.
     var makeContextMenu: ((Item) -> UIMenu?)?
+    /// Non-nil lets a favorite row be long-pressed and dragged among the favorites its
+    /// section leads with. Called after the table has moved the row.
+    var onMoveFavorite: ((_ from: IndexPath, _ to: IndexPath) -> Void)?
     /// Scrolls away above the first row, so chrome that belongs to the list can leave
     /// with the large title instead of holding height on a screen full of rows.
     var header: AnyView?
@@ -148,6 +158,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         downloadRevision: Int = 0,
         onSelect: @escaping (Item, [Item]) -> Void,
         makeContextMenu: ((Item) -> UIMenu?)? = nil,
+        onMoveFavorite: ((_ from: IndexPath, _ to: IndexPath) -> Void)? = nil,
         header: AnyView? = nil,
         onScroll: ((CGFloat) -> Void)? = nil
     ) {
@@ -159,6 +170,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         self.downloadRevision = downloadRevision
         self.onSelect = onSelect
         self.makeContextMenu = makeContextMenu
+        self.onMoveFavorite = onMoveFavorite
         self.header = header
         self.onScroll = onScroll
     }
@@ -167,6 +179,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
         let controller = IndexedEntityTableController<Item>()
         controller.onSelect = onSelect
         controller.makeContextMenu = makeContextMenu
+        controller.onMoveFavorite = onMoveFavorite
         controller.onScroll = onScroll
         return controller
     }
@@ -174,6 +187,7 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: IndexedEntityTableController<Item>, context: Context) {
         controller.onSelect = onSelect
         controller.makeContextMenu = makeContextMenu
+        controller.onMoveFavorite = onMoveFavorite
         controller.onScroll = onScroll
         controller.downloadRevision = downloadRevision
         // Concrete UIColor + generation from ThemeManager — never derive accent from
@@ -193,9 +207,13 @@ struct IndexedEntityTableView<Item: LibraryRow>: UIViewControllerRepresentable {
 }
 
 @MainActor
-final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UITableViewDataSource, UITableViewDelegate, UITableViewDataSourcePrefetching {
+final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UITableViewDataSource, UITableViewDelegate, UITableViewDataSourcePrefetching, UITableViewDragDelegate, UITableViewDropDelegate {
     var onSelect: ((Item, [Item]) -> Void)?
     var makeContextMenu: ((Item) -> UIMenu?)?
+    var onMoveFavorite: ((IndexPath, IndexPath) -> Void)? {
+        // iPhone tables don't start drags unless asked to.
+        didSet { tableView.dragInteractionEnabled = onMoveFavorite != nil }
+    }
     var onScroll: ((CGFloat) -> Void)?
     var downloadRevision = 0
     /// Bumps when `ThemeManager.accentGeneration` changes.
@@ -225,6 +243,9 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         tableView.dataSource = self
         tableView.delegate = self
         tableView.prefetchDataSource = self
+        tableView.dragDelegate = self
+        tableView.dropDelegate = self
+        tableView.dragInteractionEnabled = onMoveFavorite != nil
         tableView.rowHeight = 60
         tableView.register(EntityTableCell.self, forCellReuseIdentifier: EntityTableCell.reuseID)
         tableView.sectionIndexColor = Self.activeIndexColor
@@ -587,6 +608,91 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
             makeContextMenu(item)
         }
+    }
+
+    // MARK: - Rearranging favorites
+
+    /// The rows a favorite can be dragged among: the favorites its section leads with.
+    private func favoriteRows(in section: Int) -> Range<Int> {
+        guard sections.indices.contains(section) else { return 0..<0 }
+        let items = sections[section].items
+        return 0..<(items.firstIndex { !$0.isFavorite } ?? items.count)
+    }
+
+    /// Not while the head page is showing: its favorites are complete, but the move would
+    /// land on rows the full load is about to replace.
+    private func canMoveFavorite(at indexPath: IndexPath) -> Bool {
+        guard onMoveFavorite != nil, !isPartial else { return false }
+        let rows = favoriteRows(in: indexPath.section)
+        return rows.count > 1 && rows.contains(indexPath.row)
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        itemsForBeginning session: UIDragSession,
+        at indexPath: IndexPath
+    ) -> [UIDragItem] {
+        guard canMoveFavorite(at: indexPath) else { return [] }
+        let dragItem = UIDragItem(itemProvider: NSItemProvider())
+        // Where the drag started, so drops can be held to the same run of favorites.
+        dragItem.localObject = indexPath
+        return [dragItem]
+    }
+
+    func tableView(_ tableView: UITableView, dragSessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool {
+        true
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        dropSessionDidUpdate session: UIDropSession,
+        withDestinationIndexPath destinationIndexPath: IndexPath?
+    ) -> UITableViewDropProposal {
+        guard let source = session.localDragSession?.items.first?.localObject as? IndexPath,
+              let destinationIndexPath,
+              destinationIndexPath.section == source.section,
+              favoriteRows(in: source.section).contains(destinationIndexPath.row) else {
+            return UITableViewDropProposal(operation: .forbidden)
+        }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    /// Local drags are moves, which arrive through `moveRowAt` instead.
+    func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {}
+
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        canMoveFavorite(at: indexPath)
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
+        toProposedIndexPath proposedDestinationIndexPath: IndexPath
+    ) -> IndexPath {
+        let rows = favoriteRows(in: sourceIndexPath.section)
+        guard !rows.isEmpty else { return sourceIndexPath }
+        let row: Int
+        if proposedDestinationIndexPath.section < sourceIndexPath.section {
+            row = rows.lowerBound
+        } else if proposedDestinationIndexPath.section > sourceIndexPath.section {
+            row = rows.upperBound - 1
+        } else {
+            row = min(max(proposedDestinationIndexPath.row, rows.lowerBound), rows.upperBound - 1)
+        }
+        return IndexPath(row: row, section: sourceIndexPath.section)
+    }
+
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        guard sourceIndexPath != destinationIndexPath,
+              sourceIndexPath.section == destinationIndexPath.section,
+              sections.indices.contains(sourceIndexPath.section) else { return }
+        sections[sourceIndexPath.section] = sections[sourceIndexPath.section]
+            .movingRow(from: sourceIndexPath.row, to: destinationIndexPath.row)
+        flatItems = sections.flatMap(\.items)
+        // The table already shows the new order; matching the fingerprint keeps the
+        // model's identical rows from reloading it when they come back.
+        appliedFingerprint = Self.fingerprint(sections: sections, isSectioned: isSectioned)
+        onMoveFavorite?(sourceIndexPath, destinationIndexPath)
     }
 }
 

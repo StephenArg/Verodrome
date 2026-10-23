@@ -686,8 +686,17 @@ public final class LibraryActions {
     /// Pins a playlist to the top of the playlist lists, or unpins it. Local only — see
     /// `Playlist.isFavorite`.
     public func setFavorite(_ isFavorite: Bool, for playlist: Playlist) throws {
-        playlist.isFavorite = isFavorite
-        try repository?.save()
+        if let repository {
+            try repository.setFavorite(isFavorite, for: playlist)
+        } else {
+            playlist.isFavorite = isFavorite
+        }
+        NotificationCenter.default.post(name: .playlistFavoriteChanged, object: nil)
+    }
+
+    /// Puts the favorite playlists in the order given, top first.
+    public func arrangeFavoritePlaylists(_ compoundRemoteIds: [String]) throws {
+        try repository?.arrangeFavorites(compoundRemoteIds)
         NotificationCenter.default.post(name: .playlistFavoriteChanged, object: nil)
     }
 

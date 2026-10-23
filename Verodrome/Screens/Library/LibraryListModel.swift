@@ -237,6 +237,16 @@ final class LibraryListModel<Item: LibraryRow> {
         )
     }
 
+    /// Applies a move the table has already drawn, so the rows handed back to it match
+    /// what's on screen until the next load replaces them.
+    func moveRow(from source: IndexPath, to destination: IndexPath) {
+        guard source.section == destination.section,
+              sections.indices.contains(source.section) else { return }
+        let rows = sections[source.section].items.indices
+        guard rows.contains(source.row), rows.contains(destination.row) else { return }
+        sections[source.section] = sections[source.section].movingRow(from: source.row, to: destination.row)
+    }
+
     private func hasRows(
         for sort: LibrarySortOption,
         downloadedOnly: Bool,

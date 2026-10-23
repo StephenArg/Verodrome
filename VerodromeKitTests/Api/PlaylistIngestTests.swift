@@ -153,12 +153,15 @@ final class PlaylistIngestTests: XCTestCase {
 
         let main = LibraryRepository(context: storage.mainContext)
         let account = try XCTUnwrap(storage.mainContext.fetch(FetchDescriptor<Account>()).first)
-        try XCTUnwrap(main.fetchPlaylists(account: account).first).isFavorite = true
+        let playlist = try XCTUnwrap(main.fetchPlaylists(account: account).first)
+        playlist.isFavorite = true
+        playlist.favoriteOrder = 3
         try main.save()
 
         try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix", songCount: 1)])
         try await ingester.ingest(playlists: [IngestPlaylist(id: "p1", name: "Mix", songCount: 1, songIds: ["s1"])])
         XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.isFavorite, true)
+        XCTAssertEqual(try fetchPlaylist(storage, remoteId: "p1")?.favoriteOrder, 3)
     }
 
     /// Every list built on `fetchPlaylists` (CarPlay, Siri suggestions) puts favorites
@@ -180,5 +183,105 @@ final class PlaylistIngestTests: XCTestCase {
         try main.save()
 
         XCTAssertEqual(try main.fetchPlaylists(account: account).map(\.name), ["Beta", "Delta", "Alpha", "Charlie"])
+    }
+
+    /// While the favorites still read A–Z, a new one takes its alphabetical place.
+    @MainActor
+    func testPinningSlotsIntoAscendingFavorites() async throws {
+        let library = try await FavoritesLibrary(["Alpha", "Beta", "Charlie", "Delta"], ingester: makeIngester)
+        try library.pin("Delta", "Beta", "Charlie")
+        XCTAssertEqual(try library.favoriteNames(), ["Beta", "Charlie", "Delta"])
+        try library.pin("Alpha")
+        XCTAssertEqual(try library.favoriteNames(), ["Alpha", "Beta", "Charlie", "Delta"])
+    }
+
+    /// Favorites arranged Z–A stay that way.
+    @MainActor
+    func testPinningSlotsIntoDescendingFavorites() async throws {
+        let library = try await FavoritesLibrary(["Alpha", "Beta", "Charlie", "Delta"], ingester: makeIngester)
+        try library.pin("Beta", "Delta")
+        try library.arrange("Delta", "Beta")
+        try library.pin("Charlie")
+        XCTAssertEqual(try library.favoriteNames(), ["Delta", "Charlie", "Beta"])
+        try library.pin("Alpha")
+        XCTAssertEqual(try library.favoriteNames(), ["Delta", "Charlie", "Beta", "Alpha"])
+    }
+
+    /// Once the favorites have been arranged out of name order, a new one goes last.
+    @MainActor
+    func testPinningAfterRearrangingGoesToTheBottom() async throws {
+        let library = try await FavoritesLibrary(["Alpha", "Beta", "Charlie", "Delta"], ingester: makeIngester)
+        try library.pin("Alpha", "Charlie", "Delta")
+        try library.arrange("Charlie", "Alpha", "Delta")
+        try library.pin("Beta")
+        XCTAssertEqual(try library.favoriteNames(), ["Charlie", "Alpha", "Delta", "Beta"])
+    }
+
+    /// Digits sort after the letters in A–Z# and before them in #A–Z, as the list's own
+    /// sorts put them; either counts as alphabetical.
+    @MainActor
+    func testPinningFollowsWhereFavoritesPutDigits() async throws {
+        let lettersFirst = try await FavoritesLibrary(["90s", "Alpha", "Beta"], ingester: makeIngester)
+        try lettersFirst.pin("Alpha", "90s")
+        try lettersFirst.pin("Beta")
+        XCTAssertEqual(try lettersFirst.favoriteNames(), ["Alpha", "Beta", "90s"])
+
+        let digitsFirst = try await FavoritesLibrary(["90s", "Alpha", "Beta"], ingester: makeIngester)
+        try digitsFirst.pin("Alpha", "90s")
+        try digitsFirst.arrange("90s", "Alpha")
+        try digitsFirst.pin("Beta")
+        XCTAssertEqual(try digitsFirst.favoriteNames(), ["90s", "Alpha", "Beta"])
+    }
+
+    /// Unpinning and pinning again places the playlist by the same rule, not where it was.
+    @MainActor
+    func testRepinningPlacesThePlaylistAgain() async throws {
+        let library = try await FavoritesLibrary(["Alpha", "Beta", "Charlie"], ingester: makeIngester)
+        try library.pin("Alpha", "Beta", "Charlie")
+        try library.unpin("Beta")
+        try library.pin("Beta")
+        XCTAssertEqual(try library.favoriteNames(), ["Alpha", "Beta", "Charlie"])
+
+        // Taking Alpha off the bottom leaves the rest in A–Z order, so it comes back first.
+        try library.arrange("Beta", "Charlie", "Alpha")
+        try library.unpin("Alpha")
+        try library.pin("Alpha")
+        XCTAssertEqual(try library.favoriteNames(), ["Alpha", "Beta", "Charlie"])
+    }
+}
+
+/// An in-memory library of playlists named for their ids, for pinning and arranging
+/// favorites by name.
+@MainActor
+private struct FavoritesLibrary {
+    let storage: PersistentStorage
+    let repository: LibraryRepository
+    let account: Account
+
+    init(_ names: [String], ingester makeIngester: (PersistentStorage) -> SwiftDataLibraryIngester) async throws {
+        storage = PersistentStorage(inMemory: true)
+        try await makeIngester(storage).ingest(playlists: names.map { IngestPlaylist(id: $0, name: $0) })
+        repository = LibraryRepository(context: storage.mainContext)
+        account = try XCTUnwrap(storage.mainContext.fetch(FetchDescriptor<Account>()).first)
+    }
+
+    func pin(_ names: String...) throws {
+        for name in names { try repository.setFavorite(true, for: playlist(named: name)) }
+    }
+
+    func unpin(_ names: String...) throws {
+        for name in names { try repository.setFavorite(false, for: playlist(named: name)) }
+    }
+
+    func arrange(_ names: String...) throws {
+        try repository.arrangeFavorites(names.map { try playlist(named: $0).compoundRemoteId })
+    }
+
+    func favoriteNames() throws -> [String] {
+        try repository.fetchPlaylists(account: account).filter(\.isFavorite).map(\.name)
+    }
+
+    private func playlist(named name: String) throws -> Playlist {
+        try XCTUnwrap(repository.fetchPlaylists(account: account).first { $0.name == name })
     }
 }

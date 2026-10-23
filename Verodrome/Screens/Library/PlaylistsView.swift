@@ -23,7 +23,10 @@ struct PlaylistsView: View {
             playingId: nowPlaying.currentItem?.playableId,
             isPartial: model.isPartial,
             isSectioned: model.isSectioned,
-            onSelect: { item, _ in selectedId = item.id }
+            onSelect: { item, _ in selectedId = item.id },
+            // A filtered list shows only some of the favorites, so there's no telling
+            // where a dragged one belongs among the rest.
+            onMoveFavorite: searchText.isEmpty && debouncedSearch.isEmpty ? moveFavorite : nil
         )
         .verodromeScreenBackground()
         .navigationTitle("Playlists")
@@ -78,6 +81,14 @@ struct PlaylistsView: View {
         }
     }
 
+    /// The table has already moved the row; keep the model's rows in step so a redraw
+    /// before the reload lands doesn't put it back, then save the new order.
+    private func moveFavorite(from source: IndexPath, to destination: IndexPath) {
+        model.moveRow(from: source, to: destination)
+        let ids = model.sections.flatMap(\.items).filter(\.isFavorite).map(\.id)
+        try? LibraryActions.shared.arrangeFavoritePlaylists(ids)
+    }
+
     private func syncCatalog() async {
         do {
             guard let syncer = try await VerodromeKit.shared.ensureActiveLibrarySyncer(),
@@ -127,7 +138,7 @@ struct PlaylistsView: View {
                         limit: nil,
                         matching: #Predicate<Playlist> { $0.isFavorite }
                     ).filter { $0.account?.compoundKey == accountKey }
-                    playlists = favorites + playlists
+                    playlists = Playlist.arrangedFavorites(favorites) + playlists
                 }
                 // SwiftData's SortDescriptor can't order a Bool column, so smart-first
                 // is applied here.
@@ -151,8 +162,9 @@ struct PlaylistsView: View {
                         isSmartPlaylist: playlist.isSmart
                     )
                 }
-                // Favorites lead every order, each group keeping the chosen order within it.
-                let favorites = playlists.filter(\.isFavorite)
+                // Favorites lead every order in the order they were arranged; the chosen
+                // sort only orders the rest.
+                let favorites = Playlist.arrangedFavorites(playlists.filter(\.isFavorite))
                 let others = playlists.filter { !$0.isFavorite }
                 guard request.sort.isAlphabetical else {
                     let snapshots = (favorites + others).map(snapshot)
@@ -163,8 +175,7 @@ struct PlaylistsView: View {
                 }
                 var sections: [LibraryRowSection<LibraryRowSnapshot>] = []
                 if !favorites.isEmpty {
-                    let ordered = AlphabetSectioning.sections(favorites.map(snapshot), sort: request.sort).flatMap(\.items)
-                    sections.append(LibraryRowSection(letter: "Favorites", items: ordered, showsInIndex: false))
+                    sections.append(LibraryRowSection(letter: "Favorites", items: favorites.map(snapshot), showsInIndex: false))
                 }
                 // Title orders keep smart playlists out of the letters and after them:
                 // they're rebuilt by the server from rules rather than added to by hand,
@@ -213,12 +224,12 @@ struct PlaylistsView: View {
 }
 
 /// The Playlists list's order for a flat list of playlists, so the add-to-playlist sheets
-/// read the same way as the list they're picked from. Favorites first, then the rest, each
-/// in the list's chosen sort.
+/// read the same way as the list they're picked from. Favorites first as arranged, then
+/// the rest in the list's chosen sort.
 enum PlaylistListOrder {
     static func ordered(_ playlists: [Playlist], by sort: LibrarySortOption) -> [Playlist] {
-        let sorted = titleOrdered(playlists, by: sort)
-        return sorted.filter(\.isFavorite) + sorted.filter { !$0.isFavorite }
+        Playlist.arrangedFavorites(playlists.filter(\.isFavorite))
+            + titleOrdered(playlists.filter { !$0.isFavorite }, by: sort)
     }
 
     /// Same rules as `PlaylistsView.fetchPage`: title sorts go by `sortName` and then group

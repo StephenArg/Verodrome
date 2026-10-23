@@ -364,11 +364,11 @@ struct HomeView: View {
             )
 
         case .playlists:
-            // Favorites first, then fill the rest of the row by name.
+            // Favorites first as arranged, then fill the rest of the row by name.
             let byName = [SortDescriptor(\Playlist.name)]
-            var favoritesDesc = FetchDescriptor<Playlist>(predicate: #Predicate { $0.isFavorite }, sortBy: byName)
-            favoritesDesc.fetchLimit = 20
-            let favorites = try context.fetch(favoritesDesc)
+            let favorites = Array(Playlist.arrangedFavorites(
+                try context.fetch(FetchDescriptor<Playlist>(predicate: #Predicate { $0.isFavorite }))
+            ).prefix(20))
             var othersDesc = FetchDescriptor<Playlist>(predicate: #Predicate { !$0.isFavorite }, sortBy: byName)
             othersDesc.fetchLimit = 20 - favorites.count
             let others = favorites.count < 20 ? try context.fetch(othersDesc) : []

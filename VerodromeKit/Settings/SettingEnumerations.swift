@@ -692,14 +692,7 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
         case .recentlyAdded:
             return positions.reversed()
         case .titleAZ, .titleZA, .titleSymbolsFirst:
-            let descending = sortsTitleDescending
-            let groupRanks = keys.map { Self.titleGroupRank($0.sortTitle, symbolsFirst: showsSymbolsFirst) }
-            return positions.sorted { a, b in
-                if groupRanks[a] != groupRanks[b] { return groupRanks[a] < groupRanks[b] }
-                let titleA = keys[a].sortTitle, titleB = keys[b].sortTitle
-                if titleA != titleB { return descending ? titleA > titleB : titleA < titleB }
-                return a < b
-            }
+            return titleOrder(of: keys.map(\.sortTitle))
         case .durationLongest, .durationShortest, .ratingHighest, .playsMost:
             return positions.sorted { a, b in
                 let keyA = keys[a], keyB = keys[b]
@@ -717,6 +710,20 @@ public enum LibrarySortOption: String, Codable, CaseIterable, Sendable, Identifi
                 if keyA.sortTitle != keyB.sortTitle { return keyA.sortTitle < keyB.sortTitle }
                 return a < b
             }
+        }
+    }
+
+    /// Indices into `sortTitles` in this option's title order, grouped the way the
+    /// library lists' letter sections are. Ties keep their positions, so titles already in
+    /// order come back as `0..<count`. Options that don't sort by title read as A–Z#.
+    func titleOrder(of sortTitles: [String]) -> [Int] {
+        let descending = sortsTitleDescending
+        let groupRanks = sortTitles.map { Self.titleGroupRank($0, symbolsFirst: showsSymbolsFirst) }
+        return sortTitles.indices.sorted { a, b in
+            if groupRanks[a] != groupRanks[b] { return groupRanks[a] < groupRanks[b] }
+            let titleA = sortTitles[a], titleB = sortTitles[b]
+            if titleA != titleB { return descending ? titleA > titleB : titleA < titleB }
+            return a < b
         }
     }
 

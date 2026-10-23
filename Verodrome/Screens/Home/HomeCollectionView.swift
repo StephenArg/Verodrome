@@ -397,7 +397,7 @@ final class HomeCollectionViewController: UIViewController, UICollectionViewDele
         section.contentInsets = NSDirectionalEdgeInsets(
             top: 8,
             leading: 16,
-            bottom: 24,
+            bottom: 22,
             trailing: 16
         )
 
@@ -943,24 +943,24 @@ final class HomeTileCell: UICollectionViewCell {
     private var artworkToken: String?
     private var artworkTask: Task<Void, Never>?
     private var artworkWidthConstraint: NSLayoutConstraint!
-    private var titleHeightConstraint: NSLayoutConstraint!
 
     /// Vertical spacing between the artwork, title and subtitle.
-    private static let titleSpacing: CGFloat = 8
-    private static let subtitleSpacing: CGFloat = 2
+    private static let titleSpacing: CGFloat = 4
+    private static let subtitleSpacing: CGFloat = 0
 
+    /// A point under Subheadline, still scaling with Dynamic Type.
     static func titleFont(for traits: UITraitCollection) -> UIFont {
-        UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).semibold
+        let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).semibold
+        return font.withSize(font.pointSize - 1)
     }
 
-    /// Two reserved title lines, so a one-line title beside a two-line one doesn't leave
-    /// the row ragged.
+    /// One line; a longer title is truncated.
     static func titleHeight(for traits: UITraitCollection) -> CGFloat {
-        ceil(titleFont(for: traits).lineHeight * 2)
+        ceil(titleFont(for: traits).lineHeight)
     }
 
     /// The single source of truth for tile height, shared with the section layout so the
-    /// two can't disagree. Square artwork, two title lines, one subtitle line.
+    /// two can't disagree. Square artwork, one title line, one subtitle line.
     static func height(for traits: UITraitCollection) -> CGFloat {
         let subtitle = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: traits)
         return HomeCollectionViewController.tileWidth
@@ -982,7 +982,7 @@ final class HomeTileCell: UICollectionViewCell {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = Self.titleFont(for: traitCollection)
         titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.numberOfLines = 2
+        titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
 
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1008,7 +1008,6 @@ final class HomeTileCell: UICollectionViewCell {
         artworkWidthConstraint = artworkView.widthAnchor.constraint(
             equalToConstant: HomeCollectionViewController.tileWidth
         )
-        titleHeightConstraint = titleLabel.heightAnchor.constraint(equalToConstant: 0)
 
         NSLayoutConstraint.activate([
             artworkView.topAnchor.constraint(equalTo: contentView.topAnchor),
@@ -1022,7 +1021,6 @@ final class HomeTileCell: UICollectionViewCell {
             ),
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             titleLabel.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
-            titleHeightConstraint,
 
             subtitleRow.topAnchor.constraint(
                 equalTo: titleLabel.bottomAnchor,
@@ -1030,13 +1028,13 @@ final class HomeTileCell: UICollectionViewCell {
             ),
             subtitleRow.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             subtitleRow.trailingAnchor.constraint(equalTo: artworkView.trailingAnchor),
-            subtitleRow.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            subtitleRow.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor)
         ])
 
-        updateTitleHeight()
+        updateTitleFont()
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
             (cell: Self, _: UITraitCollection) in
-            cell.updateTitleHeight()
+            cell.updateTitleFont()
             cell.explicitBadge.applyBorderColor()
         }
 
@@ -1046,9 +1044,8 @@ final class HomeTileCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) { nil }
 
-    private func updateTitleHeight() {
+    private func updateTitleFont() {
         titleLabel.font = Self.titleFont(for: traitCollection)
-        titleHeightConstraint.constant = Self.titleHeight(for: traitCollection)
     }
 
     override func prepareForReuse() {

@@ -538,6 +538,9 @@ public final class Playlist {
     /// Pinned to the top of every playlist list. Kept on this device only: Subsonic can't
     /// star a playlist, so there's nowhere on the server to put it.
     public var isFavorite: Bool = false
+    /// Position among the account's favorites, lowest first. Only read while `isFavorite`;
+    /// ties (favorites pinned before they could be arranged) fall back to name order.
+    public var favoriteOrder: Int = 0
     public var updatedAt: Date
 
     public var account: Account?
@@ -572,6 +575,40 @@ public final class Playlist {
     public static func makeCompoundRemoteId(account: Account?, remoteId: String) -> String {
         let prefix = account?.compoundKey ?? "global"
         return "\(prefix)::playlist::\(remoteId)"
+    }
+}
+
+extension Playlist {
+    /// Favorites in the order they lead every playlist list: as the user arranged them,
+    /// with ties in A–Z# order.
+    public static func arrangedFavorites(_ favorites: [Playlist]) -> [Playlist] {
+        let nameRank = LibrarySortOption.titleAZ.titleOrder(of: favorites.map(\.sortName))
+        var rankOfIndex = [Int](repeating: 0, count: favorites.count)
+        for (rank, index) in nameRank.enumerated() { rankOfIndex[index] = rank }
+        return favorites.indices
+            .sorted { a, b in
+                if favorites[a].favoriteOrder != favorites[b].favoriteOrder {
+                    return favorites[a].favoriteOrder < favorites[b].favoriteOrder
+                }
+                return rankOfIndex[a] < rankOfIndex[b]
+            }
+            .map { favorites[$0] }
+    }
+
+    /// `favorites`, already arranged, with `playlist` pinned among them. While they still
+    /// read in one of the list's title orders it takes its place in that order; once
+    /// they've been rearranged by hand it goes at the bottom.
+    static func arrangedFavorites(_ favorites: [Playlist], adding playlist: Playlist) -> [Playlist] {
+        let names = favorites.map(\.sortName)
+        guard let sort = LibrarySortOption.titleOptions.first(where: {
+            $0.titleOrder(of: names) == Array(names.indices)
+        }) else {
+            return favorites + [playlist]
+        }
+        // Ties fall back to position, so the existing favorites keep their places and
+        // only the new one moves.
+        let all = favorites + [playlist]
+        return sort.titleOrder(of: all.map(\.sortName)).map { all[$0] }
     }
 }
 

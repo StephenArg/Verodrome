@@ -1729,9 +1729,24 @@ private struct AddToPlaylistSheet: View {
     private static let compactDetent = PresentationDetent.fraction(0.4)
 
     @State private var detent = Self.compactDetent
+    /// Room below the last row so it can scroll clear of the bottom Done.
+    @ScaledMetric(relativeTo: .headline) private var doneClearance: CGFloat = 72
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         PlaylistMembershipView(song: song)
+            // At full height the toolbar's Done is out of thumb reach, so another floats at
+            // the bottom over the rows. The short sheet doesn't need one.
+            .overlay(alignment: .bottom) {
+                if detent == .large {
+                    doneButton
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .contentMargins(.bottom, detent == .large ? doneClearance : 0, for: .scrollContent)
+            .animation(.snappy, value: detent == .large)
             // Once expanded, the short detent is dropped: with it in place a pull down
             // only settled back to it, and dismissing took a second, longer drag. Without
             // it the sheet dismisses like any full-height one.
@@ -1743,6 +1758,20 @@ private struct AddToPlaylistSheet: View {
             // list itself starts scrolling.
             .presentationContentInteraction(.resizes)
             .presentationDragIndicator(.visible)
+    }
+
+    /// Opaque so the rows scrolling under it don't show through the label.
+    private var doneButton: some View {
+        Button { dismiss() } label: {
+            Text("Done")
+                .font(.headline)
+                .padding(.horizontal, 24)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(themeManager.accentColor)
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 }
 

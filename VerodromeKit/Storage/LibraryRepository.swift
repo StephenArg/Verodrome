@@ -365,13 +365,36 @@ public final class LibraryRepository {
 
     // MARK: - Playlists
 
-    /// The account's playlists, favorites first and then by name within each group.
+    /// The account's playlists, favorites first in the order they were arranged, then the
+    /// rest by name.
     public func fetchPlaylists(account: Account) throws -> [Playlist] {
         let accountID = account.persistentModelID
         let all = try context.fetch(FetchDescriptor<Playlist>(sortBy: [SortDescriptor(\Playlist.sortName)]))
         let owned = all.filter { $0.account?.persistentModelID == accountID }
         // SortDescriptor can't order a Bool column, so favorites are lifted out here.
-        return owned.filter(\.isFavorite) + owned.filter { !$0.isFavorite }
+        return Playlist.arrangedFavorites(owned.filter(\.isFavorite)) + owned.filter { !$0.isFavorite }
+    }
+
+    /// Pins a playlist to the top of its account's playlist lists, or unpins it. A new
+    /// favorite is placed by `Playlist.arrangedFavorites(_:adding:)`.
+    public func setFavorite(_ isFavorite: Bool, for playlist: Playlist) throws {
+        if isFavorite, !playlist.isFavorite {
+            let favorites = try playlist.account.map { try fetchPlaylists(account: $0).filter(\.isFavorite) } ?? []
+            for (index, favorite) in Playlist.arrangedFavorites(favorites, adding: playlist).enumerated() {
+                favorite.favoriteOrder = index
+            }
+        }
+        // Unpinning leaves the other favorites' positions alone; only their order matters.
+        playlist.isFavorite = isFavorite
+        try save()
+    }
+
+    /// Rewrites the favorites' positions to match `compoundRemoteIds`, top first.
+    public func arrangeFavorites(_ compoundRemoteIds: [String]) throws {
+        for (index, id) in compoundRemoteIds.enumerated() {
+            try fetchPlaylist(compoundRemoteId: id)?.favoriteOrder = index
+        }
+        try save()
     }
 
     @discardableResult
