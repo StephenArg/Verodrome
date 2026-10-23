@@ -30,6 +30,7 @@ struct GenresView: View {
             isSectioned: model.isSectioned,
             onSelect: { item, _ in selectedId = item.id }
         )
+        .verodromeScreenBackground()
         .navigationTitle("Genres")
         .searchable(text: $searchText, prompt: "Filter genres")
         .debouncedSearch(text: $searchText) { newValue in

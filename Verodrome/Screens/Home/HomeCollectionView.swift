@@ -140,10 +140,10 @@ final class HomeCollectionViewController: UIViewController, UICollectionViewDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .verodromeBackground
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.delegate = self
-        collectionView.backgroundColor = .systemBackground
+        collectionView.backgroundColor = .verodromeBackground
         // Match library lists: plain UIViewController + edge-pinned scroll view lets the
         // navigation large title own inset adjustment instead of UICollectionViewController
         // fighting it on the first scroll.
@@ -239,7 +239,7 @@ final class HomeCollectionViewController: UIViewController, UICollectionViewDele
         )
         host.safeAreaRegions = []
         host.sizingOptions = .intrinsicContentSize
-        host.view.backgroundColor = .systemBackground
+        host.view.backgroundColor = .verodromeBackground
         host.view.isHidden = true
         // Let drags that start on the bar scroll the board underneath.
         host.view.isUserInteractionEnabled = false

@@ -18,7 +18,7 @@ struct SharedView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
-                    .listRowBackground(Color(.systemBackground))
+                    .verodromePlainRow()
             }
 
             ForEach(shares) { share in
@@ -30,7 +30,7 @@ struct SharedView: View {
                     ShareRow(share: share)
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(Color(.systemBackground))
+                .verodromePlainRow()
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     // No `.destructive` role here: that tells List to animate the row
                     // away immediately, which flashes invisible while the confirm sheet
@@ -54,7 +54,7 @@ struct SharedView: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .verodromePlainList()
         .navigationTitle("Shared")
         .overlay { emptyState }
         .refreshable { await reload() }

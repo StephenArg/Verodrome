@@ -28,12 +28,13 @@ struct RadiosView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .listRowBackground(Color(.systemBackground))
+                    .verodromePlainRow()
                     .disabled(radio.streamURL == nil)
                 }
-                .listStyle(.plain)
+                .verodromePlainList()
             }
         }
+        .verodromeScreenBackground()
         .navigationTitle("Radios")
     }
 

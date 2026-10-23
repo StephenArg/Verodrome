@@ -49,6 +49,6 @@ struct LibrarySyncHomeBanner: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 8)
-            .background(Color(.systemBackground))
+            .background(VerodromeTheme.background)
     }
 }

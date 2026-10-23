@@ -22,6 +22,7 @@ struct LibraryEditorView: View {
             } footer: {
                 Text("Drag to reorder. Keep at least one category.")
             }
+            .verodromePlainRow()
 
             if !hiddenCategories.isEmpty {
                 Section("Hidden Categories") {
@@ -34,6 +35,7 @@ struct LibraryEditorView: View {
                         }
                     }
                 }
+                .verodromePlainRow()
             }
         }
         .verodromePlainList()

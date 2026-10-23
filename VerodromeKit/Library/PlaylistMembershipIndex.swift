@@ -36,6 +36,8 @@ public final class PlaylistMembershipIndex: ObservableObject {
     /// the old answer back while the server call is still running.
     private var pins: [MembershipKey: Pin] = [:]
     private var nextPinToken = 0
+    /// Pairs with a `setMembership` call still running, so their writes go one at a time.
+    private var lanes: [MembershipKey: Lane] = [:]
 
     /// A catalog sync rewrites every playlist's items in turn; waiting this long after
     /// the last change collapses the burst into one build.
@@ -71,39 +73,76 @@ public final class PlaylistMembershipIndex: ObservableObject {
 
     // MARK: - Maintenance
 
-    /// Shows `isMember` immediately, runs `write`, and puts the previous answer back if
-    /// it throws.
+    /// Shows `isMember` immediately, runs `write`, and puts back what the server last had
+    /// if it throws.
     ///
     /// The change is held over any rebuild that finishes while `write` is running. Once
     /// it returns the store is authoritative again, and a rebuild is scheduled to confirm.
+    ///
+    /// Calls for the same pair write one at a time, in the order they were made, so a row
+    /// tapped again before the server has answered can flip straight back without two
+    /// writes racing — a removal that overtook its add would find nothing to remove. When
+    /// a call's turn comes, its write is skipped if a later call has taken over or the
+    /// server already has the answer it asks for.
+    ///
+    /// - Returns: `false` when a later call for the pair took over before this one
+    ///   finished. That call is the one whose outcome is shown, and it reports its own.
+    /// - Throws: `write`'s error, from the latest call only. An earlier call's failure no
+    ///   longer matches what's shown, so the latest call decides whether anything failed.
+    @discardableResult
     public func setMembership(
         songId: String,
         playlistId: String,
         isMember: Bool,
         awaiting write: () async throws -> Void
-    ) async throws {
+    ) async throws -> Bool {
         let key = MembershipKey(songId: songId, playlistId: playlistId)
-        let previous = index[songId]?.contains(playlistId) ?? false
+        let lane = lanes[key] ?? Lane(confirmed: index[songId]?.contains(playlistId) ?? false)
+        lanes[key] = lane
+        lane.calls += 1
+        defer {
+            lane.calls -= 1
+            // `reset()` may have replaced it with a lane for another account.
+            if lane.calls == 0, lanes[key] === lane { lanes[key] = nil }
+        }
+
         nextPinToken &+= 1
         let token = nextPinToken
         pins[key] = Pin(isMember: isMember, token: token)
         Self.apply(isMember, for: key, to: &index)
         version &+= 1
 
+        await lane.awaitTurn()
+        defer { lane.endTurn() }
+
+        // Toggled again while this one waited; the later call does the writing.
+        guard pins[key]?.token == token else { return false }
+        // An earlier call's write already got the server here, or failed and left it here.
+        guard lane.confirmed != isMember else {
+            pins[key] = nil
+            invalidate()
+            return true
+        }
+
         do {
             try await write()
         } catch {
-            // A later toggle of the same pair owns the answer now; leave it alone.
-            if pins[key]?.token == token {
+            let isLatest = pins[key]?.token == token
+            // Otherwise a later toggle of the same pair owns the answer now; leave it alone.
+            if isLatest {
                 pins[key] = nil
-                Self.apply(previous, for: key, to: &index)
+                Self.apply(lane.confirmed, for: key, to: &index)
                 version &+= 1
             }
             invalidate()
-            throw error
+            if isLatest { throw error }
+            return false
         }
-        if pins[key]?.token == token { pins[key] = nil }
+        lane.confirmed = isMember
+        let isLatest = pins[key]?.token == token
+        if isLatest { pins[key] = nil }
         invalidate()
+        return isLatest
     }
 
     /// Marks the mapping stale and schedules a background rebuild.
@@ -121,6 +160,7 @@ public final class PlaylistMembershipIndex: ObservableObject {
     public func reset() {
         index.removeAll()
         pins.removeAll()
+        lanes.removeAll()
         isStale = true
         generation &+= 1
         version &+= 1
@@ -230,4 +270,37 @@ private struct Pin {
     let isMember: Bool
     /// Tells a finishing write whether a later toggle of the same pair has taken over.
     let token: Int
+}
+
+/// One pair's queue of `setMembership` writes.
+@MainActor
+private final class Lane {
+    /// What the server was last known to have, which is what a failed write puts back.
+    var confirmed: Bool
+    /// Calls for the pair that haven't returned yet, waiting or writing.
+    var calls = 0
+    private var isWriting = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(confirmed: Bool) {
+        self.confirmed = confirmed
+    }
+
+    func awaitTurn() async {
+        guard isWriting else {
+            isWriting = true
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    /// Hands the turn straight to the next call in line, so one arriving in between
+    /// can't jump the queue.
+    func endTurn() {
+        if waiting.isEmpty {
+            isWriting = false
+        } else {
+            waiting.removeFirst().resume()
+        }
+    }
 }

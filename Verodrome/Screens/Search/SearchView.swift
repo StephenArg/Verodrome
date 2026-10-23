@@ -59,7 +59,7 @@ struct SearchView: View {
                                     onDelete: { history.remove(term) }
                                 )
                                 .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color(.systemBackground))
+                                .verodromePlainRow()
                             }
                         } header: {
                             HStack {
@@ -80,7 +80,7 @@ struct SearchView: View {
                                 ProgressView()
                                 Text("Searching server…").foregroundStyle(.secondary)
                             }
-                            .listRowBackground(Color(.systemBackground))
+                            .verodromePlainRow()
                         }
                     } else if isAwaitingLocalSearch, !hasResults {
                         Section {
@@ -88,7 +88,7 @@ struct SearchView: View {
                                 ProgressView()
                                 Text("Searching…").foregroundStyle(.secondary)
                             }
-                            .listRowBackground(Color(.systemBackground))
+                            .verodromePlainRow()
                         }
                     }
                     if !artistRows.isEmpty {
@@ -99,7 +99,7 @@ struct SearchView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu { artistContextMenu(for: row) }
-                                .listRowBackground(Color(.systemBackground))
+                                .verodromePlainRow()
                             }
                         }
                     }
@@ -117,7 +117,7 @@ struct SearchView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu { albumContextMenu(for: row) }
-                                .listRowBackground(Color(.systemBackground))
+                                .verodromePlainRow()
                             }
                         }
                     }
@@ -135,7 +135,7 @@ struct SearchView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .songActions(compoundRemoteId: row.id)
-                                .listRowBackground(Color(.systemBackground))
+                                .verodromePlainRow()
                             }
                         }
                     }
@@ -151,7 +151,7 @@ struct SearchView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                .listRowBackground(Color(.systemBackground))
+                                .verodromePlainRow()
                             }
                         }
                     }
@@ -159,12 +159,13 @@ struct SearchView: View {
                        !isAwaitingLocalSearch,
                        !hasResults {
                         ContentUnavailableView.search(text: searchText)
-                            .listRowBackground(Color(.systemBackground))
+                            .verodromePlainRow()
                     }
                 }
             }
-            .listStyle(.plain)
+            .verodromePlainList()
         }
+        .verodromeScreenBackground()
         .navigationTitle("Search")
         .debouncedSearch(text: $searchText, delay: .milliseconds(300)) { newValue in
             debouncedSearch = newValue

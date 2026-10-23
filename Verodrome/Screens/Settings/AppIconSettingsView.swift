@@ -84,7 +84,7 @@ struct AppIconSettingsView: View {
             }
             .padding()
         }
-        .background(Color(.systemBackground))
+        .verodromeScreenBackground()
         .navigationTitle("App Icon")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: syncSelectionFromSystem)

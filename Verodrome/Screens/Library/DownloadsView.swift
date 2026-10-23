@@ -127,6 +127,7 @@ struct DownloadsView: View {
                         } footer: {
                             Text("These start once you're on Wi-Fi. Change this under Settings › Library › Downloads.")
                         }
+                        .verodromePlainRow()
                     }
 
                     if !failedIds.isEmpty {
@@ -143,6 +144,7 @@ struct DownloadsView: View {
                                 }
                             }
                         }
+                        .verodromePlainRow()
                     }
 
                     if !albumRows.isEmpty {
@@ -151,6 +153,7 @@ struct DownloadsView: View {
                                 albumRow(row)
                             }
                         }
+                        .verodromePlainRow()
                     }
 
                     if !downloadedRows.isEmpty {
@@ -159,11 +162,13 @@ struct DownloadsView: View {
                                 songRow(row)
                             }
                         }
+                        .verodromePlainRow()
                     }
                 }
-                .listStyle(.plain)
+                .verodromePlainList()
             }
         }
+        .verodromeScreenBackground()
         .navigationTitle("Downloads")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
         .toolbar { toolbarContent }
@@ -619,6 +624,7 @@ private struct DownloadsInProgressSection: View {
                     }
                 }
             }
+            .verodromePlainRow()
         }
     }
 }

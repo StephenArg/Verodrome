@@ -63,6 +63,7 @@ struct AlbumsView: View {
                 )
             }
         }
+        .verodromeScreenBackground()
         .navigationTitle("Albums")
         .searchable(text: $searchText, prompt: "Filter albums")
         .debouncedSearch(text: $searchText) { newValue in

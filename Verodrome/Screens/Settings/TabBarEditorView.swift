@@ -25,6 +25,7 @@ struct TabBarEditorView: View {
                     "Show between 1 and \(RootTabItem.maxVisible) tabs. Keep Home or Library so Settings stays reachable. Drag to reorder."
                 )
             }
+            .verodromePlainRow()
 
             if !hiddenTabs.isEmpty {
                 Section("Available Tabs") {
@@ -39,6 +40,7 @@ struct TabBarEditorView: View {
                         .disabled(!canAdd)
                     }
                 }
+                .verodromePlainRow()
             }
         }
         .verodromePlainList()

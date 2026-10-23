@@ -65,6 +65,7 @@ struct SongsView: View {
             )
         }
         .animation(.easeOut(duration: 0.2), value: showsFilterBar)
+        .verodromeScreenBackground()
         .navigationTitle("Songs")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
         .navigationDestination(item: $selectedArtistId) { ArtistDetailView(artistID: $0) }

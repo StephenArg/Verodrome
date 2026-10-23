@@ -15,8 +15,6 @@ struct PlaylistMembershipView: View {
     @EnvironmentObject private var settings: SettingsStore
     @Environment(\.dismiss) private var dismiss
 
-    /// Playlists with a toggle in flight, so a slow server can't be double-tapped.
-    @State private var pending: Set<String> = []
     @State private var isCreating = false
     @State private var newPlaylistName = ""
     /// Count / art shown after a tap, before SwiftData merges the write back onto the
@@ -98,7 +96,6 @@ struct PlaylistMembershipView: View {
     @ViewBuilder
     private func row(for playlist: Playlist) -> some View {
         let isMember = membership.isMember(songId: song.remoteId, playlistId: playlist.remoteId)
-        let isPending = pending.contains(playlist.remoteId)
         let shown = presentation[playlist.remoteId]
         // `presentation` already carries the count through a toggle, so this doesn't walk
         // `playlist.items` per row per redraw — that faulted every entry of every visible
@@ -109,7 +106,7 @@ struct PlaylistMembershipView: View {
             ?? (isMember ? songArtworkToken : nil)
 
         Button {
-            Task { await toggle(playlist, isMember: isMember) }
+            Task { await toggle(playlist) }
         } label: {
             HStack(spacing: 12) {
                 EntityRow(
@@ -120,32 +117,33 @@ struct PlaylistMembershipView: View {
                     isFavorite: playlist.isFavorite
                 )
 
-                if isPending {
-                    ProgressView()
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: isMember ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isMember ? themeManager.accentColor : Color.secondary)
-                        .symbolRenderingMode(.monochrome)
-                        .contentTransition(.symbolEffect(.replace))
-                        .frame(width: 24, height: 24)
-                }
+                Image(systemName: isMember ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isMember ? themeManager.accentColor : Color.secondary)
+                    .symbolRenderingMode(.monochrome)
+                    .contentTransition(.symbolEffect(.replace))
+                    // The index publishes outside any transaction, so without this the
+                    // replace transition above has nothing to animate with.
+                    .animation(.snappy, value: isMember)
+                    .frame(width: 24, height: 24)
             }
         }
         .buttonStyle(.plain)
-        .disabled(isPending)
         .accessibilityLabel(playlist.name)
         .accessibilityValue(isMember ? "In playlist" : "Not in playlist")
     }
 
     // MARK: - Actions
 
-    private func toggle(_ playlist: Playlist, isMember: Bool) async {
+    private func toggle(_ playlist: Playlist) async {
         let playlistId = playlist.remoteId
-        guard !pending.contains(playlistId) else { return }
-        pending.insert(playlistId)
-        defer { pending.remove(playlistId) }
+        // Names for the warning, taken now: by the time the server answers, the sheet may
+        // be gone and the playlist pruned from the store.
+        let songTitle = song.title
+        let playlistName = playlist.name
+        // Read at the tap rather than when the row was drawn, since a quick second tap
+        // can land before the row has redrawn from the first.
+        let isMember = membership.isMember(songId: song.remoteId, playlistId: playlistId)
 
         let previous = presentation[playlistId]
         let nextCount = isMember
@@ -162,19 +160,22 @@ struct PlaylistMembershipView: View {
         presentation[playlistId] = RowPresentation(songCount: nextCount, artworkToken: nextArt)
 
         do {
-            // Flipped first so the row answers the tap immediately; the server round trip
-            // can take a while, and a failure puts it back.
-            try await membership.setMembership(songId: song.remoteId, playlistId: playlistId, isMember: !isMember) {
+            // Flipped first so the row answers the tap immediately, with no spinner: the
+            // server round trip can take a while, and a failure puts it back. Tapping
+            // again before it's done flips straight back and queues behind it.
+            let isLatest = try await membership.setMembership(songId: song.remoteId, playlistId: playlistId, isMember: !isMember) {
                 if isMember {
                     try await LibraryActions.shared.removeSong(song, from: playlist)
                 } else {
                     try await LibraryActions.shared.addSongs([song], to: playlist)
                 }
             }
+            // Tapped again since; the later tap reports how it went.
+            guard isLatest else { return }
             if isMember {
-                ActionToast.show("Removed from \(playlist.name)")
+                ActionToast.show("Removed from \(playlistName)")
             } else {
-                ActionToast.addedToPlaylist(playlist.name)
+                ActionToast.addedToPlaylist(playlistName)
             }
             // Prefer whatever the write just persisted on this model instance.
             presentation[playlistId] = RowPresentation(
@@ -185,22 +186,30 @@ struct PlaylistMembershipView: View {
             presentation[playlistId] = previous
             // A rejection is the only way to learn this on a server that reports neither
             // `readonly` nor an owner, and recording it drops the row from the list.
-            if LibraryActions.shared.notePlaylistEditRejected(playlist, error: error) {
-                ActionToast.show("\(playlist.name) can't be edited")
-            } else {
-                ActionToast.show(isMember ? "Couldn't remove from \(playlist.name)" : "Couldn't add to \(playlist.name)")
-            }
+            let isRejected = LibraryActions.shared.notePlaylistEditRejected(playlist, error: error)
+            await Self.warnToggleFailed(
+                removing: isMember,
+                songTitle: songTitle,
+                playlistName: playlistName,
+                isRejected: isRejected,
+                error: error
+            )
         }
     }
 
     private func createAndAdd() async {
         let name = newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
+        let songTitle = song.title
         let playlist: Playlist
         do {
             playlist = try await LibraryActions.shared.createPlaylist(name: name)
         } catch {
-            ActionToast.show("Couldn't create \(name)")
+            ActionAlert.show(
+                title: "Couldn't Create Playlist",
+                message: "“\(name)” wasn't created, so “\(songTitle)” wasn't added to it."
+            )
+            await EventLogger.shared.warning("library", "Couldn't create playlist “\(name)”: \(error.localizedDescription)")
             return
         }
         presentation[playlist.remoteId] = RowPresentation(
@@ -208,9 +217,10 @@ struct PlaylistMembershipView: View {
             artworkToken: songArtworkToken
         )
         do {
-            try await membership.setMembership(songId: song.remoteId, playlistId: playlist.remoteId, isMember: true) {
+            let isLatest = try await membership.setMembership(songId: song.remoteId, playlistId: playlist.remoteId, isMember: true) {
                 try await LibraryActions.shared.addSongs([song], to: playlist)
             }
+            guard isLatest else { return }
             presentation[playlist.remoteId] = RowPresentation(
                 songCount: playlist.songCount,
                 artworkToken: playlist.displayArtworkToken ?? songArtworkToken
@@ -218,8 +228,49 @@ struct PlaylistMembershipView: View {
             ActionToast.addedToPlaylist(playlist.name)
         } catch {
             presentation[playlist.remoteId] = nil
-            ActionToast.show("Couldn't add to \(name)")
+            await Self.warnToggleFailed(
+                removing: false,
+                songTitle: songTitle,
+                playlistName: name,
+                isRejected: false,
+                error: error
+            )
         }
+    }
+
+    /// Raised over whatever is on screen by the time the server answers, since the sheet
+    /// has often been dismissed by then. The row has already been put back.
+    ///
+    /// The server's own wording is logged rather than shown — it's mostly an HTTP status
+    /// or a transport error that means nothing to the reader.
+    private static func warnToggleFailed(
+        removing: Bool,
+        songTitle: String,
+        playlistName: String,
+        isRejected: Bool,
+        error: any Error
+    ) async {
+        let song = "“\(songTitle)”"
+        let playlist = "“\(playlistName)”"
+        if removing {
+            ActionAlert.show(
+                title: "Couldn't Remove from Playlist",
+                message: isRejected
+                    ? "\(playlist) can't be edited, so \(song) is still in it."
+                    : "\(song) is still in \(playlist)."
+            )
+        } else {
+            ActionAlert.show(
+                title: "Couldn't Add to Playlist",
+                message: isRejected
+                    ? "\(playlist) can't be edited, so \(song) wasn't added."
+                    : "\(song) wasn't added to \(playlist)."
+            )
+        }
+        await EventLogger.shared.warning(
+            "library",
+            "Couldn't \(removing ? "remove \(song) from" : "add \(song) to") \(playlist): \(error.localizedDescription)"
+        )
     }
 
     /// Drops the stand-in count / art for rows the store has caught up with, so `@Query`

@@ -164,6 +164,10 @@ extension Color {
 }
 
 extension UIColor {
+    /// UIKit twin of `VerodromeTheme.background`, for the collection and table views
+    /// that paint their own backgrounds.
+    static var verodromeBackground: UIColor { .systemGroupedBackground }
+
     convenience init?(verodromeHex hex: String) {
         var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleaned.hasPrefix("#") { cleaned.removeFirst() }
@@ -194,6 +198,11 @@ enum VerodromeTheme {
     static let artworkCornerRadius: CGFloat = 8
     /// Shared inset for player artwork, title, and seek bar so their widths match.
     static let playerContentHorizontalPadding: CGFloat = 20
+
+    /// Page color behind every screen. Light mode sits a step below white so the rows
+    /// and cards drawn on it, which stay white, read as surfaces instead of blending into
+    /// the page. Dark mode is the same black `systemBackground` gives, sheets included.
+    static let background = Color(uiColor: .verodromeBackground)
 
     static var glassBackground: some ShapeStyle {
         .ultraThinMaterial

@@ -38,5 +38,6 @@ Select a development team in the Verodrome target signing settings, then build a
 
 ## License
 
-Copyright © Verodrome. All rights reserved.
-Choose your own license before App Store distribution.
+Copyright (c) 2026 Vero Fide LLC
+
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.

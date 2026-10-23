@@ -135,6 +135,7 @@ struct HomeView: View {
         )
         .equatable()
         .ignoresSafeArea(edges: .bottom)
+        .verodromeScreenBackground()
         .navigationTitle(account.homeTitle)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

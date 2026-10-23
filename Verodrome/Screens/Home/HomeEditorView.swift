@@ -21,6 +21,7 @@ struct HomeEditorView: View {
                         settings.save()
                     }
                 }
+                .verodromePlainRow()
 
                 Section("Hidden Sections") {
                     ForEach(hiddenSections) { section in
@@ -32,6 +33,7 @@ struct HomeEditorView: View {
                         }
                     }
                 }
+                .verodromePlainRow()
             }
             .verodromePlainList()
             .navigationTitle("Customize Home")

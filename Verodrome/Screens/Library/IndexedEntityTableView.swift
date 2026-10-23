@@ -219,7 +219,8 @@ final class IndexedEntityTableController<Item: LibraryRow>: UIViewController, UI
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .verodromeBackground
+        tableView.backgroundColor = .verodromeBackground
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.dataSource = self
         tableView.delegate = self
@@ -684,6 +685,9 @@ final class EntityTableCell: UITableViewCell {
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
+        // Plain-table cells paint `systemBackground`, which would draw white rows across
+        // the light-mode page.
+        backgroundColor = .verodromeBackground
         artworkView.translatesAutoresizingMaskIntoConstraints = false
         artworkView.contentMode = .scaleAspectFill
         artworkView.clipsToBounds = true

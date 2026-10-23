@@ -29,6 +29,7 @@ struct ArtistsView: View {
             onSelect: { item, _ in selectedId = item.id },
             makeContextMenu: artistContextMenu(for:)
         )
+        .verodromeScreenBackground()
         .navigationTitle("Artists")
         .searchable(text: $searchText, prompt: "Filter artists")
         .debouncedSearch(text: $searchText) { newValue in

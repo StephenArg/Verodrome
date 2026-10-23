@@ -17,9 +17,9 @@ struct PodcastsView: View {
                     symbol: "mic.fill"
                 )
             }
-            .listRowBackground(Color(.systemBackground))
+            .verodromePlainRow()
         }
-        .listStyle(.plain)
+        .verodromePlainList()
         .navigationTitle("Podcasts")
     }
 }

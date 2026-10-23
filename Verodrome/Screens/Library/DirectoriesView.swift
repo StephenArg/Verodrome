@@ -12,6 +12,7 @@ struct DirectoriesView: View {
                 systemImage: "folder.badge.questionmark",
                 description: Text("Directory browsing is available on Subsonic servers only.")
             )
+            .verodromeScreenBackground()
             .navigationTitle("Directories")
         } else {
             DirectoryBrowserView(folderId: nil, title: "Directories")
@@ -77,6 +78,7 @@ struct DirectoryBrowserView: View {
                 }
             }
         }
+        .verodromeScreenBackground()
         .navigationTitle(title)
         .task(id: folderId) { await load() }
         .refreshable { await load() }

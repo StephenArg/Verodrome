@@ -25,9 +25,10 @@ struct LibraryHubView: View {
                     }
                     .font(.body)
                 }
+                .verodromePlainRow()
             }
         }
-        .listStyle(.plain)
+        .verodromePlainList()
         .navigationTitle("Library")
         .navigationDestination(for: LibraryCategory.self) { category in
             destination(for: category)

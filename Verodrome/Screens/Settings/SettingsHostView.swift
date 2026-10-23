@@ -17,6 +17,7 @@ struct SettingsHostView: View {
             } footer: {
                 Text("Plays only what is already downloaded and stops all network requests.")
             }
+            .verodromePlainRow()
 
             Section("Appearance") {
                 NavigationLink { AppearanceSettingsView() } label: {
@@ -29,6 +30,7 @@ struct SettingsHostView: View {
                     settingsLabel("Now Playing", systemImage: "music.note")
                 }
             }
+            .verodromePlainRow()
 
             Section("Playback") {
                 NavigationLink { PlaybackSettingsView() } label: {
@@ -38,12 +40,14 @@ struct SettingsHostView: View {
                     settingsLabel("Equalizer", systemImage: "slider.vertical.3")
                 }
             }
+            .verodromePlainRow()
 
             Section("CarPlay") {
                 NavigationLink { CarPlaySettingsView() } label: {
                     settingsLabel("CarPlay", systemImage: "car")
                 }
             }
+            .verodromePlainRow()
 
             Section("Library") {
                 NavigationLink { LibrarySettingsView() } label: {
@@ -59,6 +63,7 @@ struct SettingsHostView: View {
                     settingsLabel("Storage", systemImage: "internaldrive")
                 }
             }
+            .verodromePlainRow()
 
             Section("Advanced") {
                 NavigationLink { EventLogView() } label: {
@@ -68,12 +73,14 @@ struct SettingsHostView: View {
                     settingsLabel("Developer", systemImage: "hammer")
                 }
             }
+            .verodromePlainRow()
 
             Section {
                 NavigationLink { AboutSettingsView() } label: {
                     settingsLabel("About", systemImage: "questionmark.circle")
                 }
             }
+            .verodromePlainRow()
         }
         .verodromePlainList()
         .navigationTitle("Settings")

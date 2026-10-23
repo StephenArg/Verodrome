@@ -79,14 +79,7 @@ struct PopupPlayerView: View {
                     .presentationDetents([.large])
                 case .addToPlaylist:
                     if let song = currentSong {
-                        PlaylistMembershipView(song: song)
-                            // Opens below the halfway mark so more of the player stays in
-                            // view.
-                            .presentationDetents([.fraction(0.4), .large])
-                            // A swipe anywhere on the list grows the sheet to full height
-                            // before the list itself starts scrolling.
-                            .presentationContentInteraction(.resizes)
-                            .presentationDragIndicator(.visible)
+                        AddToPlaylistSheet(song: song)
                     }
                 case .equalizer:
                     NavigationStack {
@@ -1725,6 +1718,32 @@ private struct SleepTimerChip: View {
 private enum BottomPanel: Identifiable {
     case queue, equalizer, addToPlaylist
     var id: Int { hashValue }
+}
+
+/// The player's playlist membership sheet. Its own view so the detent starts over at the
+/// short height on every presentation.
+private struct AddToPlaylistSheet: View {
+    let song: Song
+
+    /// Opens below the halfway mark so more of the player stays in view.
+    private static let compactDetent = PresentationDetent.fraction(0.4)
+
+    @State private var detent = Self.compactDetent
+
+    var body: some View {
+        PlaylistMembershipView(song: song)
+            // Once expanded, the short detent is dropped: with it in place a pull down
+            // only settled back to it, and dismissing took a second, longer drag. Without
+            // it the sheet dismisses like any full-height one.
+            .presentationDetents(
+                detent == .large ? [.large] : [Self.compactDetent, .large],
+                selection: $detent
+            )
+            // A swipe anywhere on the list grows the sheet to full height before the
+            // list itself starts scrolling.
+            .presentationContentInteraction(.resizes)
+            .presentationDragIndicator(.visible)
+    }
 }
 
 // MARK: - Add to playlist button

@@ -25,6 +25,7 @@ struct PlaylistsView: View {
             isSectioned: model.isSectioned,
             onSelect: { item, _ in selectedId = item.id }
         )
+        .verodromeScreenBackground()
         .navigationTitle("Playlists")
         .searchable(text: $searchText, prompt: "Filter playlists")
         .debouncedSearch(text: $searchText) { newValue in

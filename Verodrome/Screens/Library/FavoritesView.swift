@@ -27,7 +27,7 @@ struct FavoritesView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .listRowBackground(Color(.systemBackground))
+                        .verodromePlainRow()
                     }
                 }
             }
@@ -36,7 +36,7 @@ struct FavoritesView: View {
                 if songRows.isEmpty && albumRows.isEmpty {
                     Text("Mark items as favorites to see them here.")
                         .foregroundStyle(.secondary)
-                        .listRowBackground(Color(.systemBackground))
+                        .verodromePlainRow()
                 } else {
                     ForEach(songRows) { row in
                         EntityRow(
@@ -46,12 +46,12 @@ struct FavoritesView: View {
                             isPlaying: nowPlaying.isCurrent(row.playableId),
                             isExplicit: row.isExplicit
                         )
-                        .listRowBackground(Color(.systemBackground))
+                        .verodromePlainRow()
                     }
                 }
             }
         }
-        .listStyle(.plain)
+        .verodromePlainList()
         .navigationTitle("Favorites")
         .navigationDestination(item: $selectedAlbumId) { AlbumDetailView(albumID: $0) }
         // One trigger, not two: a plain `.task` alongside `.task(id:)` runs the

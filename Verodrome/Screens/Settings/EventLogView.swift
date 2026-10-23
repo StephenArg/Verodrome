@@ -25,6 +25,7 @@ struct EventLogView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .verodromePlainRow()
 
             Section("Entries") {
                 if filtered.isEmpty {
@@ -51,6 +52,7 @@ struct EventLogView: View {
                     }
                 }
             }
+            .verodromePlainRow()
         }
         .verodromePlainList()
         .navigationTitle("Event Log")
