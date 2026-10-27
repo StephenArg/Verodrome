@@ -62,6 +62,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     /// Audio apps may stack at most 5 templates; pushing past that is rejected.
     private static let templateDepthLimit = 5
+    /// `CPNowPlayingTemplate` takes at most 5 buttons.
+    private static let nowPlayingButtonLimit = 5
 
     func scene(
         _ scene: UIScene,
