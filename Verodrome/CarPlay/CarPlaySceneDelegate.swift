@@ -62,6 +62,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     /// Audio apps may stack at most 5 templates; pushing past that is rejected.
     private static let templateDepthLimit = 5
+    /// `CPNowPlayingTemplate` takes at most 5 buttons.
+    private static let nowPlayingButtonLimit = 5
 
     func scene(
         _ scene: UIScene,
@@ -355,7 +357,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             .store(in: &cancellables)
     }
 
-    /// CarPlay shows at most five: like, add to playlist, radio, shuffle, repeat.
+    /// Like, add to playlist, radio, shuffle, repeat, lyrics — six when a shuffleable
+    /// song is playing, one over CarPlay's limit, so repeat drops out then.
     private func refreshNowPlayingButtons() {
         let song = catalog.currentSong()
         let layout = NowPlayingButtonLayout(
@@ -410,14 +413,19 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             shuffle.isSelected = layout.shuffleOn
             buttons.append(shuffle)
         }
-        buttons.append(CPNowPlayingRepeatButton { [weak self] _ in
+        let repeatButton = CPNowPlayingRepeatButton { _ in
             VerodromeKit.shared.player?.toggleRepeat()
-        })
+        }
+        buttons.append(repeatButton)
         let lyrics = CPNowPlayingImageButton(image: CarPlayArtwork.barSymbol("text.quote", pointSize: 16)) { [weak self] _ in
             self?.toggleNowPlayingLyrics()
         }
         lyrics.isSelected = layout.lyricsVisible
         buttons.append(lyrics)
+        // Over the limit, repeat is the one that goes so lyrics stays reachable.
+        if buttons.count > Self.nowPlayingButtonLimit {
+            buttons.removeAll { $0 === repeatButton }
+        }
         CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
     }
 
