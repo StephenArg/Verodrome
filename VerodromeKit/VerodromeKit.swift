@@ -184,9 +184,9 @@ public final class VerodromeKit: ObservableObject {
         )
 
         audioSessionHandler.activate()
+        audioSessionHandler.isPlaying = { [weak facade] in facade?.isPlaying == true }
         audioSessionHandler.onInterrupt = { [weak facade] began in
-            if began, facade?.isPlaying == true { facade?.togglePlayPause() }
-            else if !began, facade?.isPlaying == false { facade?.togglePlayPause() }
+            if began { facade?.pause() } else { facade?.play() }
         }
         remoteCommandHandler.bind(player: facade)
         refreshLaunchPhase()

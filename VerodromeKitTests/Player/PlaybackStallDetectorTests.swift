@@ -122,10 +122,17 @@ final class PlaybackStallDetectorTests: XCTestCase {
 
     func testSilentlyStuckOnlyAfterGraceElapses() {
         var detector = makeDetector()
-        XCTAssertFalse(detector.isSilentlyStuck(grace: 2, now: at(1)))
-        XCTAssertTrue(detector.isSilentlyStuck(grace: 2, now: at(2)))
+        XCTAssertFalse(detector.isSilentlyStuck(grace: 2, isPlaying: true, now: at(1)))
+        XCTAssertTrue(detector.isSilentlyStuck(grace: 2, isPlaying: true, now: at(2)))
         // Once audio flows it is never considered stuck.
         _ = detector.update(progress: 1, isPlaying: true, now: at(3))
-        XCTAssertFalse(detector.isSilentlyStuck(grace: 2, now: at(60)))
+        XCTAssertFalse(detector.isSilentlyStuck(grace: 2, isPlaying: true, now: at(60)))
+    }
+
+    func testPausedEntryIsNeverSilentlyStuck() {
+        // A track parked paused at launch or at the end of the queue never produces audio,
+        // but reloading it when the network comes back would start playback on its own.
+        let detector = makeDetector()
+        XCTAssertFalse(detector.isSilentlyStuck(grace: 2, isPlaying: false, now: at(3_600)))
     }
 }

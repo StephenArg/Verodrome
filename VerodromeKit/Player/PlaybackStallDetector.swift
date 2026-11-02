@@ -67,7 +67,11 @@ struct PlaybackStallDetector {
     /// Nominally loading or playing, but no audio has been produced for `grace` seconds —
     /// long enough that it will not start on its own. Lets connectivity recovery step in
     /// before the full stall timeout elapses.
-    func isSilentlyStuck(grace: TimeInterval, now: Date = Date()) -> Bool {
-        !hasStartedAudio && now.timeIntervalSince(lastAdvance) >= grace
+    ///
+    /// Never true while paused. A track parked at launch or at the end of the queue has
+    /// produced no audio either, but nothing is waiting on it, and reloading it would
+    /// start playback nobody asked for.
+    func isSilentlyStuck(grace: TimeInterval, isPlaying: Bool, now: Date = Date()) -> Bool {
+        isPlaying && !hasStartedAudio && now.timeIntervalSince(lastAdvance) >= grace
     }
 }

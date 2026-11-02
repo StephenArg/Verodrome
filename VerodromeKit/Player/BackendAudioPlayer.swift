@@ -111,7 +111,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     /// before the stall watchdog's full timeout elapses.
     public var isSilentlyStuck: Bool {
         guard !currentPlayURL.isEmpty else { return false }
-        return stallDetector.isSilentlyStuck(grace: Self.silentStuckGrace)
+        return stallDetector.isSilentlyStuck(grace: Self.silentStuckGrace, isPlaying: isPlaying)
     }
 
     public func isCached(item: QueueItem) -> Bool {
