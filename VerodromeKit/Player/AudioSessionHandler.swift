@@ -4,6 +4,12 @@ import Foundation
 @MainActor
 public final class AudioSessionHandler {
     private var observers: [NSObjectProtocol] = []
+    /// Whether the interruption in progress paused playback, so its end resumes only that.
+    private var resumesWhenInterruptionEnds = false
+    /// Read as an interruption begins.
+    public var isPlaying: () -> Bool = { false }
+    /// `true` when an interruption begins. `false` when one ends and the playback it
+    /// paused should come back.
     public var onInterrupt: ((Bool) -> Void)?
 
     public func activate() {
@@ -16,13 +22,24 @@ public final class AudioSessionHandler {
             guard let info = note.userInfo,
                   let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-            if type == .began {
-                self?.onInterrupt?(true)
-            } else if type == .ended {
-                let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt).map { AVAudioSession.InterruptionOptions(rawValue: $0) }
-                if options?.contains(.shouldResume) == true { self?.onInterrupt?(false) }
-            }
+            let options = AVAudioSession.InterruptionOptions(rawValue: info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            MainActor.assumeIsolated { self?.handleInterruption(type, options: options) }
         })
+    }
+
+    /// iOS sends `.shouldResume` whenever the interrupting audio lets go (a Safari video
+    /// ending, a call hanging up), even if nothing was playing here when it began. Acting
+    /// on that alone starts music the user paused hours ago.
+    func handleInterruption(_ type: AVAudioSession.InterruptionType, options: AVAudioSession.InterruptionOptions) {
+        if type == .began {
+            resumesWhenInterruptionEnds = isPlaying()
+            onInterrupt?(true)
+        } else if type == .ended {
+            let resume = resumesWhenInterruptionEnds && options.contains(.shouldResume)
+            // Every end closes the interruption, so a later one can't inherit its state.
+            resumesWhenInterruptionEnds = false
+            if resume { onInterrupt?(false) }
+        }
     }
 
     public func deactivateObservers() {

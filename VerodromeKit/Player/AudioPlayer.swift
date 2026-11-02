@@ -10,9 +10,14 @@ public final class AudioPlayer: ObservableObject {
     private struct StalledTrack {
         let itemId: String
         let position: TimeInterval
+        let stalledAt: Date
     }
 
     private static let maxConsecutiveFailures = 5
+    /// How long a stalled track stays armed to restart by itself when the connection
+    /// returns. Enough to ride out a tunnel or a dead zone. Past it, music starting out
+    /// of nowhere is a surprise, so the track waits for the play button instead.
+    private static let stalledRetryWindow: TimeInterval = 10 * 60
 
     public let queueHandler: PlayQueueHandler
     public let backend: BackendAudioPlayer
@@ -278,7 +283,7 @@ public final class AudioPlayer: ObservableObject {
     /// back up, instead of leaving the engine wedged with nothing watching it.
     private func stall(item: QueueItem, position: TimeInterval, reason: String) {
         consecutivePlayFailures = 0
-        stalled = StalledTrack(itemId: item.id, position: position)
+        stalled = StalledTrack(itemId: item.id, position: position, stalledAt: Date())
         // Only the offline case has a connectivity edge to wait for; otherwise the
         // server is unreachable and tapping play is the way out.
         statusMessage = isEffectivelyOffline
@@ -312,6 +317,14 @@ public final class AudioPlayer: ObservableObject {
         // Offline mode still blocks uncached streams, so stay parked rather than
         // burning the retry and reporting a second failure.
         guard !settings().isOfflineMode || backend.isCached(item: item) else { return }
+        // Too long ago to start by itself. Stay parked so play still resumes where the
+        // audio died, but drop the "will retry" promise.
+        let age = Date().timeIntervalSince(stalled.stalledAt)
+        guard age < Self.stalledRetryWindow else {
+            statusMessage = ""
+            log(.info, "Not retrying playback that stalled \(Int(age / 60)) min ago (\(trigger))")
+            return
+        }
         self.stalled = nil
         statusMessage = ""
         PlayTrace.mark("retrying stalled playback", details: trigger)
