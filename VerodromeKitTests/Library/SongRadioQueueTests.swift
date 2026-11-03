@@ -184,10 +184,10 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertEqual(QueueOrigin.song("").radioSectionTitle, "Radio")
     }
 
-    func testQueueOriginSupportsShuffleOnlyForAlbumAndPlaylist() {
+    func testQueueOriginSupportsShuffleOnlyForAlbumPlaylistAndArtist() {
         XCTAssertTrue(QueueOrigin.album("Abbey Road").supportsShuffle)
         XCTAssertTrue(QueueOrigin.playlist("Favorites").supportsShuffle)
-        XCTAssertFalse(QueueOrigin.artist("Radiohead").supportsShuffle)
+        XCTAssertTrue(QueueOrigin.artist("Radiohead").supportsShuffle)
         XCTAssertFalse(QueueOrigin.song("Karma Police").supportsShuffle)
         XCTAssertFalse(QueueOrigin.genre("Rock").supportsShuffle)
     }

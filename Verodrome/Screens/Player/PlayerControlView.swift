@@ -87,7 +87,7 @@ struct PlayerControlView: View {
         }
     }
 
-    /// Album / playlist queues can restore original order. Shuffle All and a songs-list
+    /// Album / playlist / artist queues can restore original order. Shuffle All and a songs-list
     /// tap still show the control: the former reshuffles, the latter starts Shuffle All.
     private var showsShuffleControl: Bool {
         player.canShuffleQueue

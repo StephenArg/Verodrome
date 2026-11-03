@@ -22,19 +22,28 @@ public struct IngestArtist: Sendable, Hashable {
     public let albumCount: Int?
     public let songCount: Int?
     public let artId: String?
+    /// The signed-in user's 0–5 rating, nil when the response doesn't carry one.
+    public let rating: Int?
+    /// Whether the signed-in user starred/flagged this artist. Nil when the response
+    /// doesn't speak to favorites (so a partial list can't wipe a local like).
+    public let isFavorite: Bool?
 
     public init(
         id: String,
         name: String,
         albumCount: Int? = nil,
         songCount: Int? = nil,
-        artId: String? = nil
+        artId: String? = nil,
+        rating: Int? = nil,
+        isFavorite: Bool? = nil
     ) {
         self.id = id
         self.name = name
         self.albumCount = albumCount
         self.songCount = songCount
         self.artId = artId
+        self.rating = rating
+        self.isFavorite = isFavorite
     }
 }
 

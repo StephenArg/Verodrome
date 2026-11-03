@@ -204,8 +204,8 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public var userQueuedRange: Range<Int> { audioPlayer.queueHandler.userQueuedRange }
     public var contextGeneration: Int { audioPlayer.queueHandler.contextGeneration }
     public var queueOrigin: QueueOrigin? { audioPlayer.queueHandler.queueOrigin }
-    /// Album / playlist queues can restore their original order. Shuffle All and
-    /// similar contexts cannot, so the shuffle control is omitted.
+    /// Album / playlist / artist queues can restore their original order. Shuffle All
+    /// and similar contexts cannot, so the shuffle control is omitted.
     public var canShuffleQueue: Bool { queueOrigin?.supportsShuffle == true }
     /// Album / playlist queues can wrap. Shuffle All and similar only offer repeat-one.
     public var canRepeatAll: Bool { queueOrigin?.supportsRepeatAll == true }
@@ -248,7 +248,7 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
     public func play(items: [QueueItem], startAt: Int, shuffle: ShuffleMode?, origin: QueueOrigin?) async {
         PlayTrace.mark("PlayerFacade.play", details: "count=\(items.count) startAt=\(startAt)")
         if origin?.supportsShuffle != true {
-            // Shuffle All / song / artist queues have no restorable order.
+            // Shuffle All / song / genre queues have no restorable order.
             audioPlayer.queueHandler.setShuffle(.off, reorder: false)
         } else if let shuffle {
             audioPlayer.queueHandler.setShuffle(shuffle, reorder: false)

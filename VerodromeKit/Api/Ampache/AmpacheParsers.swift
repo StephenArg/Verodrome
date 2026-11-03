@@ -96,7 +96,9 @@ enum AmpacheParsers {
                         ?? node.attributes["songcount"]
                         ?? node.attributes["songs"]
                 ),
-                artId: node.attributes["art"] ?? childText(node, "art")
+                artId: node.attributes["art"] ?? childText(node, "art"),
+                rating: rating(node),
+                isFavorite: favoriteFlag(node, absentMeans: nil)
             )
         }
     }

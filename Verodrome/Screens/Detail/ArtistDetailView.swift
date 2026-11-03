@@ -9,6 +9,8 @@ struct ArtistDetailView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var accountStore: AccountStore
     @ObservedObject private var downloadCenter = DownloadCenter.shared
     @State private var artistAlbums: [Album] = []
     @State private var artistSongs: [Song] = []
@@ -37,7 +39,8 @@ struct ArtistDetailView: View {
                         tintKey: tintKey,
                         symbol: "person.fill",
                         onPlay: { play(shuffle: false, artist: artist) },
-                        onShuffle: { play(shuffle: true, artist: artist) }
+                        onShuffle: { play(shuffle: true, artist: artist) },
+                        accessory: { artistStatusBar(for: artist) }
                     )
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -171,6 +174,50 @@ struct ArtistDetailView: View {
     /// without the screen picking up a different color.
     private var tintKey: ArtworkTintKey { .artist(artistID) }
 
+    // MARK: - Status bar
+
+    private var apiType: ApiType? {
+        artists.first?.account?.apiType
+            ?? (try? VerodromeKit.shared.activeAccount()?.apiType)
+    }
+
+    /// Rating on the left, favorite on the right — the album screen's row without the
+    /// download control. Each only appears when the server can store it for an artist.
+    @ViewBuilder
+    private func artistStatusBar(for artist: Artist) -> some View {
+        let canRate = LibraryActions.canRateArtists(
+            on: apiType,
+            serverTypeName: accountStore.serverTypeDisplayName
+        )
+        let canFavorite = LibraryActions.canFavoriteArtists(on: apiType)
+        if canRate || canFavorite {
+            HStack(spacing: 12) {
+                if canRate {
+                    RatingStarsView(rating: artist.rating, starSize: 17, spacing: 6) { newRating in
+                        Task { try? await LibraryActions.shared.setRating(artist: artist, rating: newRating) }
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                if canFavorite {
+                    Button {
+                        Task { try? await LibraryActions.shared.toggleFavorite(artist: artist) }
+                    } label: {
+                        Image(systemName: artist.isFavorite ? "heart.fill" : "heart")
+                            .font(.system(size: 22))
+                            .foregroundStyle(artist.isFavorite ? themeManager.accentColor : Color.primary)
+                            .contentTransition(.symbolEffect(.replace))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(artist.isFavorite ? "Remove Artist from Favorites" : "Add Artist to Favorites")
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
     private var artistOptionsMenu: some View {
         Menu {
             if let artist = artists.first {
@@ -223,16 +270,11 @@ struct ArtistDetailView: View {
             return
         }
 
-        artistAlbums = artist.albums.sorted {
-            ($0.year ?? 0, $0.sortTitle) > ($1.year ?? 0, $1.sortTitle)
-        }
+        artistAlbums = ArtistDiscography.albums(of: artist)
 
         // Only the artist relationship — merging every album's songs faults the whole
         // discography on each reload while a background fill is running.
-        artistSongs = artist.songs.sorted {
-            ($0.albumTitle ?? "", $0.disc ?? 0, $0.track ?? 0)
-                < ($1.albumTitle ?? "", $1.disc ?? 0, $1.track ?? 0)
-        }
+        artistSongs = ArtistDiscography.ordered(artist.songs, albums: artistAlbums)
     }
 
     private var displayedArtistSongs: [Song] {
@@ -321,8 +363,6 @@ struct ArtistDetailView: View {
 
     private var isPopularAvailable: Bool {
         guard settings.showArtistTopSongs else { return false }
-        let apiType = artists.first?.account?.apiType
-            ?? (try? VerodromeKit.shared.activeAccount()?.apiType)
         return ArtistTopSongs.isSupported(on: apiType)
     }
 
@@ -425,19 +465,15 @@ struct ArtistDetailView: View {
             details: "artist=\(artist.name)"
         )
         Task {
-            var songs = displayedArtistSongs
-            if songs.isEmpty {
-                // Play was tapped before the soft fill finished — load tracks now.
+            if !ArtistDiscography.albumsMissingTracks(artistAlbums).isEmpty {
+                // Tapped before the soft fill finished — load the rest now, or the queue
+                // (and its shuffle) would leave those albums out.
                 trackFillTask?.cancel()
-                if let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() {
-                    for album in artistAlbums {
-                        guard !Task.isCancelled else { return }
-                        try? await syncer.sync(albumId: album.remoteId)
-                    }
-                }
+                trackFillTask = nil
+                await ArtistDiscography.fetchMissingTracks(for: artist)
                 reloadArtistContent()
-                songs = displayedArtistSongs
             }
+            let songs = discographyQueue(for: artist)
             PlayTrace.mark("mapping QueueItems", details: "count=\(songs.count)")
             let items = songs.map(QueueItem.from)
             guard !items.isEmpty else { return }
@@ -448,10 +484,18 @@ struct ArtistDetailView: View {
         }
     }
 
+    /// Play, Shuffle, and a Songs tap all queue the whole discography album by album,
+    /// so the player's shuffle can mix every album and turning it off restores them.
+    private func discographyQueue(for artist: Artist) -> [Song] {
+        let songs = ArtistDiscography.songs(of: artist, albums: artistAlbums)
+        return settings.hideExplicitSongs ? songs.filter { !$0.isLyricsExplicit } : songs
+    }
+
     private func playSong(_ song: Song) {
         PlayTrace.begin("ArtistDetail track tap", details: "song=\(song.title)")
-        let items = displayedArtistSongs.map(QueueItem.from)
-        let index = displayedArtistSongs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
+        let songs = artists.first.map { discographyQueue(for: $0) } ?? displayedArtistSongs
+        let items = songs.map(QueueItem.from)
+        let index = songs.firstIndex(where: { $0.compoundRemoteId == song.compoundRemoteId }) ?? 0
         PlayTrace.mark("calling player.play", details: "count=\(items.count) startAt=\(index)")
         let origin = artists.first.map { QueueOrigin.artist($0.name) }
             ?? song.artistName.map { QueueOrigin.artist($0) }

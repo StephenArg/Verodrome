@@ -58,7 +58,9 @@ enum SubsonicParsers {
         }
     }
 
-    static func parseArtists(data: Data) throws -> [IngestArtist] {
+    /// `favoriteAbsentMeans` reads a missing `starred` the way `song(_:)` does: `false`
+    /// for getArtist (authoritative for that artist), `nil` for the full index.
+    static func parseArtists(data: Data, favoriteAbsentMeans: Bool? = nil) throws -> [IngestArtist] {
         try checkForError(data: data)
         let root = try GenericXmlParser().parse(data: data)
         let indexes = root.descendants(named: "index")
@@ -76,7 +78,9 @@ enum SubsonicParsers {
                 albumCount: intValue(node.attributes["albumCount"]),
                 // Not in classic ArtistID3; some servers (and getArtist detail) expose it.
                 songCount: intValue(node.attributes["songCount"]),
-                artId: node.attributes["coverArt"]
+                artId: node.attributes["coverArt"],
+                rating: rating(node.attributes["userRating"]),
+                isFavorite: node.attributes["starred"] != nil ? true : favoriteAbsentMeans
             )
         }
     }

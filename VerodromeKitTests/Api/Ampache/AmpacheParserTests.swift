@@ -11,6 +11,10 @@ final class AmpacheParserTests: XCTestCase {
         XCTAssertEqual(artists[0].songCount, 42)
         XCTAssertEqual(artists[1].albumCount, 1)
         XCTAssertEqual(artists[1].songCount, 8)
+        XCTAssertEqual(artists[0].isFavorite, false)
+        XCTAssertEqual(artists[0].rating, 0)
+        XCTAssertEqual(artists[1].isFavorite, false)
+        XCTAssertNil(artists[1].rating)
     }
 
     func testGenreParser() throws {

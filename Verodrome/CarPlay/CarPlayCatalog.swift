@@ -814,17 +814,14 @@ final class CarPlayCatalog {
     }
 
     func playArtist(compoundRemoteId: String) {
-        guard let account = try? VerodromeKit.shared.activeAccount(),
-              let songs = try? VerodromeKit.shared.repository()?.fetchSongs(account: account) else { return }
-        let artistSongs = songs.filter {
-            $0.artist?.compoundRemoteId == compoundRemoteId
-                || $0.album?.artist?.compoundRemoteId == compoundRemoteId
+        guard let artist = try? VerodromeKit.shared.repository()?.fetchArtist(compoundRemoteId: compoundRemoteId) else {
+            return
         }
-        let name = artistSongs.first?.artistName
-            ?? artistSongs.first?.album?.artist?.name
+        let songs = ArtistDiscography.songs(of: artist, albums: ArtistDiscography.albums(of: artist))
         play(
-            artistSongs.map(QueueItem.from),
-            origin: name.map { .artist($0) }
+            Self.visibleAlbumTracks(songs).map(QueueItem.from),
+            shuffle: .off,
+            origin: .artist(artist.name)
         )
     }
 

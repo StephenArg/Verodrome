@@ -108,3 +108,79 @@ extension Song {
 extension Album {
     var displayArtist: String { artistName ?? artist?.name ?? "Unknown Artist" }
 }
+
+/// An artist's songs as a queue: one album after another in the artist screen's album
+/// order, each in disc / track order. Shuffle mixes the whole thing; turning it off
+/// puts the albums back in sequence.
+@MainActor
+enum ArtistDiscography {
+    /// Newest first — the order the artist screen lists them in.
+    static func albums(of artist: Artist) -> [Album] {
+        artist.albums.sorted {
+            ($0.year ?? 0, $0.sortTitle) > ($1.year ?? 0, $1.sortTitle)
+        }
+    }
+
+    /// Every track on the artist's albums — guest-credited ones included — plus the
+    /// artist's songs on other albums. Walks each album's tracks, so call it from a tap
+    /// rather than a view body.
+    static func songs(of artist: Artist, albums: [Album]) -> [Song] {
+        var seen = Set<String>()
+        let pool = (albums.flatMap(\.songs) + artist.songs).filter {
+            seen.insert($0.compoundRemoteId).inserted
+        }
+        return ordered(pool, albums: albums)
+    }
+
+    /// Groups `songs` by album in `albums` order. Songs on albums not in that list
+    /// (compilations, guest spots) follow, newest first.
+    static func ordered(_ songs: [Song], albums: [Album]) -> [Song] {
+        var rankById: [String: Int] = [:]
+        var rankByTitle: [String: Int] = [:]
+        for (rank, album) in albums.enumerated() {
+            if rankById[album.compoundRemoteId] == nil { rankById[album.compoundRemoteId] = rank }
+            if rankByTitle[album.title] == nil { rankByTitle[album.title] = rank }
+        }
+        let otherAlbums = albums.count
+        let keyed = songs.map { song in
+            // Title only when the album link isn't loaded — a compilation can share a
+            // title with one of the artist's own albums.
+            let rank = song.album.map { rankById[$0.compoundRemoteId] ?? otherAlbums }
+                ?? song.albumTitle.flatMap { rankByTitle[$0] }
+                ?? otherAlbums
+            let isOther = rank == otherAlbums
+            return (
+                song: song,
+                key: (
+                    rank,
+                    isOther ? -(song.year ?? 0) : 0,
+                    isOther ? (song.albumTitle ?? "") : "",
+                    song.disc ?? 0,
+                    song.track ?? 0
+                )
+            )
+        }
+        return keyed.sorted { $0.key < $1.key }.map(\.song)
+    }
+
+    /// Albums whose tracks haven't all been stored yet.
+    static func albumsMissingTracks(_ albums: [Album]) -> [Album] {
+        albums.filter { $0.songs.isEmpty || $0.songs.count < $0.trackCount }
+    }
+
+    /// Fetches tracks for the artist's albums that aren't fully stored — after syncing
+    /// the artist itself when no albums are known yet — so a queue built afterwards
+    /// holds the whole discography. Offline, whatever is already local stays as it is.
+    static func fetchMissingTracks(for artist: Artist) async {
+        let needsAlbums = artist.albums.isEmpty
+        guard needsAlbums || !albumsMissingTracks(artist.albums).isEmpty,
+              let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() else { return }
+        if needsAlbums {
+            try? await syncer.sync(artistId: artist.remoteId)
+        }
+        for album in albumsMissingTracks(artist.albums) {
+            guard !Task.isCancelled else { return }
+            try? await syncer.sync(albumId: album.remoteId)
+        }
+    }
+}

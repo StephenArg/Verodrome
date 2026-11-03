@@ -116,29 +116,13 @@ struct ArtistsView: View {
     private func playArtist(compoundRemoteId: String, shuffle: Bool) {
         guard let artist = resolveArtist(compoundRemoteId: compoundRemoteId) else { return }
         Task {
-            var songs = sortedArtistSongs(artist)
-            if songs.isEmpty {
-                if let syncer = try? await VerodromeKit.shared.ensureActiveLibrarySyncer() {
-                    try? await syncer.sync(artistId: artist.remoteId)
-                    let albums = resolveArtist(compoundRemoteId: compoundRemoteId)?.albums ?? artist.albums
-                    for album in albums {
-                        guard !Task.isCancelled else { return }
-                        try? await syncer.sync(albumId: album.remoteId)
-                    }
-                }
-                songs = resolveArtist(compoundRemoteId: compoundRemoteId).map(sortedArtistSongs) ?? []
-            }
+            await ArtistDiscography.fetchMissingTracks(for: artist)
+            let current = resolveArtist(compoundRemoteId: compoundRemoteId) ?? artist
+            let songs = ArtistDiscography.songs(of: current, albums: ArtistDiscography.albums(of: current))
             let items = songs.map(QueueItem.from)
             guard !items.isEmpty else { return }
             player.play(items: items, shuffle: shuffle, origin: .artist(artist.name))
             router.openPlayer()
-        }
-    }
-
-    private func sortedArtistSongs(_ artist: Artist) -> [Song] {
-        artist.songs.sorted {
-            ($0.albumTitle ?? "", $0.disc ?? 0, $0.track ?? 0)
-                < ($1.albumTitle ?? "", $1.disc ?? 0, $1.track ?? 0)
         }
     }
 

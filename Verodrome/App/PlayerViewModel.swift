@@ -522,7 +522,7 @@ final class PlayerViewModel: ObservableObject {
         queueArrivedShuffled = true
     }
 
-    /// Album and playlist queues can shuffle back to their original order.
+    /// Album, playlist, and artist queues can shuffle back to their original order.
     var canShuffleQueue: Bool { queueOrigin?.supportsShuffle == true }
 
     /// Any non-empty queue can be rearranged. An ordered album / playlist is not sacred —

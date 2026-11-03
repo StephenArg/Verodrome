@@ -180,7 +180,8 @@ public final class SubsonicLibrarySyncer: LibrarySyncer, @unchecked Sendable {
     public func sync(artistId: String) async throws {
         try CommonLibrarySyncer.requireNetwork(isConnected: isConnected())
         let data = try await server.getArtist(id: artistId)
-        let artists = try SubsonicParsers.parseArtists(data: data)
+        // getArtist always states starring for the artist it returns.
+        let artists = try SubsonicParsers.parseArtists(data: data, favoriteAbsentMeans: false)
         try await ingestor.ingest(artists: artists)
 
         let albums = try SubsonicParsers.parseAlbumList(data: data)
