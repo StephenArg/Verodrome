@@ -69,13 +69,13 @@ public enum QueueOrigin: Codable, Sendable, Equatable {
         }
     }
 
-    /// Album and playlist queues have an original order to restore. Shuffle All, a
-    /// song tap, artist radio, and similar contexts do not — the shuffle control
-    /// should not appear for those.
+    /// Album, playlist, and artist queues have an original order to restore — an
+    /// artist's is album after album. Shuffle All, a song tap, and similar contexts
+    /// do not — the shuffle control should not appear for those.
     public var supportsShuffle: Bool {
         switch self {
-        case .album, .playlist: return true
-        case .artist, .song, .genre: return false
+        case .album, .playlist, .artist: return true
+        case .song, .genre: return false
         }
     }
 }

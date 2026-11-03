@@ -109,6 +109,8 @@ public actor SwiftDataLibraryIngester: LibraryIngesting, ModelActor {
             if let albumCount = item.albumCount { artist.albumCount = albumCount }
             if let songCount = item.songCount { artist.songCount = songCount }
             if let artId = item.artId { artist.artworkToken = artId }
+            if let rating = item.rating { artist.rating = rating }
+            if let isFavorite = item.isFavorite { artist.isFavorite = isFavorite }
             processed += 1
             if processed % 200 == 0 {
                 await Task.yield()

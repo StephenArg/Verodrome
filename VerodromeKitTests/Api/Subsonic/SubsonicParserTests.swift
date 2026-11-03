@@ -13,6 +13,22 @@ final class SubsonicParserTests: XCTestCase {
         XCTAssertNil(artists[1].songCount)
     }
 
+    /// The artist index only marks starred artists, so a missing `starred` there must
+    /// stay nil instead of wiping a local like; getArtist is authoritative and reads it
+    /// as unstarred.
+    func testArtistParserReadsStarredAndRating() throws {
+        let data = try fixture("subsonic_artists.xml")
+        let index = try SubsonicParsers.parseArtists(data: data)
+        XCTAssertEqual(index[0].isFavorite, true)
+        XCTAssertEqual(index[0].rating, 4)
+        XCTAssertNil(index[1].isFavorite)
+        XCTAssertNil(index[1].rating)
+
+        let detail = try SubsonicParsers.parseArtists(data: data, favoriteAbsentMeans: false)
+        XCTAssertEqual(detail[0].isFavorite, true)
+        XCTAssertEqual(detail[1].isFavorite, false)
+    }
+
     func testGenreParser() throws {
         let data = try fixture("subsonic_genres.xml")
         let genres = try SubsonicParsers.parseGenres(data: data)

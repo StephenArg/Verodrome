@@ -233,11 +233,15 @@ enum IntentLibraryPlayback {
                 ?? artists.first(where: { $0.name.localizedCaseInsensitiveContains(trimmed) }) else {
             throw IntentPlaybackError.notFound(trimmed)
         }
-        let songs = try repo.fetchSongs(account: account).filter {
-            $0.artist?.compoundRemoteId == artist.compoundRemoteId
-                || $0.album?.artist?.compoundRemoteId == artist.compoundRemoteId
+        let songs = ArtistDiscography.songs(of: artist, albums: ArtistDiscography.albums(of: artist))
+        Task {
+            await VerodromeKit.shared.player?.play(
+                items: songs.map(QueueItem.from),
+                startAt: 0,
+                shuffle: nil,
+                origin: .artist(artist.name)
+            )
         }
-        Task { await VerodromeKit.shared.player?.play(items: songs.map(QueueItem.from), startAt: 0) }
     }
 
     @discardableResult

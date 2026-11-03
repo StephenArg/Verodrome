@@ -72,6 +72,52 @@ public final class LibraryActions {
         }
     }
 
+    /// Ampache flags artists, and the Subsonic API stars them through `artistId`.
+    public static func canFavoriteArtists(on apiType: ApiType?) -> Bool {
+        switch apiType {
+        case .ampache, .subsonic, .subsonicLegacy: return true
+        case .notDetected, nil: return false
+        }
+    }
+
+    /// Ampache rates artists. Subsonic's `setRating` is only specified for songs and
+    /// folders, so of the Subsonic servers only Navidrome is trusted to rate an artist.
+    public static func canRateArtists(on apiType: ApiType?, serverTypeName: String?) -> Bool {
+        switch apiType {
+        case .ampache: return true
+        case .subsonic, .subsonicLegacy:
+            return serverTypeName?.caseInsensitiveCompare("navidrome") == .orderedSame
+        case .notDetected, nil: return false
+        }
+    }
+
+    public func setFavorite(artist: Artist, isFavorite: Bool) async throws {
+        artist.isFavorite = isFavorite
+        artist.updatedAt = .now
+        try repository?.save()
+        try await syncOrEnqueue(
+            .setFavorite(entityId: artist.remoteId, type: .artist, isFavorite: isFavorite)
+        ) {
+            try await syncer?.setFavorite(entityId: artist.remoteId, type: .artist, isFavorite: isFavorite)
+        }
+    }
+
+    public func toggleFavorite(artist: Artist) async throws {
+        try await setFavorite(artist: artist, isFavorite: !artist.isFavorite)
+    }
+
+    public func setRating(artist: Artist, rating: Int) async throws {
+        let clamped = max(0, min(5, rating))
+        artist.rating = clamped
+        artist.updatedAt = .now
+        try repository?.save()
+        try await syncOrEnqueue(
+            .setRating(entityId: artist.remoteId, type: .artist, rating: clamped)
+        ) {
+            try await syncer?.setRating(entityId: artist.remoteId, type: .artist, rating: clamped)
+        }
+    }
+
     /// Counts a play locally as soon as it scrobbles.
     ///
     /// Servers report `playCount` back on the next library sync, which can be hours
