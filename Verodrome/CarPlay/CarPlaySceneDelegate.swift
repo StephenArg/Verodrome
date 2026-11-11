@@ -523,6 +523,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         lastLyricsArtworkToken = nil
         if restoreCover {
             applyArtworkOverride(nil)
+            // Lyrics hid the art slot, so a cover load that failed went unseen.
+            // Fetch it now instead of waiting for the next track.
+            VerodromeKit.shared.player?.reloadNowPlayingArtworkIfMissing()
         }
     }
 

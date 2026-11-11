@@ -580,8 +580,23 @@ public final class PlayerFacadeImpl: ObservableObject, PlayerFacade {
             rate: rate
         )
         syncRemoteShuffleRepeat()
-        guard reloadArtwork,
-              let artworkId = currentItem?.artworkId,
+        guard reloadArtwork else { return }
+        loadNowPlayingArtwork()
+    }
+
+    /// Fetches the current cover again unless the info center already holds it at full
+    /// size. A load that fails is otherwise only retried on the next track change, and
+    /// CarPlay lyrics cover the art slot for the whole track, so the missing cover only
+    /// shows once lyrics are turned off.
+    public func reloadNowPlayingArtworkIfMissing() {
+        guard let itemId = currentItem?.id else { return }
+        let hasCover = nowPlayingHandler?.hasArtwork(forItemId: itemId) == true
+        guard !hasCover || lastArtworkLoadedItemId != itemId else { return }
+        loadNowPlayingArtwork()
+    }
+
+    private func loadNowPlayingArtwork() {
+        guard let artworkId = currentItem?.artworkId,
               !artworkId.isEmpty,
               let resolver = artworkResolver
         else { return }
