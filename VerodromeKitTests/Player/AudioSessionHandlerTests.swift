@@ -57,4 +57,44 @@ final class AudioSessionHandlerTests: XCTestCase {
         handler.handleInterruption(.ended, options: .shouldResume)
         XCTAssertEqual(resumes, 0)
     }
+
+    func testShortInterruptionResumes() {
+        let handler = makeHandler(playing: true)
+        let began = Date()
+        handler.handleInterruption(.began, options: [], now: began)
+        handler.handleInterruption(
+            .ended,
+            options: .shouldResume,
+            now: began.addingTimeInterval(AudioSessionHandler.resumeWindow - 1)
+        )
+        XCTAssertEqual(resumes, 1)
+        XCTAssertTrue(isPlaying)
+    }
+
+    func testEndLongAfterBeginStaysPaused() {
+        // A video paused the music and never sent an end. Hours later another app's
+        // video stops and iOS delivers an end with shouldResume.
+        let handler = makeHandler(playing: true)
+        let began = Date()
+        handler.handleInterruption(.began, options: [], now: began)
+        handler.handleInterruption(
+            .ended,
+            options: .shouldResume,
+            now: began.addingTimeInterval(6 * 60 * 60)
+        )
+        XCTAssertEqual(resumes, 0)
+        XCTAssertFalse(isPlaying)
+    }
+
+    func testEndJustPastTheWindowStaysPaused() {
+        let handler = makeHandler(playing: true)
+        let began = Date()
+        handler.handleInterruption(.began, options: [], now: began)
+        handler.handleInterruption(
+            .ended,
+            options: .shouldResume,
+            now: began.addingTimeInterval(AudioSessionHandler.resumeWindow + 1)
+        )
+        XCTAssertEqual(resumes, 0)
+    }
 }

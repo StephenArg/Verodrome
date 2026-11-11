@@ -44,9 +44,10 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
     private var currentPlayURL: String = ""
     /// Set while intentionally replacing/stopping audio so finish callbacks don't advance.
     private var ignoreFinishCallbacks = false
-    /// When set, `play` loads the entry but keeps playback paused (and re-asserts pause
-    /// if the engine reports `.playing` before our pause sticks).
-    private var preferPaused = false
+    /// Whether the user asked for audio: set by `play` / `resume`, cleared by `pause`,
+    /// `stop` and `park`. Engine failures leave it alone, so recovery code can tell a
+    /// stream that died mid-song from one that died hours after the user paused it.
+    public private(set) var wantsPlayback = false
     /// Offset to seek to once the engine reports the entry as playing. `seek(to:)` is a
     /// no-op until AudioStreaming has an `audioPlayingEntry`, so it cannot run inline.
     private var pendingSeek: TimeInterval?
@@ -204,20 +205,14 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         maxBitrate: Int?,
         format: StreamFormat,
         startAt: TimeInterval = 0,
-        startPaused: Bool = false,
         isStillCurrent: () -> Bool = { true }
     ) async throws {
-        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format) startAt=\(Int(startAt)) paused=\(startPaused)")
+        PlayTrace.mark("BackendAudioPlayer.play enter", details: "id=\(item.playableId) title=\(item.title) bitrate=\(maxBitrate.map(String.init) ?? "nil") format=\(format) startAt=\(Int(startAt))")
         // Mute the outgoing cut immediately. The fade-in waits for first progress so a
         // stream that is still buffering does not become audible at full volume.
         cancelVolumeFade()
-        if startPaused {
-            wantsStartRamp = false
-            streamingPlayer.volume = 1
-        } else {
-            wantsStartRamp = true
-            streamingPlayer.volume = 0
-        }
+        wantsStartRamp = true
+        streamingPlayer.volume = 0
         let quality = AudioTranscodeQuality.from(format: format, maxBitrate: maxBitrate)
         let url: URL
         var source = "stream"
@@ -255,7 +250,6 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         // replaces current audio, but `removeFromQueue` is what actually evicts a
         // pre-queued entry, so route through `clearPendingNext()` like reorder does.
         clearPendingNext()
-        preferPaused = startPaused
         // Live streams have no meaningful position to restore.
         pendingSeek = (startAt > 1 && !item.isLiveStream) ? startAt : nil
         // Mark the intended entry before replacing audio so the previous track's
@@ -270,14 +264,9 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         duration = item.isLiveStream ? 0 : item.duration
         currentTime = pendingSeek ?? 0
         stallDetector.reset()
-        if startPaused {
-            streamingPlayer.pause()
-            isPlaying = false
-            stopProgressTimer()
-        } else {
-            isPlaying = true
-            startProgressTimer()
-        }
+        wantsPlayback = true
+        isPlaying = true
+        startProgressTimer()
         PlayTrace.mark("streamingPlayer.play returned (buffering may still be in progress)")
         // Touch cache after play starts so disk meta writes don't delay first audio.
         if let cachedPlayable {
@@ -360,12 +349,13 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
             cancelVolumeFade()
             streamingPlayer.volume = 1
         }
+        wantsPlayback = false
         streamingPlayer.pause()
         isPlaying = false
     }
 
     public func resume() {
-        preferPaused = false
+        wantsPlayback = true
         streamingPlayer.resume()
         // Re-assert rate: some engine transitions snap back to 1×.
         streamingPlayer.rate = playbackRate
@@ -377,7 +367,7 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
 
     public func stop() {
         ignoreFinishCallbacks = true
-        preferPaused = false
+        wantsPlayback = false
         wantsStartRamp = false
         cancelVolumeFade()
         streamingPlayer.volume = 1
@@ -391,6 +381,21 @@ public final class BackendAudioPlayer: NSObject, ObservableObject {
         stallDetector.reset()
         stopProgressTimer()
         setRate(sessionPlaybackRate)
+    }
+
+    /// Shows `item` paused at `position` without handing the engine anything.
+    ///
+    /// Loading an entry "paused" isn't silent. `play(url:)` starts the audio engine at
+    /// once, which claims the audio session and pauses whatever else is playing, and
+    /// AudioStreaming ignores `pause()` until the entry is running, so audio leaks until
+    /// a late pause lands. The request it opens then sits idle for hours, and when the
+    /// connection finally drops it looks like a failed song. The load never helped
+    /// either: an entry that never produced audio can't `resume()`, so the first play
+    /// reloads from `currentTime` regardless.
+    public func park(item: QueueItem, at position: TimeInterval) {
+        stop()
+        duration = item.isLiveStream ? 0 : item.duration
+        currentTime = item.isLiveStream ? 0 : position
     }
 
     public func seek(to seconds: TimeInterval) {
@@ -648,12 +653,6 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 PlayTrace.mark("applying resume offset", details: "\(Int(offset))s")
                 self.seek(to: offset)
             }
-            if self.preferPaused {
-                self.streamingPlayer.pause()
-                self.isPlaying = false
-                self.stopProgressTimer()
-                return
-            }
             // Gapless / crossfade hand-offs never report `.eof`, so this is the only
             // signal that the engine moved on to the pre-queued entry on its own.
             // `play(item:)` clears `pendingNextURL` and sets `currentPlayURL` before
@@ -671,9 +670,21 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 // Engine can reset rate when an entry becomes audible.
                 self.streamingPlayer.rate = self.playbackRate
             }
+            guard self.wantsPlayback else {
+                self.holdPausedAfterLateStart()
+                return
+            }
             self.isPlaying = true
             self.startProgressTimer()
         }
+    }
+
+    /// AudioStreaming ignores `pause()` until an entry is running, so a pause pressed
+    /// while a track was still opening (or mid-crossfade) can be overtaken by the engine
+    /// starting anyway. Hold it to what the user asked for.
+    private func holdPausedAfterLateStart() {
+        PlayTrace.mark("engine started after pause — re-pausing")
+        pause()
     }
 
     public nonisolated func audioPlayerDidFinishBuffering(player: AudioStreaming.AudioPlayer, with entryId: AudioEntryId) {}
@@ -689,9 +700,8 @@ extension BackendAudioPlayer: AudioPlayerDelegate {
                 PlayTrace.mark("AudioStreaming state → \(String(describing: newState))")
                 // No intended entry means we already abandoned this stream.
                 guard !self.currentPlayURL.isEmpty else { return }
-                if self.preferPaused {
-                    self.streamingPlayer.pause()
-                    self.isPlaying = false
+                guard self.wantsPlayback else {
+                    self.holdPausedAfterLateStart()
                     return
                 }
                 self.isPlaying = true

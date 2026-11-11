@@ -1,5 +1,31 @@
+import AVFoundation
 import Foundation
 import MediaPlayer
+import UIKit
+
+/// Records everything that starts audio from outside the app's own controls (remote
+/// commands, CarPlay, Siri, Shortcuts) in Settings → Event Log. Music that starts by
+/// itself can't be traced afterwards otherwise. Headphone buttons, the lock screen and
+/// Control Center all arrive as the same remote command, so the app state and whether
+/// another app was playing are what tell them apart.
+@MainActor
+public enum PlaybackStartLog {
+    /// Logs `trigger` unless playback was already running (`wasPlaying`). Only commands
+    /// that arrive while paused can start music out of nowhere.
+    public static func record(_ trigger: String, wasPlaying: Bool = false) {
+        guard !wasPlaying else { return }
+        let appState: String
+        switch UIApplication.shared.applicationState {
+        case .active: appState = "foreground"
+        case .inactive: appState = "inactive"
+        case .background: appState = "background"
+        @unknown default: appState = "unknown"
+        }
+        let otherAudio = AVAudioSession.sharedInstance().isOtherAudioPlaying
+        let message = "\(trigger) while paused (app \(appState), other audio playing: \(otherAudio))"
+        Task { await EventLogger.shared.info("playback", message) }
+    }
+}
 
 @MainActor
 public final class RemoteCommandCenterHandler {
@@ -45,7 +71,11 @@ public final class RemoteCommandCenterHandler {
         // Remote command callbacks are not guaranteed to be on the main queue.
         // Use dedicated play/pause (not toggle) so lock-screen buttons stay correct.
         center.playCommand.addTarget { [weak self] _ in
-            Self.performOnMain { self?.player?.play() }
+            Self.performOnMain {
+                guard let player = self?.player else { return }
+                PlaybackStartLog.record("Remote play command", wasPlaying: player.isPlaying)
+                player.play()
+            }
         }
         center.pauseCommand.addTarget { [weak self] _ in
             Self.performOnMain { self?.player?.pause() }
@@ -54,10 +84,16 @@ public final class RemoteCommandCenterHandler {
             Self.performOnMain { self?.player?.pause() }
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Self.performOnMain { self?.player?.togglePlayPause() }
+            Self.performOnMain {
+                guard let player = self?.player else { return }
+                PlaybackStartLog.record("Remote play/pause toggle", wasPlaying: player.isPlaying)
+                player.togglePlayPause()
+            }
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
+                // Skipping loads the next track playing, even from paused.
+                PlaybackStartLog.record("Remote next track", wasPlaying: self?.player?.isPlaying ?? true)
                 // Leave temporary hold-speed behind; keep the sticky session rate.
                 self?.player?.endIntervalHold()
                 self?.player?.restoreSessionPlaybackRate()
@@ -66,6 +102,7 @@ public final class RemoteCommandCenterHandler {
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
             Self.performOnMain {
+                PlaybackStartLog.record("Remote previous track", wasPlaying: self?.player?.isPlaying ?? true)
                 self?.player?.endIntervalHold()
                 self?.player?.restoreSessionPlaybackRate()
                 self?.player?.previous()
@@ -151,6 +188,7 @@ public final class RemoteCommandCenterHandler {
             }
             switch event.type {
             case .beginSeeking:
+                PlaybackStartLog.record("Remote seek hold", wasPlaying: player.isPlaying)
                 if CarPlayConnection.isActive, SettingsStore.shared.carPlayMiniSkipEnabled {
                     let delta = SettingsStore.shared.carPlayMiniSkipInterval.timeInterval
                     player.beginIntervalHold(rate >= 1 ? delta : -delta)
@@ -172,8 +210,9 @@ public final class RemoteCommandCenterHandler {
 
     @MainActor
     private func applySessionRate(_ rate: Float) {
-        if rate != 1, player?.isPlaying != true {
-            player?.play()
+        if rate != 1, let player, !player.isPlaying {
+            PlaybackStartLog.record("Remote playback rate change")
+            player.play()
         }
         player?.setSessionPlaybackRate(rate)
     }

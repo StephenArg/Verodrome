@@ -6,7 +6,11 @@ struct PlayPauseIntent: AppIntent {
     static var description = IntentDescription("Toggle playback in Verodrome.")
 
     func perform() async throws -> some IntentResult {
-        await MainActor.run { VerodromeKit.shared.player?.togglePlayPause() }
+        await MainActor.run {
+            guard let player = VerodromeKit.shared.player else { return }
+            PlaybackStartLog.record("Shortcut/Siri Play or Pause", wasPlaying: player.isPlaying)
+            player.togglePlayPause()
+        }
         return .result()
     }
 }
@@ -143,7 +147,10 @@ struct NextTrackIntent: AppIntent {
     static var description = IntentDescription("Skip to the next track in Verodrome.")
 
     func perform() async throws -> some IntentResult {
-        await MainActor.run { VerodromeKit.shared.player?.next() }
+        await MainActor.run {
+            PlaybackStartLog.record("Shortcut/Siri Next Track", wasPlaying: VerodromeKit.shared.player?.isPlaying ?? true)
+            VerodromeKit.shared.player?.next()
+        }
         return .result()
     }
 }
@@ -153,7 +160,10 @@ struct PreviousTrackIntent: AppIntent {
     static var description = IntentDescription("Go to the previous track in Verodrome.")
 
     func perform() async throws -> some IntentResult {
-        await MainActor.run { VerodromeKit.shared.player?.previous() }
+        await MainActor.run {
+            PlaybackStartLog.record("Shortcut/Siri Previous Track", wasPlaying: VerodromeKit.shared.player?.isPlaying ?? true)
+            VerodromeKit.shared.player?.previous()
+        }
         return .result()
     }
 }
@@ -187,6 +197,7 @@ enum IntentLibraryPlayback {
         let songs = album.songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
         let items = songs.map { QueueItem.from($0, albumArtworkId: album.artworkToken) }
         RecentQueueStore.shared.record(album: album)
+        PlaybackStartLog.record("Shortcut/Siri play album", wasPlaying: VerodromeKit.shared.player?.isPlaying ?? false)
         Task {
             await VerodromeKit.shared.player?.play(
                 items: items,
@@ -211,6 +222,7 @@ enum IntentLibraryPlayback {
         }
         let songs = playlist.items.sorted { $0.order < $1.order }.compactMap(\.song)
         RecentQueueStore.shared.record(playlist: playlist)
+        PlaybackStartLog.record("Shortcut/Siri play playlist", wasPlaying: VerodromeKit.shared.player?.isPlaying ?? false)
         Task {
             await VerodromeKit.shared.player?.play(
                 items: songs.map(QueueItem.from),
@@ -234,6 +246,7 @@ enum IntentLibraryPlayback {
             throw IntentPlaybackError.notFound(trimmed)
         }
         let songs = ArtistDiscography.songs(of: artist, albums: ArtistDiscography.albums(of: artist))
+        PlaybackStartLog.record("Shortcut/Siri play artist", wasPlaying: VerodromeKit.shared.player?.isPlaying ?? false)
         Task {
             await VerodromeKit.shared.player?.play(
                 items: songs.map(QueueItem.from),

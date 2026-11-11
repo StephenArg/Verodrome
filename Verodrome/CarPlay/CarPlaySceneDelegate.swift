@@ -647,6 +647,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         guard let player = VerodromeKit.shared.player else { return }
         guard player.resumeIfPausedWithQueue() else { return }
         CarPlayLog.notice("paused queue on connect — resuming")
+        PlaybackStartLog.record("CarPlay connected")
     }
 
     private func presentNowPlayingIfQueueActive() {

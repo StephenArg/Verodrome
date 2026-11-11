@@ -132,6 +132,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Task { @MainActor in
             if pluggedIn, VerodromeKit.shared.player?.resumeIfPausedWithQueue() == true {
                 CarPlayLog.notice("paused queue on CarPlay route — resuming")
+                PlaybackStartLog.record("CarPlay audio route connected")
             }
             VerodromeKit.shared.player?.syncPublishedState()
             Self.activateCarPlaySceneIfPlaying(alsoWhenQueued: pluggedIn)
