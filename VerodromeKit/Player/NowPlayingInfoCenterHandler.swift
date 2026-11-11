@@ -33,6 +33,12 @@ public final class NowPlayingInfoCenterHandler {
         republishDisplayedArtwork(isPlaying: isPlaying, elapsed: elapsed, rate: rate)
     }
 
+    /// True when the real cover for this queue item is cached, so dropping the
+    /// override puts it back rather than leaving the art slot empty.
+    public func hasArtwork(forItemId itemId: String) -> Bool {
+        cachedArtwork != nil && cachedItemId == itemId
+    }
+
     public func update(
         item: QueueItem?,
         isPlaying: Bool,

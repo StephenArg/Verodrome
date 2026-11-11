@@ -1,0 +1,435 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Verodrome search</title>
+<style>
+  :root {
+    --accent: #406bfa;
+    --cyan: #3fd4ff;
+    --ink: #f4f7ff;
+    --dim: rgba(235, 240, 255, 0.58);
+    --faint: rgba(235, 240, 255, 0.32);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #030b1f; }
+  body {
+    width: 1920px; height: 1280px; overflow: hidden; position: relative;
+    font-family: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+    color: var(--ink); -webkit-font-smoothing: antialiased;
+  }
+  #backdrop { position: absolute; inset: 0; }
+
+  /* ---------- Phone frame ---------- */
+  .phone {
+    position: absolute; border-radius: 68px; padding: 11px;
+    background: linear-gradient(145deg, #3a4254 0%, #161a24 35%, #0b0e15 65%, #2c3343 100%);
+    box-shadow:
+      0 0 0 1.5px rgba(255,255,255,0.10) inset,
+      0 0 0 1px rgba(160,190,255,0.18),
+      0 60px 120px rgba(0, 4, 20, 0.65),
+      0 20px 40px rgba(0, 4, 20, 0.45);
+  }
+  .screen {
+    position: relative; width: 100%; height: 100%; border-radius: 57px; overflow: hidden;
+    background: #05070d;
+  }
+  .island {
+    position: absolute; top: 13px; left: 50%; transform: translateX(-50%);
+    width: 31%; height: 34px; border-radius: 20px; background: #000; z-index: 20;
+  }
+  .status {
+    position: absolute; top: 0; left: 0; right: 0; height: 58px; z-index: 19;
+    display: flex; align-items: center; justify-content: space-between; padding: 6px 34px 0 42px;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.2px;
+  }
+  .status .icons { display: flex; gap: 6px; align-items: center; }
+  .homebar {
+    position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%);
+    width: 36%; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.85); z-index: 20;
+  }
+
+  /* Side phones sit back a little */
+  .side { transform-origin: 50% 50%; }
+  .side .screen::after {
+    content: ""; position: absolute; inset: 0; background: rgba(3, 9, 28, 0.18); pointer-events: none; z-index: 30;
+  }
+
+  /* ---------- Generated album art (no third-party imagery) ---------- */
+  .art { position: relative; overflow: hidden; }
+  .art-harbor {
+    background:
+      radial-gradient(circle at 70% 30%, #ffd27a 0 9%, rgba(255,210,122,0) 10%),
+      radial-gradient(ellipse 120% 70% at 50% 120%, #0a1f5c 0 45%, rgba(10,31,92,0) 46%),
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.0) 0 14px, rgba(120,220,255,0.16) 14px 16px),
+      linear-gradient(180deg, #ff6aa8 0%, #8b5cf6 42%, #1d4ed8 70%, #0b1b4a 100%);
+  }
+  .art-harbor::after {
+    content: ""; position: absolute; left: 12%; right: 12%; top: 58%; height: 2px;
+    background: rgba(255,240,210,0.7); box-shadow: 0 0 18px rgba(255,200,140,0.9);
+  }
+  .art-atlas {
+    background:
+      conic-gradient(from 210deg at 50% 50%, #0ea5e9, #22d3ee, #a7f3d0, #0ea5e9 60%, #1e3a8a 75%, #0ea5e9);
+  }
+  .art-atlas::after {
+    content: ""; position: absolute; inset: 22%; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #e0f2fe, #38bdf8 45%, #0c4a6e 100%);
+    box-shadow: 0 0 0 6px rgba(255,255,255,0.18);
+  }
+  .art-cobalt {
+    background:
+      radial-gradient(circle at 25% 75%, #f97316 0 18%, rgba(249,115,22,0) 19%),
+      radial-gradient(circle at 70% 35%, #fde047 0 12%, rgba(253,224,71,0) 13%),
+      linear-gradient(135deg, #1e40af, #172554);
+  }
+  .art-velvet {
+    background:
+      repeating-radial-gradient(circle at 50% 50%, #be185d 0 10px, #831843 10px 20px);
+  }
+  .art-velvet::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(160deg, rgba(255,255,255,0.25), rgba(0,0,0,0.35));
+  }
+  .art-comets {
+    background:
+      linear-gradient(120deg, rgba(255,255,255,0) 40%, rgba(255,255,255,0.55) 41% 43%, rgba(255,255,255,0) 44%),
+      linear-gradient(120deg, rgba(255,255,255,0) 60%, rgba(255,255,255,0.35) 61% 62%, rgba(255,255,255,0) 63%),
+      radial-gradient(circle at 80% 20%, #fef3c7 0 6%, rgba(254,243,199,0) 7%),
+      linear-gradient(200deg, #0f172a, #4c1d95 60%, #7c3aed);
+  }
+  .art-amber {
+    background:
+      repeating-linear-gradient(90deg, #f59e0b 0 18px, #d97706 18px 36px, #b45309 36px 54px, #78350f 54px 72px);
+  }
+  .art-amber::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 46%; height: 46%; transform: translate(-50%, -50%);
+    border-radius: 50%; background: #1c1917; box-shadow: 0 0 0 8px #fbbf24;
+  }
+  .art-north {
+    background:
+      linear-gradient(180deg, #a5f3fc 0%, #67e8f9 30%, #0891b2 31%, #155e75 60%, #083344 100%);
+  }
+  .art-north::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 52%;
+    background:
+      linear-gradient(135deg, transparent 49%, #052e3a 50%) left / 50% 100% no-repeat,
+      linear-gradient(225deg, transparent 49%, #052e3a 50%) right / 50% 100% no-repeat;
+  }
+  .art-signal {
+    background:
+      repeating-conic-gradient(from 0deg at 50% 50%, #10b981 0 12deg, #064e3b 12deg 24deg);
+  }
+  .art-signal::after {
+    content: ""; position: absolute; inset: 30%; border-radius: 50%; background: #ecfdf5;
+  }
+
+  /* ---------- Now Playing ---------- */
+  .np {
+    position: absolute; inset: 0; padding: 70px 30px 0;
+    background:
+      radial-gradient(ellipse 120% 60% at 50% 18%, rgba(139,92,246,0.55), rgba(139,92,246,0) 70%),
+      linear-gradient(180deg, #2a1f63 0%, #16194a 45%, #0a0f2a 75%, #070a1c 100%);
+  }
+  .np-top { display: flex; align-items: center; justify-content: space-between; height: 44px; }
+  .np-from { text-align: center; line-height: 1.15; }
+  .np-from .k { font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .np-from .v { font-size: 15px; font-weight: 600; }
+  .np-art { width: 100%; aspect-ratio: 1; border-radius: 16px; margin-top: 40px;
+    box-shadow: 0 26px 50px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.12) inset; }
+  .np-meta { display: flex; align-items: center; margin-top: 44px; gap: 12px; }
+  .np-meta .text { flex: 1; min-width: 0; }
+  .np-title { font-size: 25px; font-weight: 700; letter-spacing: -0.4px; }
+  .np-artist { font-size: 19px; color: var(--dim); margin-top: 3px; }
+  .scrub { margin-top: 32px; }
+  .track { position: relative; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.18); }
+  .track .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 44%; border-radius: 3px; background: rgba(255,255,255,0.92); }
+  .times { display: flex; justify-content: space-between; margin-top: 9px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .controls { display: flex; align-items: center; justify-content: space-between; margin-top: 38px; padding: 0 6px; }
+  .bottom-row { display: flex; align-items: center; justify-content: space-between; margin-top: 64px; padding: 0 22px; color: var(--dim); }
+  .speed { font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 5px; }
+
+  /* ---------- Home ---------- */
+  .home { position: absolute; inset: 0; background: #070a14; padding: 64px 22px 0; }
+  .home h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.8px; margin: 14px 0 18px; }
+  .section-title { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 12px; }
+  .section-title b { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  .section-title span { font-size: 15px; color: var(--accent); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 14px; }
+  .tile .art { width: 100%; aspect-ratio: 1; border-radius: 12px; }
+  .tile .t { font-size: 14px; font-weight: 600; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .a { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+  .mini {
+    position: absolute; left: 12px; right: 12px; bottom: 98px; height: 64px; border-radius: 18px; z-index: 5;
+    display: flex; align-items: center; gap: 12px; padding: 0 16px 0 9px;
+    background: rgba(36, 40, 64, 0.82); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(255,255,255,0.12) inset;
+  }
+  .mini .art { width: 46px; height: 46px; border-radius: 9px; flex: none; }
+  .mini .text { flex: 1; min-width: 0; line-height: 1.2; }
+  .mini .text b { display: block; font-size: 15px; font-weight: 600; }
+  .mini .text span { font-size: 13px; color: var(--dim); }
+  .mini .prog { position: absolute; left: 70px; right: 20px; bottom: 6px; height: 2px; border-radius: 1px; background: rgba(255,255,255,0.15); }
+  .mini .prog i { position: absolute; left: 0; top: 0; bottom: 0; width: 44%; background: var(--ink); border-radius: 1px; }
+  .tabbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 92px; z-index: 4;
+    display: flex; justify-content: space-around; padding: 10px 12px 0;
+    background: rgba(10, 12, 22, 0.86); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); border-top: 0.5px solid rgba(255,255,255,0.10);
+  }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: rgba(235,240,255,0.5); width: 76px; }
+  .tab.on { color: var(--accent); }
+
+  /* ---------- Lyrics ---------- */
+  .lyr { position: absolute; inset: 0; padding: 70px 28px 0;
+    background:
+      radial-gradient(ellipse 120% 55% at 40% 0%, rgba(14,165,233,0.55), rgba(14,165,233,0) 70%),
+      linear-gradient(180deg, #0b3a5c 0%, #0a2340 45%, #071528 80%, #050d1a 100%);
+  }
+  .lyr-head { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+  .lyr-head .art { width: 62px; height: 62px; border-radius: 10px; flex: none; box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+  .lyr-head b { display: block; font-size: 18px; font-weight: 700; }
+  .lyr-head span { font-size: 15px; color: var(--dim); }
+  .lines { margin-top: 44px; font-size: 27px; font-weight: 800; line-height: 1.22; letter-spacing: -0.4px; }
+  .lines p { margin: 0 0 24px; color: rgba(235,240,255,0.28); }
+  .lines p.past { color: rgba(235,240,255,0.42); }
+  .lines p.now { color: #ffffff; text-shadow: 0 0 24px rgba(160,230,255,0.35); }
+  .lyr-foot { position: absolute; left: 28px; right: 28px; bottom: 34px; }
+</style>
+</head>
+<body>
+
+<!-- Brand backdrop, shared with the header -->
+<svg id="backdrop" width="1920" height="1280" viewBox="0 0 1920 1280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="960" cy="560" r="1400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0d4a96"/>
+      <stop offset="0.3" stop-color="#082e66"/>
+      <stop offset="0.65" stop-color="#05173a"/>
+      <stop offset="1" stop-color="#020817"/>
+    </radialGradient>
+    <radialGradient id="bloom" cx="960" cy="540" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3fd4ff" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="#2a7dff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#2a7dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sideL" cx="120" cy="1150" r="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4060ff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#4060ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sideR" cx="1820" cy="100" r="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22b8ee" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#22b8ee" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="waveFade" x1="0" y1="0" x2="1920" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3fd4ff" stop-opacity="0"/>
+      <stop offset="0.2" stop-color="#3fd4ff" stop-opacity="0.6"/>
+      <stop offset="0.5" stop-color="#bff3ff" stop-opacity="0.9"/>
+      <stop offset="0.8" stop-color="#3fd4ff" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#3fd4ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="waveFadeBlue" x1="0" y1="0" x2="1920" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#406bfa" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#406bfa" stop-opacity="0.6"/>
+      <stop offset="0.5" stop-color="#7f9cff" stop-opacity="0.8"/>
+      <stop offset="0.75" stop-color="#406bfa" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#406bfa" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="arcCyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9af0ff"/>
+      <stop offset="1" stop-color="#1fb3f0"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.035 0"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1280" fill="url(#bg)"/>
+  <rect width="1920" height="1280" fill="url(#sideL)"/>
+  <rect width="1920" height="1280" fill="url(#sideR)"/>
+  <rect width="1920" height="1280" fill="url(#bloom)"/>
+  <g fill="none" stroke="#6fd8ff" stroke-width="1" id="field"></g>
+  <g fill="none" stroke-linecap="round" filter="url(#glow)" id="arcs"></g>
+  <g id="particles"></g>
+  <g fill="none" stroke-linecap="round" filter="url(#glow)" id="waves"></g>
+  <rect width="1920" height="1280" filter="url(#grain)"/>
+</svg>
+
+<!-- Left: Home -->
+<div class="phone side" style="left: 262px; top: 238px; width: 404px; height: 876px;">
+  <div class="screen">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="icons" data-icons="status"></span></div>
+    <div class="home">
+      <h1>Home</h1>
+      <div class="section-title"><b>Recently Added</b><span>See All</span></div>
+      <div class="grid">
+        <div class="tile"><div class="art art-atlas"></div><div class="t">The Glass Atlas</div><div class="a">Northbound Echo</div></div>
+        <div class="tile"><div class="art art-cobalt"></div><div class="t">Cobalt Gardens</div><div class="a">Amber Transit</div></div>
+        <div class="tile"><div class="art art-comets"></div><div class="t">Paper Comets</div><div class="a">Velvet Signal</div></div>
+        <div class="tile"><div class="art art-north"></div><div class="t">Northern Lines</div><div class="a">Static Orchard</div></div>
+      </div>
+      <div class="section-title" style="margin-top: 22px;"><b>Favorites</b><span>See All</span></div>
+      <div class="row">
+        <div class="tile"><div class="art art-velvet"></div></div>
+        <div class="tile"><div class="art art-amber"></div></div>
+        <div class="tile"><div class="art art-signal"></div></div>
+      </div>
+    </div>
+    <div class="mini">
+      <div class="art art-harbor"></div>
+      <div class="text"><b>Neon Harbor</b><span>Lumen Coast</span></div>
+      <span data-icon="pause" data-size="24"></span>
+      <span data-icon="forward" data-size="26" style="margin-left: 14px;"></span>
+      <div class="prog"><i></i></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab on"><span data-icon="house" data-size="26"></span>Home</div>
+      <div class="tab"><span data-icon="library" data-size="26"></span>Library</div>
+      <div class="tab"><span data-icon="search" data-size="26"></span>Search</div>
+      <div class="tab"><span data-icon="gear" data-size="26"></span>Settings</div>
+    </div>
+    <div class="homebar"></div>
+  </div>
+</div>
+
+<!-- Right: synced lyrics -->
+<div class="phone side" style="left: 1254px; top: 238px; width: 404px; height: 876px;">
+  <div class="screen">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="icons" data-icons="status"></span></div>
+    <div class="lyr">
+      <div class="lyr-head">
+        <div class="art art-harbor"></div>
+        <div><b>Neon Harbor</b><span>Lumen Coast</span></div>
+      </div>
+      <div class="lines">
+        <p class="past">Streetlights hum in a quiet key</p>
+        <p class="past">Every window keeps time</p>
+        <p class="now">Carry me home on a slow blue wave</p>
+        <p>The tide pulls the city in</p>
+        <p>Neon on the water</p>
+        <p>Hold the last light</p>
+        <p>Let it play</p>
+      </div>
+      <div class="lyr-foot">
+        <div class="track"><div class="fill"></div></div>
+        <div class="times"><span>1:47</span><span>-2:16</span></div>
+      </div>
+    </div>
+    <div class="homebar"></div>
+  </div>
+</div>
+
+<!-- Center: Now Playing -->
+<div class="phone" style="left: 724px; top: 112px; width: 472px; height: 1024px; z-index: 3;">
+  <div class="screen">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="icons" data-icons="status"></span></div>
+    <div class="np">
+      <div class="np-top">
+        <span data-icon="chevron" data-size="26"></span>
+        <div class="np-from"><div class="k">Playing from album</div><div class="v">Neon Harbor</div></div>
+        <span data-icon="ellipsis" data-size="26"></span>
+      </div>
+      <div class="np-art art art-harbor"></div>
+      <div class="np-meta">
+        <div class="text"><div class="np-title">Slow Blue Wave</div><div class="np-artist">Lumen Coast</div></div>
+        <span data-icon="plus" data-size="28" style="color: var(--dim)"></span>
+        <span data-icon="heart" data-size="28" style="color: var(--accent); margin-left: 8px;"></span>
+      </div>
+      <div class="scrub">
+        <div class="track"><div class="fill"></div></div>
+        <div class="times"><span>1:47</span><span>-2:16</span></div>
+      </div>
+      <div class="controls">
+        <span data-icon="shuffle" data-size="26" style="color: var(--accent)"></span>
+        <span data-icon="backward" data-size="46"></span>
+        <span data-icon="pause" data-size="60"></span>
+        <span data-icon="forward" data-size="46"></span>
+        <span data-icon="repeat" data-size="26" style="color: var(--dim)"></span>
+      </div>
+      <div class="bottom-row">
+        <span data-icon="quote" data-size="26"></span>
+        <span class="speed"><span data-icon="timer" data-size="22"></span>1×</span>
+        <span data-icon="airplay" data-size="26"></span>
+        <span data-icon="list" data-size="26"></span>
+      </div>
+    </div>
+    <div class="homebar"></div>
+  </div>
+</div>
+
+<script>
+  // Hand-drawn SF-style glyphs (24×24 grid), so nothing depends on Apple's symbol font.
+  const ICONS = {
+    chevron: '<path d="M5 9l7 7 7-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+    ellipsis: '<circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/>',
+    heart: '<path d="M12 21s-7.5-4.6-9.6-9.3C1 8.4 3.1 5 6.6 5c2.1 0 3.6 1.2 5.4 3.2C13.8 6.2 15.3 5 17.4 5 20.9 5 23 8.4 21.6 11.7 19.5 16.4 12 21 12 21z" fill="currentColor"/>',
+    plus: '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5v9M7.5 12h9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
+    pause: '<rect x="6" y="4" width="4.2" height="16" rx="1.4" fill="currentColor"/><rect x="13.8" y="4" width="4.2" height="16" rx="1.4" fill="currentColor"/>',
+    forward: '<path d="M2.5 6.2v11.6c0 .8.9 1.3 1.6.8L12 13v4.8c0 .8.9 1.3 1.6.8l8.3-5.8c.6-.4.6-1.2 0-1.6L13.6 5.4c-.7-.5-1.6 0-1.6.8V11L4.1 5.4c-.7-.5-1.6 0-1.6.8z" fill="currentColor"/>',
+    backward: '<path d="M21.5 6.2v11.6c0 .8-.9 1.3-1.6.8L12 13v4.8c0 .8-.9 1.3-1.6.8l-8.3-5.8c-.6-.4-.6-1.2 0-1.6l8.3-5.8c.7-.5 1.6 0 1.6.8V11l7.9-5.6c.7-.5 1.6 0 1.6.8z" fill="currentColor"/>',
+    shuffle: '<path d="M3 7h3.2c1.6 0 3.1.8 4 2.1l3.6 5.8c.9 1.3 2.4 2.1 4 2.1H20M3 17h3.2c1.6 0 3.1-.8 4-2.1l.6-1M13.2 10.1l.6-1c.9-1.3 2.4-2.1 4-2.1H20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M18 4.5L21 7l-3 2.5M18 14.5l3 2.5-3 2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+    repeat: '<path d="M4 11V9.5A3.5 3.5 0 017.5 6H19M20 13v1.5a3.5 3.5 0 01-3.5 3.5H5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M16.5 3.5L19 6l-2.5 2.5M7.5 15.5L5 18l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+    quote: '<path d="M4 5h16a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0120 17h-9l-4.5 3.5V17H4a1.5 1.5 0 01-1.5-1.5v-9A1.5 1.5 0 014 5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 13.2c1.5-.5 2-1.6 2-3.4H8.3V8.2h2.4M14.5 13.2c1.5-.5 2-1.6 2-3.4h-2.2V8.2h2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+    timer: '<circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 13V9M10 2.8h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    airplay: '<path d="M7 17H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v9a2 2 0 01-2 2h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 14l5 6H7z" fill="currentColor"/>',
+    list: '<circle cx="4.5" cy="6.5" r="1.5" fill="currentColor"/><circle cx="4.5" cy="12" r="1.5" fill="currentColor"/><circle cx="4.5" cy="17.5" r="1.5" fill="currentColor"/><path d="M9 6.5h11.5M9 12h11.5M9 17.5h11.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
+    house: '<path d="M3 11.2L12 3.5l9 7.7V20a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1z" fill="currentColor"/>',
+    library: '<rect x="3" y="8" width="18" height="13" rx="2.2" fill="currentColor"/><path d="M5.5 5.3h13M7.5 2.8h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    search: '<circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+    gear: '<path d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.5l1.6 2.4 2.8-.7.7 2.8 2.4 1.6-1.2 2.6 1.2 2.6-2.4 1.6-.7 2.8-2.8-.7L12 21.5l-1.6-2.4-2.8.7-.7-2.8-2.4-1.6 1.2-2.6-1.2-2.6 2.4-1.6.7-2.8 2.8.7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  };
+  document.querySelectorAll("[data-icon]").forEach((n) => {
+    const s = n.dataset.size || 24;
+    n.style.display = "inline-flex";
+    n.innerHTML = `<svg width="${s}" height="${s}" viewBox="0 0 24 24">${ICONS[n.dataset.icon]}</svg>`;
+  });
+  // Status bar: signal, Wi-Fi, battery.
+  document.querySelectorAll('[data-icons="status"]').forEach((n) => {
+    n.innerHTML =
+      '<svg width="19" height="12" viewBox="0 0 19 12"><rect x="0" y="8" width="3.2" height="4" rx="0.8" fill="#fff"/><rect x="5" y="5.5" width="3.2" height="6.5" rx="0.8" fill="#fff"/><rect x="10" y="3" width="3.2" height="9" rx="0.8" fill="#fff"/><rect x="15" y="0" width="3.2" height="12" rx="0.8" fill="#fff"/></svg>' +
+      '<svg width="17" height="12" viewBox="0 0 17 12"><path d="M8.5 2.2c2.4 0 4.6.9 6.3 2.5l1.3-1.3A10.6 10.6 0 008.5.4 10.6 10.6 0 00.9 3.4l1.3 1.3a8.8 8.8 0 016.3-2.5z" fill="#fff"/><path d="M8.5 5.6c1.5 0 2.8.6 3.9 1.5l1.3-1.3a7.3 7.3 0 00-10.4 0l1.3 1.3c1-.9 2.4-1.5 3.9-1.5z" fill="#fff"/><path d="M8.5 9c.6 0 1.1.2 1.5.6L8.5 11.2 7 9.6c.4-.4.9-.6 1.5-.6z" fill="#fff"/></svg>' +
+      '<svg width="27" height="13" viewBox="0 0 27 13"><rect x="0.5" y="0.5" width="23" height="12" rx="3.6" fill="none" stroke="rgba(255,255,255,0.45)"/><rect x="2.2" y="2.2" width="19.6" height="8.6" rx="2.2" fill="#fff"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2z" fill="rgba(255,255,255,0.45)"/></svg>';
+  });
+
+  // Backdrop motif: field rings, the icon's sound-wave arcs behind the center phone, waves.
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); parent.appendChild(n); return n; };
+  const cx = 960, cy = 520;
+  const field = document.getElementById("field");
+  [560, 680, 820, 980, 1160].forEach((r, i) => el("circle", { cx, cy, r, "stroke-opacity": (0.1 - i * 0.016).toFixed(3) }, field));
+  const arcs = document.getElementById("arcs");
+  const arc = (r, a0d, a1d) => {
+    const a0 = a0d * Math.PI / 180, a1 = a1d * Math.PI / 180;
+    return `M ${(cx + r * Math.cos(a0)).toFixed(1)} ${(cy + r * Math.sin(a0)).toFixed(1)} A ${r} ${r} 0 ${a1d - a0d > 180 ? 1 : 0} 1 ${(cx + r * Math.cos(a1)).toFixed(1)} ${(cy + r * Math.sin(a1)).toFixed(1)}`;
+  };
+  [[330, 6, 0.55], [380, 4.5, 0.38], [436, 3, 0.24], [500, 2, 0.14]].forEach(([r, w, o]) =>
+    el("path", { d: arc(r, 196, 344), stroke: "url(#arcCyan)", "stroke-width": w, opacity: o }, arcs));
+  const waves = document.getElementById("waves");
+  const ribbon = (amp, freqs, phase, yOff, stroke, width, opacity) => {
+    let d = "";
+    for (let x = -20; x <= 1940; x += 6) {
+      const t = x / 1920;
+      const env = Math.pow(Math.sin(Math.PI * Math.min(Math.max(t, 0), 1)), 1.4);
+      let y = 0; freqs.forEach(([f, a], i) => { y += a * Math.sin(2 * Math.PI * f * t + phase * (i + 1)); });
+      d += (d ? " L " : "M ") + x.toFixed(1) + " " + (cy + 160 + yOff + amp * env * y).toFixed(1);
+    }
+    el("path", { d, stroke, "stroke-width": width, opacity }, waves);
+  };
+  ribbon(120, [[3.0, 0.75], [6.5, 0.25]], 0.3, 0, "url(#waveFade)", 3, 0.85);
+  ribbon(90, [[2.5, 0.7], [5.5, 0.3]], 1.9, 8, "url(#waveFadeBlue)", 2.4, 0.75);
+  ribbon(150, [[3.5, 0.65], [7.5, 0.35]], 2.8, -6, "url(#waveFade)", 1.3, 0.38);
+  const parts = document.getElementById("particles");
+  let seed = 23; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 160; i++) {
+    const x = rnd() * 1920, y = rnd() * 1280;
+    el("circle", { cx: x.toFixed(1), cy: y.toFixed(1), r: (0.6 + rnd() * 1.8).toFixed(2), fill: rnd() > 0.5 ? "#bff3ff" : "#7f9cff", opacity: (0.15 + rnd() * 0.45).toFixed(2) }, parts);
+  }
+</script>
+</body>
+</html>
