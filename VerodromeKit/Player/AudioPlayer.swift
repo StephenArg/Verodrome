@@ -43,8 +43,6 @@ public final class AudioPlayer: ObservableObject {
     /// queue edit can tell whether the preloaded track is still the one coming up.
     private var preloadedNextItemId: String?
     private var preloadInvalidationTask: Task<Void, Never>?
-    /// True while a restored queue's track is being parked at launch.
-    private var isRestoringSession = false
     /// Bumped when a wholly new context is about to replace the queue. Finish / gapless
     /// handlers that still belong to the outgoing stream compare against this so they
     /// cannot `advance()` the queue we are installing (e.g. Shuffle All while the
@@ -130,6 +128,21 @@ public final class AudioPlayer: ObservableObject {
         preloadInvalidationTask?.cancel()
         preloadedNextItemId = nil
         let user = settings()
+        // Parked tracks stay out of the engine entirely (see `BackendAudioPlayer.park`).
+        // Play reloads them from the parked position.
+        if paused {
+            deferredWorkTask?.cancel()
+            consecutivePlayFailures = 0
+            stalled = nil
+            statusMessage = ""
+            backend.park(item: item, at: startAt)
+            log(.info, "Parked \(item.title) paused at \(Int(startAt))s")
+            applyLocalLyricsIfAvailable(for: item)
+            if user.showLyricsWhenAvailable, lyrics.isEmpty {
+                Task { await fetchLyrics(for: item, allowNetwork: true) }
+            }
+            return
+        }
         let (bitrate, format) = resolvedStreamParams(for: item)
         PlayTrace.mark("settings loaded", details: "bitrate=\(bitrate.map(String.init) ?? "nil") format=\(format) eq=\(user.equalizerEnabled) expensiveNet=\(NetworkMonitor.shared.isExpensive)")
         // Repeat-one must not gapless-queue the next track — AudioStreaming would
@@ -139,8 +152,8 @@ public final class AudioPlayer: ObservableObject {
             equalizerEnabled: user.equalizerEnabled,
             replayGainEnabled: user.replayGainEnabled,
             equalizerBands: user.equalizerBands,
-            gaplessEnabled: user.gaplessPlaybackEnabled && !repeatOne && !paused,
-            crossfadeSeconds: (user.crossfadeEnabled && !repeatOne && !paused) ? user.crossfadeDurationSeconds : 0
+            gaplessEnabled: user.gaplessPlaybackEnabled && !repeatOne,
+            crossfadeSeconds: (user.crossfadeEnabled && !repeatOne) ? user.crossfadeDurationSeconds : 0
         )
         backend.setRepeatOne(repeatOne)
         backend.isOfflineMode = user.isOfflineMode
@@ -152,7 +165,6 @@ public final class AudioPlayer: ObservableObject {
                 maxBitrate: bitrate,
                 format: format,
                 startAt: startAt,
-                startPaused: paused,
                 isStillCurrent: { [weak self] in self?.playLoadID == loadID }
             )
             // A newer skip or `play(items:)` may have abandoned this load while the URL
@@ -173,17 +185,9 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         // Don't hold first-audio behind lyrics / scrobble / gapless preload.
-        // Parked (paused) loads skip scrobble/preload — user hasn't started playback.
         // Local lyrics (disk / ID3) load immediately so offline covers aren't blank;
         // the network pass stays deferred with the rest of the post-play work.
         applyLocalLyricsIfAvailable(for: item)
-        guard !paused else {
-            deferredWorkTask?.cancel()
-            if user.showLyricsWhenAvailable, lyrics.isEmpty {
-                Task { await fetchLyrics(for: item, allowNetwork: true) }
-            }
-            return
-        }
         let showLyrics = user.showLyricsWhenAvailable
         scheduleDeferredWork(for: item, showLyrics: showLyrics && lyrics.isEmpty)
     }
@@ -230,12 +234,6 @@ public final class AudioPlayer: ObservableObject {
     /// `backend.play` threw before audio started — a missing URL, or offline with no
     /// cached file. Fail over to a cached neighbour when there is one, otherwise park.
     private func handleLoadFailure(for item: QueueItem, position: TimeInterval, error: Error) {
-        // Restoring a queue at launch must never make noise, and every recovery path
-        // below ends in playback — leave the track parked and let the user press play.
-        if isRestoringSession {
-            log(.warning, "Restored queue couldn't load \(item.title): \(error.localizedDescription)")
-            return
-        }
         if isEffectivelyOffline {
             if let index = nextCachedIndex() {
                 PlayTrace.mark("offline — jumping to cached queue item", details: "index=\(index)")
@@ -261,9 +259,19 @@ public final class AudioPlayer: ObservableObject {
 
     /// The streaming engine failed after we handed it a URL. It is now in its `.error`
     /// state where `resume()` does nothing, so remember where we were and wait.
+    ///
+    /// Every recovery below ends in playback, so it only runs while the user wants
+    /// audio. A paused stream keeps its request open, and that connection dropping
+    /// hours later (a Wi-Fi handoff, a server timeout) lands here too. Retrying or
+    /// skipping then would start music the user paused long ago.
     private func handlePlaybackError(_ error: AudioPlayerError) {
         guard let item = nowPlaying else { return }
         let position = backend.currentTime
+        guard backend.wantsPlayback else {
+            // The engine is in `.error`, so play reloads from `position` on its own.
+            log(.info, "Stream for paused \(item.title) dropped at \(Int(position))s; it will reload when play is pressed (\(error.localizedDescription))")
+            return
+        }
         guard isEffectivelyOffline || isNetworkError(error) else {
             consecutivePlayFailures += 1
             if consecutivePlayFailures < Self.maxConsecutiveFailures, queueHandler.activeQueue.count > 1 {
@@ -536,13 +544,12 @@ public final class AudioPlayer: ObservableObject {
 
     public func stop() { backend.stop() }
 
-    /// Parks the restored queue's track: loaded and shown, silent until the user presses
-    /// play. Used once at launch, after the backend is authenticated enough to resolve a
-    /// stream URL.
+    /// Parks the restored queue's track: shown at its saved position, with nothing handed
+    /// to the engine until the user presses play. Used once at launch. iOS also launches
+    /// the app in the background (app refresh, CarPlay, Siri), so this must stay silent
+    /// and leave the audio session alone.
     public func restoreSession(at position: TimeInterval) async {
         guard queueHandler.currentItem != nil else { return }
-        isRestoringSession = true
-        defer { isRestoringSession = false }
         PlayTrace.mark("restoring last session", details: "at=\(Int(position))s")
         await playCurrent(startAt: position, paused: true)
     }

@@ -209,9 +209,9 @@ public final class VerodromeKit: ObservableObject {
         }
     }
 
-    /// Loads the restored queue's track paused, so the app comes back where it left off
-    /// without playing on its own. Deliberately after authentication: a song's stream URL
-    /// is minted per session and can't be restored from the stored queue.
+    /// Parks the restored queue's track, so the app comes back where it left off without
+    /// playing on its own. Nothing is loaded into the engine; play resolves a fresh stream
+    /// URL, since those are minted per session and can't be restored from the stored queue.
     private func restoreParkedTrack() async {
         guard let queue = queueHandler, let audio = audioOrchestrator, queue.currentItem != nil else { return }
         await audio.restoreSession(at: queue.playbackPosition)

@@ -93,6 +93,7 @@
 		4B889EC86AD648FCA975A6A9 /* RootSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6412450D52FF5701ED682D41 /* RootSplitView.swift */; };
 		4BB5DAB9751F43BF69C6B92F /* AudioSessionHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 787EEA296FA8A8AC59F7FA5D /* AudioSessionHandlerTests.swift */; };
 		4C587D2CC050EA6A41FF90A5 /* VerodromeIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F1E351E001D086403B6D6B /* VerodromeIntents.swift */; };
+		92347E28079942C40F01C4F1 /* ParkedPlaybackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482CA7C53815DE5BB2212552 /* ParkedPlaybackTests.swift */; };
 		501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */; };
 		50CF172EF318C532F3A6716A /* SubsonicServerApi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9581EB85416D6AA0228EC528 /* SubsonicServerApi.swift */; };
 		515368D367BA06C6836ACB1F /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E89A508FC0EE0CAE006D5F18 /* LibraryModels.swift */; };
@@ -384,6 +385,7 @@
 		03C38E556A4D10449D76E2AE /* QueueCachePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCachePolicyTests.swift; sourceTree = "<group>"; };
 		04057A21F240E44C6F6AF9BE /* BackendApi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendApi.swift; sourceTree = "<group>"; };
 		042C124F32ED5EB7C66EA8D8 /* Verodrome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Verodrome.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		482CA7C53815DE5BB2212552 /* ParkedPlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkedPlaybackTests.swift; sourceTree = "<group>"; };
 		04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSpeedSessionTests.swift; sourceTree = "<group>"; };
 		08B57FFE233953B8C9F45598 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		08C787639EF6EA7F8FD4B3BA /* LyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsView.swift; sourceTree = "<group>"; };
@@ -1168,6 +1170,7 @@
 				45D74BD0C16A278CFB2CA327 /* HomeGridAssemblerTests.swift */,
 				C01CD3E5C54AC2624F3B1458 /* LyricsParserTests.swift */,
 				F468D7484BE1C2293733AB52 /* OfflineFailoverTests.swift */,
+				482CA7C53815DE5BB2212552 /* ParkedPlaybackTests.swift */,
 				04ADCC840AD411868F32AD79 /* PlaybackSpeedSessionTests.swift */,
 				E2D9F3B48D830909B70F7111 /* PlaybackStallDetectorTests.swift */,
 				E11C71398F94E81333A5FB15 /* PlayQueueHandlerTests.swift */,
@@ -1633,6 +1636,7 @@
 				9B66C45B233ABBF036803D96 /* OfflineFailoverTests.swift in Sources */,
 				538D7229A83CB41D071FCB7C /* PlayQueueHandlerTests.swift in Sources */,
 				8816DAA47D75146425772B84 /* PlayableCacheTests.swift in Sources */,
+				92347E28079942C40F01C4F1 /* ParkedPlaybackTests.swift in Sources */,
 				501DA23A05801A7DF509C554 /* PlaybackSpeedSessionTests.swift in Sources */,
 				42B05DD5ADD0482650FE722C /* PlaybackStallDetectorTests.swift in Sources */,
 				F06912C1E063A2F0D2004B90 /* PlaylistDownloadCoordinatorTests.swift in Sources */,
@@ -1995,7 +1999,7 @@
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Verodrome/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
@@ -2004,7 +2008,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.verodrome.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
@@ -2020,7 +2024,7 @@
 				CODE_SIGN_ENTITLEMENTS = Verodrome/Resources/Verodrome.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Verodrome/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
@@ -2029,7 +2033,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.verodrome.app;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
