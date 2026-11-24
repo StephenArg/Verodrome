@@ -45,12 +45,17 @@ public enum QueueOrigin: Codable, Sendable, Equatable {
     case artist(String)
     case song(String)
     case genre(String)
+    /// An endless Shuffle All walk, over the whole library or only what's on disk.
+    /// Stored with the queue so a relaunch still knows what it is restoring.
+    case shuffleAll(downloadedOnly: Bool)
 
     public var displayName: String {
         switch self {
         case .album(let name), .playlist(let name), .artist(let name),
              .song(let name), .genre(let name):
             return name
+        case .shuffleAll(let downloadedOnly):
+            return downloadedOnly ? "Downloaded Songs" : "All Songs"
         }
     }
 
@@ -65,7 +70,7 @@ public enum QueueOrigin: Codable, Sendable, Equatable {
     public var supportsRepeatAll: Bool {
         switch self {
         case .album, .playlist: return true
-        case .artist, .song, .genre: return false
+        case .artist, .song, .genre, .shuffleAll: return false
         }
     }
 
@@ -75,7 +80,7 @@ public enum QueueOrigin: Codable, Sendable, Equatable {
     public var supportsShuffle: Bool {
         switch self {
         case .album, .playlist, .artist: return true
-        case .song, .genre: return false
+        case .song, .genre, .shuffleAll: return false
         }
     }
 }
@@ -358,7 +363,9 @@ public struct PersistedPlayerQueue: Codable, Sendable, Equatable {
         shuffleMode = try c.decodeIfPresent(ShuffleMode.self, forKey: .shuffleMode) ?? .off
         playerMode = try c.decodeIfPresent(PlayerMode.self, forKey: .playerMode) ?? .music
         playbackPosition = try c.decodeIfPresent(TimeInterval.self, forKey: .playbackPosition) ?? 0
-        origin = try c.decodeIfPresent(QueueOrigin.self, forKey: .origin)
+        // An origin this build doesn't know (one a newer build wrote) reads as none,
+        // rather than costing the whole stored queue.
+        origin = try? c.decodeIfPresent(QueueOrigin.self, forKey: .origin)
     }
 }
 

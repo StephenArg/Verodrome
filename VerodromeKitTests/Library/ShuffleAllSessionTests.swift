@@ -80,6 +80,19 @@ final class ShuffleAllSessionTests: XCTestCase {
         XCTAssertEqual(second.map(\.playableId), ["d", "e"])
     }
 
+    /// A walk picked back up after a relaunch starts from the queue it was restored
+    /// with, so its first top-up can't repeat what is already queued.
+    func testDropsTracksTheRestoredQueueAlreadyHolds() async throws {
+        let provider = StubRandomSongProvider(batches: [
+            RandomSongBatch(songs: songs(["a", "b", "c", "d"]))
+        ])
+        let session = ShuffleAllSession(provider: provider, excluding: ["a", "c"])
+
+        let items = try await session.next()
+
+        XCTAssertEqual(items.map(\.playableId), ["b", "d"])
+    }
+
     /// A single all-duplicate draw is bad luck, not the end of the library, so the
     /// session asks again rather than declaring the walk over.
     func testDrawsAgainWhenABatchIsAllDuplicates() async throws {

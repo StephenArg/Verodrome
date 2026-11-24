@@ -2,7 +2,8 @@ import SwiftUI
 import VerodromeKit
 
 /// Interactive 5-star rating control (0 = clear).
-/// Supports tap-to-rate and drag-across-stars selection with animated preview.
+/// Supports tap-to-rate and drag-across-stars selection with animated preview. Setting
+/// a rating pops the filled stars in a quick wave from the left; clearing it dips them.
 struct RatingStarsView: View {
     let rating: Int
     /// Glyph point size. Small values keep the row from adding much height.
@@ -16,6 +17,11 @@ struct RatingStarsView: View {
     /// True once the finger moves onto a star different from the press origin.
     @State private var didSlideAcrossStars = false
     @State private var rowWidth: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Bumped each time the user commits a rating, to run the pop once.
+    @State private var commitPulse = 0
+    /// The rating that pop is for.
+    @State private var committedRating = 0
 
     private var displayedRating: Int {
         dragRating ?? rating
@@ -37,6 +43,16 @@ struct RatingStarsView: View {
                     .shadow(color: isHot ? filledColor.opacity(0.45) : .clear, radius: isHot ? 4 : 0)
                     .animation(.spring(response: 0.28, dampingFraction: 0.55), value: displayedRating)
                     .animation(.spring(response: 0.28, dampingFraction: 0.55), value: isHot)
+                    .keyframeAnimator(initialValue: 1.0, trigger: commitPulse) { content, scale in
+                        content.scaleEffect(scale)
+                    } keyframes: { _ in
+                        let pop = commitPop(for: star)
+                        // A zero-length keyframe leaves the scale undefined and the star
+                        // disappears, so the stars with no wait still get a sliver.
+                        LinearKeyframe(1.0, duration: max(pop.delay, 0.001))
+                        SpringKeyframe(pop.peak, duration: 0.12, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.3, spring: .bouncy)
+                    }
             }
         }
         .padding(.vertical, starSize * 0.15)
@@ -74,6 +90,10 @@ struct RatingStarsView: View {
                     dragOriginRating = nil
                     didSlideAcrossStars = false
                     if next != rating {
+                        committedRating = next
+                        if !reduceMotion {
+                            commitPulse += 1
+                        }
                         onRate(next)
                     }
                 }
@@ -90,6 +110,16 @@ struct RatingStarsView: View {
                 break
             }
         }
+    }
+
+    /// Setting a rating swells each filled star in turn from the left; stars past it
+    /// stay put. Clearing dips every star, right to left.
+    private func commitPop(for star: Int) -> (delay: TimeInterval, peak: CGFloat) {
+        if committedRating == 0 {
+            return (Double(5 - star) * 0.03, 0.8)
+        }
+        guard star <= committedRating else { return (0, 1) }
+        return (Double(star - 1) * 0.05, 1.3)
     }
 
     private func star(at x: CGFloat) -> Int {

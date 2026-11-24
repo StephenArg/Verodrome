@@ -190,6 +190,26 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertTrue(QueueOrigin.artist("Radiohead").supportsShuffle)
         XCTAssertFalse(QueueOrigin.song("Karma Police").supportsShuffle)
         XCTAssertFalse(QueueOrigin.genre("Rock").supportsShuffle)
+        XCTAssertFalse(QueueOrigin.shuffleAll(downloadedOnly: false).supportsShuffle)
+    }
+
+    /// Shuffle All is recognised after a relaunch by the origin stored with its queue.
+    func testShuffleAllOriginSurvivesTheStoredQueue() throws {
+        let stored = PersistedPlayerQueue(origin: .shuffleAll(downloadedOnly: true))
+        let data = try JSONEncoder().encode(stored)
+        let loaded = try JSONDecoder().decode(PersistedPlayerQueue.self, from: data)
+
+        XCTAssertEqual(loaded.origin, .shuffleAll(downloadedOnly: true))
+    }
+
+    /// A newer build may store an origin this one has no case for; the queue itself
+    /// still has to load.
+    func testUnknownStoredOriginLoadsAsNone() throws {
+        let json = #"{"index": 2, "origin": {"somethingNewer": {"_0": "x"}}}"#
+        let loaded = try JSONDecoder().decode(PersistedPlayerQueue.self, from: Data(json.utf8))
+
+        XCTAssertNil(loaded.origin)
+        XCTAssertEqual(loaded.index, 2)
     }
 
     func testQueueOriginSupportsRepeatAllOnlyForAlbumAndPlaylist() {
@@ -198,6 +218,7 @@ final class SongRadioQueueTests: XCTestCase {
         XCTAssertFalse(QueueOrigin.artist("Radiohead").supportsRepeatAll)
         XCTAssertFalse(QueueOrigin.song("Karma Police").supportsRepeatAll)
         XCTAssertFalse(QueueOrigin.genre("Rock").supportsRepeatAll)
+        XCTAssertFalse(QueueOrigin.shuffleAll(downloadedOnly: false).supportsRepeatAll)
     }
 
     func testRepeatModeNextAllowsRepeatAll() {

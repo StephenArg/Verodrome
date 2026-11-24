@@ -651,12 +651,15 @@ struct PopupPlayerView: View {
             Button {
                 Task { await ActionToast.toggleFavorite(song: song) }
             } label: {
-                Image(systemName: song.isFavorite ? "heart.fill" : "heart")
-                    .font(.system(size: 24))
-                    .foregroundStyle(song.isFavorite ? themeManager.accentColor : Color.primary)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
+                FavoriteHeartIcon(
+                    isFavorite: song.isFavorite,
+                    itemID: song.remoteId,
+                    font: .system(size: 24),
+                    onColor: themeManager.accentColor,
+                    offColor: .primary
+                )
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(song.isFavorite ? "Remove from Favorites" : "Add to Favorites")

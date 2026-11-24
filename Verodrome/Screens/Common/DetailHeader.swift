@@ -105,14 +105,16 @@ struct DetailHeader<Accessory: View>: View {
             }
             if let favorite {
                 Button(action: favorite.toggle) {
-                    Image(systemName: favorite.isFavorite ? "heart.fill" : "heart")
-                        .font(.title3)
-                        // Theme accent like the album's heart; unset it sits with the
-                        // secondary text it follows.
-                        .foregroundStyle(favorite.isFavorite ? themeManager.accentColor : Color.secondary)
-                        .contentTransition(.symbolEffect(.replace))
-                        .animation(.snappy, value: favorite.isFavorite)
-                        .contentShape(Rectangle())
+                    // Theme accent like the album's heart; unset it sits with the
+                    // secondary text it follows.
+                    FavoriteHeartIcon(
+                        isFavorite: favorite.isFavorite,
+                        itemID: title,
+                        font: .title3,
+                        onColor: themeManager.accentColor,
+                        offColor: .secondary
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 8)

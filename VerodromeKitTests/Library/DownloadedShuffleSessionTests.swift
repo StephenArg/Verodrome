@@ -101,6 +101,17 @@ final class DownloadedShuffleSessionTests: XCTestCase {
         XCTAssertFalse(rest.contains("c"))
     }
 
+    /// A walk picked back up after a relaunch carries on with what the restored queue
+    /// doesn't already hold.
+    func testLeavesOutTracksTheRestoredQueueAlreadyHolds() async throws {
+        for id in ["a", "b", "c"] { insertSong(id: id, title: id, relFilePath: "music/\(id).mp3") }
+        try repository.save()
+
+        let items = try await DownloadedShuffleSession(storage: storage, excluding: ["a", "c"]).next()
+
+        XCTAssertEqual(items.map(\.playableId), ["b"])
+    }
+
     @discardableResult
     private func insertSong(id: String, title: String, relFilePath: String?) -> Song {
         let song = Song(remoteId: id, title: title, account: account)

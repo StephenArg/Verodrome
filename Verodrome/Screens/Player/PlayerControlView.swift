@@ -35,7 +35,8 @@ struct PlayerControlView: View {
     /// instead of the (still advancing) playback clock.
     @State private var scrubTime: TimeInterval?
 
-    /// Locked reshuffle feedback: 0→1 first dot lap, 1→2 line lap, 2→3 second dot lap.
+    /// Locked reshuffle feedback, in laps beyond the dot's resting place: 0→1 first dot
+    /// lap, 1→2 line lap, 2→3 second dot lap.
     @State private var shuffleOrbitProgress: CGFloat = 0
     @State private var isShuffleOrbiting = false
 
@@ -50,6 +51,8 @@ struct PlayerControlView: View {
     /// One lap each for dot → line → dot.
     private let shuffleOrbitLapDuration: TimeInterval = 0.42
     private var shuffleOrbitDuration: TimeInterval { shuffleOrbitLapDuration * 3 }
+    /// The dot's single lap when shuffle or repeat switches on or off.
+    private let toggleLapDuration: TimeInterval = 0.45
 
     var body: some View {
         VStack(spacing: 12) {
@@ -223,6 +226,10 @@ struct PlayerControlView: View {
         // stays on; a tap reshuffles the whole pool (current track included) and plays
         // the dot → line → dot orbit. Full opacity, unlike the live-stream case: this
         // state is accurate, not unavailable.
+        //
+        // Any other queue switches on and off: the dot laps the glyph once and settles
+        // underneath turning on, and laps back the other way and fades turning off.
+        // That rides on the mode itself, so it plays however the mode was changed.
         let isLocked = shuffleAll.isShuffleLocked
         let isLiveStream = player.currentItem?.isLiveStream == true
         let isOn = isLocked || player.shuffleMode == .on
@@ -238,23 +245,22 @@ struct PlayerControlView: View {
                         } else {
                             ShuffleControlIcon()
                                 .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                                .animation(.easeInOut(duration: toggleLapDuration), value: isOn)
                         }
                     }
                     .frame(width: sideIconSize + 8, height: sideIconSize)
-                    // Resting accent dot. Hidden while the orbit overlay is traveling.
-                    Circle()
-                        .fill(isOn && !isShuffleOrbiting ? Color.accentColor : Color.clear)
+                    // Room for the status dot, which `OrbitingStatusDot` draws.
+                    Color.clear
                         .frame(width: statusDotSize, height: statusDotSize)
                 }
 
-                if isShuffleOrbiting {
-                    ShuffleOrbitingIndicator(
-                        progress: shuffleOrbitProgress,
-                        dotSize: statusDotSize,
-                        iconSize: sideIconSize,
-                        spacing: statusDotSpacing
-                    )
-                }
+                OrbitingStatusDot(
+                    progress: (isOn ? 1 : 0) + shuffleOrbitProgress,
+                    dotSize: statusDotSize,
+                    iconSize: sideIconSize,
+                    spacing: statusDotSpacing
+                )
+                .animation(.easeInOut(duration: toggleLapDuration), value: isOn)
             }
             .frame(width: sideIconSize + 16, height: playDiameter)
             .contentShape(Rectangle())
@@ -280,14 +286,24 @@ struct PlayerControlView: View {
             return
         }
         guard shuffleAll.shufflePlaysWholeLibrary, player.shuffleMode == .off else {
-            player.toggleShuffle()
+            toggleShuffle()
             return
         }
         Task {
             // Backends with no random endpoint fall back to reordering what's queued.
             if await shuffleAll.shuffleAll() == false {
-                player.toggleShuffle()
+                toggleShuffle()
             }
+        }
+    }
+
+    /// Ordinary on/off shuffle. The glyph and dot animate off the mode itself; this
+    /// only adds the tap feedback, and only when the mode really changed.
+    private func toggleShuffle() {
+        let before = player.shuffleMode
+        player.toggleShuffle()
+        if player.shuffleMode != before {
+            Haptics.impact(.light)
         }
     }
 
@@ -310,17 +326,31 @@ struct PlayerControlView: View {
         }
     }
 
+    /// Off → on sends the dot once around the loop to settle underneath, and on → off
+    /// sends it back the other way to fade. Repeat All → Repeat One keeps the dot and
+    /// opens the top of the loop for the "1", which the icon animates itself.
     private var repeatButton: some View {
         let isOn = player.repeatMode != .off
-        return Button { player.toggleRepeat() } label: {
-            VStack(spacing: statusDotSpacing) {
-                RepeatControlIcon(mode: player.repeatMode)
-                    .frame(width: sideIconSize + 6, height: sideIconSize - 2)
-                    .foregroundStyle(isOn ? Color.accentColor : Color.primary)
-                // Keep height aligned with shuffle's optional dot.
-                Circle()
-                    .fill(isOn ? Color.accentColor : Color.clear)
-                    .frame(width: statusDotSize, height: statusDotSize)
+        let iconHeight = sideIconSize - 2
+        return Button(action: repeatTapped) {
+            ZStack {
+                VStack(spacing: statusDotSpacing) {
+                    RepeatControlIcon(mode: player.repeatMode)
+                        .frame(width: sideIconSize + 6, height: iconHeight)
+                        .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                        .animation(.easeInOut(duration: toggleLapDuration), value: isOn)
+                    // Room for the status dot, which `OrbitingStatusDot` draws.
+                    Color.clear
+                        .frame(width: statusDotSize, height: statusDotSize)
+                }
+
+                OrbitingStatusDot(
+                    progress: isOn ? 1 : 0,
+                    dotSize: statusDotSize,
+                    iconSize: iconHeight,
+                    spacing: statusDotSpacing
+                )
+                .animation(.easeInOut(duration: toggleLapDuration), value: isOn)
             }
             .frame(width: sideIconSize + 16, height: playDiameter)
             .contentShape(Rectangle())
@@ -328,6 +358,14 @@ struct PlayerControlView: View {
         .accessibilityLabel(repeatAccessibilityLabel)
         .disabled(player.currentItem?.isLiveStream == true)
         .opacity(player.currentItem?.isLiveStream == true ? 0.35 : 1)
+    }
+
+    private func repeatTapped() {
+        let before = player.repeatMode
+        player.toggleRepeat()
+        if player.repeatMode != before {
+            Haptics.impact(.light)
+        }
     }
 
     private var repeatAccessibilityLabel: String {
@@ -347,7 +385,8 @@ struct PlayerControlView: View {
 // MARK: - Repeat icon (rounded loop + arrow)
 
 /// Spotify-style repeat loop. Off = label color; on (.all) = accent; .one = accent with
-/// a top-edge cutout containing a small "1".
+/// a top-edge cutout containing a small "1". Switching to or from `.one` springs the
+/// cutout open or shut while the "1" pops in or out.
 struct RepeatControlIcon: View {
     var mode: RepeatMode
     var lineWidthFraction: CGFloat = 0.12
@@ -372,8 +411,8 @@ struct RepeatControlIcon: View {
             let arrowDepth = w * 0.16
 
             ZStack {
-                loopPath(
-                    rect: rect,
+                RepeatLoopShape(
+                    loopRect: rect,
                     corner: corner,
                     topGapHalf: showOne ? topGapHalf : 0,
                     bottomEndX: tipX + arrowDepth
@@ -386,19 +425,46 @@ struct RepeatControlIcon: View {
                     depth: arrowDepth
                 )
 
-                if showOne {
-                    Text("1")
-                        .font(.system(size: h * 0.40, weight: .bold, design: .rounded))
-                        .offset(y: -h * 0.02)
-                }
+                // Always present so it can scale in and out with the cutout.
+                Text("1")
+                    .font(.system(size: h * 0.40, weight: .bold, design: .rounded))
+                    .scaleEffect(showOne ? 1 : 0.3)
+                    .opacity(showOne ? 1 : 0)
+                    .offset(y: -h * 0.02)
+                    .accessibilityHidden(true)
             }
+            .animation(.spring(response: 0.32, dampingFraction: 0.62), value: mode)
         }
         .aspectRatio(1.35, contentMode: .fit)
     }
 
-    /// Clockwise rounded-rect loop. Bottom edge stops at `bottomEndX` (arrow base).
-    /// When `topGapHalf > 0`, the top edge has a center cutout for the "1".
-    private func loopPath(rect: CGRect, corner: CGFloat, topGapHalf: CGFloat, bottomEndX: CGFloat) -> Path {
+    private func arrowhead(tip: CGPoint, halfH: CGFloat, depth: CGFloat) -> some View {
+        Path { p in
+            p.move(to: tip)
+            p.addLine(to: CGPoint(x: tip.x + depth, y: tip.y - halfH))
+            p.addLine(to: CGPoint(x: tip.x + depth, y: tip.y + halfH))
+            p.closeSubpath()
+        }
+        .fill()
+    }
+}
+
+/// Clockwise rounded-rect loop, drawn in the coordinates `RepeatControlIcon` lays out.
+/// The bottom edge stops at `bottomEndX` (arrow base). When `topGapHalf > 0`, the top
+/// edge has a center cutout for the "1" — a `Shape` so that cutout can animate.
+private struct RepeatLoopShape: Shape {
+    var loopRect: CGRect
+    var corner: CGFloat
+    var topGapHalf: CGFloat
+    var bottomEndX: CGFloat
+
+    var animatableData: CGFloat {
+        get { topGapHalf }
+        set { topGapHalf = newValue }
+    }
+
+    func path(in _: CGRect) -> Path {
+        let rect = loopRect
         var p = Path()
         let r = min(corner, min(rect.width, rect.height) / 2)
 
@@ -438,25 +504,18 @@ struct RepeatControlIcon: View {
         p.addLine(to: CGPoint(x: bottomEndX, y: rect.maxY))
         return p
     }
-
-    private func arrowhead(tip: CGPoint, halfH: CGFloat, depth: CGFloat) -> some View {
-        Path { p in
-            p.move(to: tip)
-            p.addLine(to: CGPoint(x: tip.x + depth, y: tip.y - halfH))
-            p.addLine(to: CGPoint(x: tip.x + depth, y: tip.y + halfH))
-            p.closeSubpath()
-        }
-        .fill()
-    }
 }
 
-// MARK: - Shuffle-all locked orbit
+// MARK: - Status dot and its orbit
 
-/// Locked-reshuffle feedback around the shuffle glyph: a dot lap, then a short
-/// tangent line lap, then another dot lap. `progress` runs 0…3 (one unit per lap).
+/// The accent dot under the shuffle or repeat glyph, and its travel around it.
+/// `progress` 0 is off (no dot) and 1 is on, with the dot resting under the glyph.
+/// Moving between the two carries the dot once around: clockwise turning on, back the
+/// other way turning off, fading near 0. A locked reshuffle carries on from 1 to 4: a
+/// dot lap, then a short tangent line lap, then another dot lap.
 /// `Animatable` so SwiftUI interpolates the angle on the circle rather than
 /// lerping the offset as a straight chord.
-private struct ShuffleOrbitingIndicator: View, Animatable {
+private struct OrbitingStatusDot: View, Animatable {
     var progress: CGFloat
     var dotSize: CGFloat
     var iconSize: CGFloat
@@ -470,14 +529,14 @@ private struct ShuffleOrbitingIndicator: View, Animatable {
     var body: some View {
         let iconCenterY = -(spacing + dotSize) / 2
         let radius = iconSize / 2 + spacing + dotSize / 2
-        let total = min(max(progress, 0), 3)
-        let lapIndex = total >= 3 ? 2 : Int(total)
-        let lapT = total >= 3 ? 1 : total - CGFloat(lapIndex)
+        let total = min(max(progress, 0), 4)
+        let lapIndex = total >= 4 ? 3 : Int(total)
+        let lapT = total - CGFloat(lapIndex)
         // Start under the icon; increasing angle is clockwise with y-down.
         let angle = (.pi / 2) + (lapT * 2 * .pi)
         let x = radius * cos(angle)
         let y = iconCenterY + radius * sin(angle)
-        let showsLine = lapIndex == 1
+        let showsLine = lapIndex == 2
 
         ZStack {
             Circle()
@@ -492,7 +551,9 @@ private struct ShuffleOrbitingIndicator: View, Animatable {
                 .rotationEffect(.radians(angle + .pi / 2))
                 .opacity(showsLine ? 1 : 0)
         }
+        .opacity(min(1, total * 4))
         .offset(x: x, y: y)
+        .accessibilityHidden(true)
     }
 }
 

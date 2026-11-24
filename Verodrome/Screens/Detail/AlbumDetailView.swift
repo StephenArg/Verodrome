@@ -167,11 +167,14 @@ struct AlbumDetailView: View {
             Button {
                 Task { try? await LibraryActions.shared.toggleFavorite(album: album) }
             } label: {
-                Image(systemName: album.isFavorite ? "heart.fill" : "heart")
-                    .font(.system(size: 22))
-                    .foregroundStyle(album.isFavorite ? themeManager.accentColor : Color.primary)
-                    .contentTransition(.symbolEffect(.replace))
-                    .contentShape(Rectangle())
+                FavoriteHeartIcon(
+                    isFavorite: album.isFavorite,
+                    itemID: album.remoteId,
+                    font: .system(size: 22),
+                    onColor: themeManager.accentColor,
+                    offColor: .primary
+                )
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(album.isFavorite ? "Remove Album from Favorites" : "Add Album to Favorites")

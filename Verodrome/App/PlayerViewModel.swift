@@ -329,8 +329,11 @@ final class PlayerViewModel: ObservableObject {
         queue = facade?.queue ?? fallback ?? queue
         currentIndex = facade?.currentIndex ?? currentIndex
         contextGeneration = facade?.contextGeneration ?? contextGeneration
-        queueOrigin = facade?.queueOrigin ?? queueOrigin
         if let facade {
+            // Mirrored as is, nil included: a queue started outside this model (CarPlay,
+            // Siri) with no origin must not keep the previous queue's — that origin
+            // decides whether shuffle shows and whether a Shuffle All walk is running.
+            queueOrigin = facade.queueOrigin
             repeatMode = facade.repeatMode
         }
         queueList.apply(queue: queue, currentIndex: currentIndex, origin: queueOrigin, repeatMode: repeatMode)

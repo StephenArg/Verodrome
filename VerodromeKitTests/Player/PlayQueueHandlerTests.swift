@@ -1011,6 +1011,23 @@ final class PlayQueueHandlerTests: XCTestCase {
         XCTAssertNil(handler.queueOrigin)
     }
 
+    /// The stored origin is what tells a relaunch the restored queue is a Shuffle All walk.
+    func testShuffleAllOriginIsRestoredOnRelaunch() async {
+        let directory = URL.temporaryQueueDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FilePlayerQueueStore(directory: directory, accountKey: "account")
+        await store.saveQueue(PersistedPlayerQueue(
+            context: Self.songs(3),
+            index: 1,
+            origin: .shuffleAll(downloadedOnly: true)
+        ))
+
+        let relaunched = await relaunch(with: store)
+
+        XCTAssertEqual(relaunched.queueOrigin, .shuffleAll(downloadedOnly: true))
+        XCTAssertEqual(relaunched.currentItem?.playableId, "1")
+    }
+
     func testPeekAdjacentMidQueue() {
         let handler = PlayQueueHandler()
         handler.replaceContext(with: Self.songs(5), startAt: 2)

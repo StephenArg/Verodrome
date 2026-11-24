@@ -33,16 +33,20 @@ public actor ShuffleAllSession {
     private var seen: Set<String> = []
     private var finished = false
 
+    /// - Parameter excluding: Track ids to treat as already handed out — the queue a
+    ///   walk is being picked back up for, so its top-ups don't repeat what's in it.
     public init(
         provider: any RandomSongProviding,
         resolver: (any ShuffleAllSongResolving)? = nil,
         ingestor: (any LibraryIngesting)? = nil,
-        hideExplicit: Bool = false
+        hideExplicit: Bool = false,
+        excluding: Set<String> = []
     ) {
         self.provider = provider
         self.resolver = resolver
         self.ingestor = ingestor
         self.hideExplicit = hideExplicit
+        self.seen = excluding
     }
 
     /// True once the backend has nothing left that this session hasn't already queued.

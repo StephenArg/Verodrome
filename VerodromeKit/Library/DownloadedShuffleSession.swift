@@ -26,12 +26,20 @@ public actor DownloadedShuffleSession: ShuffleBatchSession {
 
     private let storage: PersistentStorage
     private let hideExplicit: Bool
+    private let excluding: Set<String>
     private var order: [QueueItem]?
     private var cursor = 0
 
-    public init(storage: PersistentStorage = .shared, hideExplicit: Bool = false) {
+    /// - Parameter excluding: Track ids to leave out of the walk — the queue a walk is
+    ///   being picked back up for, so its top-ups don't repeat what's in it.
+    public init(
+        storage: PersistentStorage = .shared,
+        hideExplicit: Bool = false,
+        excluding: Set<String> = []
+    ) {
         self.storage = storage
         self.hideExplicit = hideExplicit
+        self.excluding = excluding
     }
 
     /// True once every downloaded track has been handed out.
@@ -60,11 +68,14 @@ public actor DownloadedShuffleSession: ShuffleBatchSession {
     /// use, so the walk covers exactly the rows the list was showing.
     private func drawDownloaded() async throws -> [QueueItem] {
         let hideExplicit = hideExplicit
+        let excluding = excluding
         return try await storage.backgroundActor.perform { context in
             let songs = try context.fetch(
                 FetchDescriptor<Song>(predicate: #Predicate<Song> { $0.relFilePath != nil })
             )
-            let visible = hideExplicit ? songs.filter { !$0.isLyricsExplicit } : songs
+            let visible = songs.filter {
+                !(hideExplicit && $0.isLyricsExplicit) && !excluding.contains($0.remoteId)
+            }
             return visible.map(QueueItem.from).shuffled()
         }
     }

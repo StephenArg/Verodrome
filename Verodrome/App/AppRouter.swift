@@ -12,6 +12,9 @@ enum AppRoute: Hashable {
 }
 
 enum LaunchPhase: Equatable {
+    /// Before the stored account has been checked. Starting on `.login` instead showed
+    /// the sign-in form for a moment on every launch, logged in or not.
+    case loading
     case login
     case syncing
     case main
@@ -25,7 +28,7 @@ enum PlayerDestination: Hashable {
 @MainActor
 final class AppRouter: ObservableObject {
     @Published var path = NavigationPath()
-    @Published var launchPhase: LaunchPhase = .login
+    @Published var launchPhase: LaunchPhase = .loading
     @Published var showFullPlayer = false
     /// Destinations pushed on the full player (artist name, album title, …).
     @Published var playerDestinations: [PlayerDestination] = []

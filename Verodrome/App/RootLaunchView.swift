@@ -13,6 +13,8 @@ struct RootLaunchView: View {
     var body: some View {
         Group {
             switch router.launchPhase {
+            case .loading:
+                LaunchLoadingView()
             case .login:
                 LoginView()
             case .syncing, .main:
@@ -46,6 +48,39 @@ struct RootLaunchView: View {
     }
 
     private func refreshLaunchPhase() {
-        router.resolveLaunchPhase(isLoggedIn: account.isLoggedIn)
+        // Leaving the launch check for the app happens before the first frame settles,
+        // so it shouldn't fade in like a screen change: open as if it had been there.
+        // Every other switch — to sign-in, sign-out, a new login — keeps the fade.
+        let opensApp = router.launchPhase == .loading && account.isLoggedIn
+        var transaction = Transaction()
+        transaction.disablesAnimations = opensApp
+        withTransaction(transaction) {
+            router.resolveLaunchPhase(isLoggedIn: account.isLoggedIn)
+        }
+    }
+}
+
+/// Shown until the stored account has been checked. Blank like the launch screen it
+/// follows; the spinner only fades in if the check is slow, so a quick one doesn't
+/// flash it on the way to sign-in.
+private struct LaunchLoadingView: View {
+    @State private var showsSpinner = false
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+            ProgressView()
+                .controlSize(.large)
+                .opacity(showsSpinner ? 1 : 0)
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(300))
+            withAnimation(.easeIn(duration: 0.2)) {
+                showsSpinner = true
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Loading")
     }
 }

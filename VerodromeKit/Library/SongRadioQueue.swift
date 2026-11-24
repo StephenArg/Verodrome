@@ -84,14 +84,14 @@ public enum SongRadioQueue {
     public static func continuationSeedCount(for origin: QueueOrigin?) -> Int {
         switch origin {
         case .artist, .genre: return artistGenreSeedCount
-        case .album, .playlist, .song, .none: return 3
+        case .album, .playlist, .song, .shuffleAll, .none: return 3
         }
     }
 
     public static func continuationThreshold(for origin: QueueOrigin?) -> Int {
         switch origin {
         case .artist, .genre: return artistGenreContinuationThreshold
-        case .album, .playlist, .song, .none: return continuationThreshold
+        case .album, .playlist, .song, .shuffleAll, .none: return continuationThreshold
         }
     }
 

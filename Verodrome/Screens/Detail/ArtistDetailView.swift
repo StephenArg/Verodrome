@@ -204,11 +204,14 @@ struct ArtistDetailView: View {
                     Button {
                         Task { try? await LibraryActions.shared.toggleFavorite(artist: artist) }
                     } label: {
-                        Image(systemName: artist.isFavorite ? "heart.fill" : "heart")
-                            .font(.system(size: 22))
-                            .foregroundStyle(artist.isFavorite ? themeManager.accentColor : Color.primary)
-                            .contentTransition(.symbolEffect(.replace))
-                            .contentShape(Rectangle())
+                        FavoriteHeartIcon(
+                            isFavorite: artist.isFavorite,
+                            itemID: artist.remoteId,
+                            font: .system(size: 22),
+                            onColor: themeManager.accentColor,
+                            offColor: .primary
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(artist.isFavorite ? "Remove Artist from Favorites" : "Add Artist to Favorites")

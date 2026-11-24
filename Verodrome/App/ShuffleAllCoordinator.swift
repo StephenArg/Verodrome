@@ -49,6 +49,9 @@ final class ShuffleAllCoordinator: ObservableObject {
     private var contextGeneration: Int?
     /// A row known to be in the queue we started, used to recognise it when it arrives.
     private var seedEntryId: UUID?
+    /// The player's context generation when ours was handed to it. Until that moves on,
+    /// the queue on screen is still the previous one and ours just hasn't landed yet.
+    private var generationAtBegin: Int?
     /// Whether the active Shuffle All walk is limited to downloads. Used so a locked
     /// reshuffle draws from the same pool instead of jumping to the whole library.
     private var shuffleAllIsDownloaded = false
@@ -58,12 +61,15 @@ final class ShuffleAllCoordinator: ObservableObject {
     func attach(player: PlayerViewModel) {
         self.player = player
         cancellables.removeAll()
-        player.$currentItem
-            .sink { [weak self] _ in self?.refreshContext() }
-            .store(in: &cancellables)
-        // Hide Explicit can drop upcoming rows without changing the current track.
-        player.$queue
-            .sink { [weak self] _ in self?.refreshContext() }
+        // `$queue` is there because Hide Explicit can drop upcoming rows without changing
+        // the current track. `@Published` emits from `willSet`, so reading the player
+        // inside a direct sink sees the queue and generation from before the change —
+        // which made a freshly started walk look like someone else's queue. Hop to the
+        // next main-queue turn so the player has finished updating before we look.
+        player.$currentItem.map { _ in () }
+            .merge(with: player.$queue.map { _ in () })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.refreshContext() }
             .store(in: &cancellables)
     }
 
@@ -77,20 +83,8 @@ final class ShuffleAllCoordinator: ObservableObject {
 
     @discardableResult
     func shuffleAll() async -> Bool {
-        guard let provider = VerodromeKit.shared.activeLibrarySyncer as? (any RandomSongProviding) else {
-            return false
-        }
-        return await start(
-            ShuffleAllSession(
-                provider: provider,
-                resolver: LocalLibrarySongResolver(
-                    accountKey: AccountStore.shared.activeAccountKey()?.storageKey
-                ),
-                ingestor: VerodromeKit.shared.activeLibraryIngester,
-                hideExplicit: SettingsStore.shared.hideExplicitSongs
-            ),
-            downloadedOnly: false
-        )
+        guard let session = makeSession(downloadedOnly: false) else { return false }
+        return await start(session, downloadedOnly: false)
     }
 
     /// Shuffle All narrowed to the songs on disk, drawn from the local library rather
@@ -98,7 +92,33 @@ final class ShuffleAllCoordinator: ObservableObject {
     /// device downloaded, and this has to work with no network at all.
     @discardableResult
     func shuffleDownloaded() async -> Bool {
-        await start(DownloadedShuffleSession(hideExplicit: SettingsStore.shared.hideExplicitSongs), downloadedOnly: true)
+        guard let session = makeSession(downloadedOnly: true) else { return false }
+        return await start(session, downloadedOnly: true)
+    }
+
+    /// A walk over the whole library or over what's on disk. Nil when the backend has
+    /// no random endpoint to walk.
+    /// - Parameter excluding: Track ids the walk should never hand out.
+    private func makeSession(
+        downloadedOnly: Bool,
+        excluding: Set<String> = []
+    ) -> (any ShuffleBatchSession)? {
+        let hideExplicit = SettingsStore.shared.hideExplicitSongs
+        if downloadedOnly {
+            return DownloadedShuffleSession(hideExplicit: hideExplicit, excluding: excluding)
+        }
+        guard let provider = VerodromeKit.shared.activeLibrarySyncer as? (any RandomSongProviding) else {
+            return nil
+        }
+        return ShuffleAllSession(
+            provider: provider,
+            resolver: LocalLibrarySongResolver(
+                accountKey: AccountStore.shared.activeAccountKey()?.storageKey
+            ),
+            ingestor: VerodromeKit.shared.activeLibraryIngester,
+            hideExplicit: hideExplicit,
+            excluding: excluding
+        )
     }
 
     /// Fresh Shuffle All batch for the locked control: same pool as the walk already
@@ -115,41 +135,78 @@ final class ShuffleAllCoordinator: ObservableObject {
         isStarting = true
         defer { isStarting = false }
 
-        // Keep the locked appearance up while a replacement batch loads; only tear the
-        // old walk down enough that it stops topping up behind the fetch.
-        let refreshingLocked = context == .shuffleAll
-        if refreshingLocked {
-            self.session = nil
-            isToppingUp = false
-        } else {
-            clearContext()
-        }
+        // Whatever the shuffle control is showing stays up while the batch loads: locked
+        // for a reshuffle, or the songs-list state, which is where the spinner shows.
+        // Clearing it here hid the control for the length of the fetch. The walk being
+        // replaced only has to stop topping up behind that fetch.
+        let interrupted = self.session
+        self.session = nil
+        isToppingUp = false
 
         let items: [QueueItem]
         do {
             items = try await session.next(count: nil)
         } catch {
             await EventLogger.shared.error("shuffle", "Shuffle all failed: \(error.localizedDescription)")
+            resumeWalk(interrupted)
             return false
         }
-        guard let first = items.first else { return false }
+        guard let first = items.first else {
+            resumeWalk(interrupted)
+            return false
+        }
 
         // Replaces whatever was playing, the current track included. The batch already
         // arrives in random order, so start at the top with shuffle off: letting shuffle
         // pick the start index would drop everything before it.
         // Shuffle stays off (no original order to restore), but `arrivedShuffled` tells
         // the queue screen the batch is still user-arrangeable.
-        player.play(items: items, startAt: 0, shuffle: false, arrivedShuffled: true)
+        // The origin is stored with the queue, which is how a relaunch recognises it.
+        player.play(
+            items: items,
+            startAt: 0,
+            shuffle: false,
+            arrivedShuffled: true,
+            origin: .shuffleAll(downloadedOnly: downloadedOnly)
+        )
         self.session = session
         shuffleAllIsDownloaded = downloadedOnly
         begin(.shuffleAll, seedEntryId: first.entryId)
         return true
     }
 
+    /// A start that came back empty-handed leaves the walk that was playing in place, so
+    /// it goes back to topping up — unless the user moved on to something else meanwhile.
+    private func resumeWalk(_ interrupted: (any ShuffleBatchSession)?) {
+        guard context == .shuffleAll, session == nil else { return }
+        session = interrupted
+    }
+
+    /// Picks a Shuffle All walk back up when the queue playing is one and nothing here is
+    /// tracking it. That is a relaunch: the queue is restored from disk, this coordinator
+    /// is not. The origin stored with the queue says what it is, so the control locks
+    /// again and the walk carries on topping up, minus what the queue already holds.
+    private func adoptWalkInProgress(_ player: PlayerViewModel) {
+        guard case .shuffleAll(let downloadedOnly) = player.queueOrigin,
+              !player.queue.isEmpty else { return }
+        context = .shuffleAll
+        contextGeneration = player.contextGeneration
+        generationAtBegin = nil
+        seedEntryId = nil
+        shuffleAllIsDownloaded = downloadedOnly
+        session = makeSession(
+            downloadedOnly: downloadedOnly,
+            excluding: Set(player.queue.map(\.playableId))
+        )
+        player.markQueueArrivedShuffled()
+        topUpIfNeeded(player)
+    }
+
     private func begin(_ context: ShuffleContext, seedEntryId: UUID) {
         self.context = context
         self.seedEntryId = seedEntryId
         contextGeneration = nil
+        generationAtBegin = player?.contextGeneration
         // Keep the player's rearrange flag aligned with the session: the queue screen
         // and move/remove guards both read it.
         if context == .shuffleAll {
@@ -163,22 +220,29 @@ final class ShuffleAllCoordinator: ObservableObject {
         session = nil
         context = nil
         contextGeneration = nil
+        generationAtBegin = nil
         seedEntryId = nil
         shuffleAllIsDownloaded = false
     }
 
     /// Follows the player between contexts, and tops the queue up while it's still ours.
     private func refreshContext() {
-        guard let player, context != nil else { return }
+        guard let player else { return }
+        guard context != nil else {
+            adoptWalkInProgress(player)
+            return
+        }
 
         guard let generation = contextGeneration else {
-            // First publish after starting. Check the queue on screen really is the one
-            // we started before adopting its generation: the user can get an album
-            // playing in the time it takes a batch to come back over the network.
-            // `PlayerViewModel` syncs `queue` before publishing `currentItem` so this
-            // check does not race the install of our own context.
+            // Not adopted yet. Check the queue on screen really is the one we started
+            // before taking its generation: the user can get an album playing in the
+            // time it takes a batch to come back over the network.
             guard player.queue.contains(where: { $0.entryId == seedEntryId }) else {
-                clearContext()
+                // Still the queue from before ours was handed over: keep waiting. Any
+                // other generation is a context the user started instead.
+                if player.contextGeneration != generationAtBegin {
+                    clearContext()
+                }
                 return
             }
             contextGeneration = player.contextGeneration

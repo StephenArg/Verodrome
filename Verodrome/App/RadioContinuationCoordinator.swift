@@ -60,6 +60,8 @@ final class RadioContinuationCoordinator: ObservableObject {
         guard SettingsStore.shared.radioContinuationEnabled else { return }
         guard player.repeatMode == .off else { return }
         guard shuffleAll?.context != .shuffleAll else { return }
+        // A restored Shuffle All queue, in the moment before its walk is picked back up.
+        if case .shuffleAll = player.queueOrigin { return }
         guard !isToppingUp else { return }
 
         let queue = player.queue
