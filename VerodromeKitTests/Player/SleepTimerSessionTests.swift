@@ -124,9 +124,9 @@ final class SleepTimerSessionTests: XCTestCase {
         XCTAssertEqual(SleepTimer.label(hours: 1, minutes: 29), "1h 29m")
         XCTAssertEqual(SleepTimer.label(hours: 2, minutes: 0), "2h")
         XCTAssertEqual(SleepTimer.label(hours: 0, minutes: 45), "45m")
-        XCTAssertEqual(SleepTimer.label(hours: 0, minutes: 0), "Off")
+        XCTAssertEqual(SleepTimer.label(hours: 0, minutes: 0), "off")
         XCTAssertEqual(SleepTimer.label(remaining: 90), "1m")
         XCTAssertEqual(SleepTimer.label(remaining: 120), "2m")
-        XCTAssertEqual(SleepTimer.label(remaining: 0), "Off")
+        XCTAssertEqual(SleepTimer.label(remaining: 0), "off")
     }
 }

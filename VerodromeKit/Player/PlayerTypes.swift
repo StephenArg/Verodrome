@@ -133,10 +133,10 @@ public enum SleepTimer {
         label(remaining: duration(hours: hours, minutes: minutes))
     }
 
-    /// Formats a remaining interval as `"1h 29m"`, `"45m"`, or `"Off"` at zero.
+    /// Formats a remaining interval as `"1h 29m"`, `"45m"`, or `"off"` at zero.
     public static func label(remaining: TimeInterval) -> String {
         let total = max(0, Int(remaining.rounded(.up)))
-        guard total > 0 else { return "Off" }
+        guard total > 0 else { return "off" }
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         if hours > 0, minutes > 0 { return "\(hours)h \(minutes)m" }

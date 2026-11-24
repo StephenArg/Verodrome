@@ -1048,7 +1048,7 @@ private struct PlayerOverflowMenuButton: View {
     @State private var submenu: Submenu = .none
 
     private var sleepTimerTrailingLabel: String {
-        guard let deadline = menuState.sleepTimerDeadline else { return "Off" }
+        guard let deadline = menuState.sleepTimerDeadline else { return "off" }
         return SleepTimer.label(remaining: deadline.timeIntervalSinceNow)
     }
 
@@ -1183,7 +1183,7 @@ private struct PlayerOverflowMenuButton: View {
                 submenu = .speed
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "timer")
+                    Image(systemName: "gauge.open.with.lines.needle.33percent")
                         .font(.body)
                         .frame(width: 20, alignment: .center)
                     Text("Playback Speed")
@@ -1397,8 +1397,7 @@ private struct PlaybackSpeedMenuButton: View {
             selectedIndex = resolvedIndex
             showMenu = true
         } label: {
-            // `timer` renders taller than neighbors at `.title3`.
-            Image(systemName: "timer")
+            Image(systemName: "gauge.open.with.lines.needle.33percent")
                 .font(.system(size: iconFontSize))
                 .foregroundStyle(iconColor)
         }
