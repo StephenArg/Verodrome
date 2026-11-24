@@ -23,6 +23,8 @@ enum CarPlayLog {
     }
 }
 
+private let carPlayLyricsDefaultsKey = "carPlay.lyricsOnNowPlaying"
+
 /// CarPlay's ObjC selectors are `didConnectInterfaceController:` / `didDisconnectInterfaceController:`.
 /// The 3-argument window variants are renamed to `didConnect:to:` / `didDisconnect:from:`.
 /// Implementing only `didConnect` leaves the scene with no root template; tapping the dock
@@ -46,6 +48,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// Shuffle / repeat selected state is reported via `MPRemoteCommandCenter`, not by
     /// replacing the buttons. Rebuilding the row on every tap is the blink.
     private var nowPlayingButtonLayout: NowPlayingButtonLayout?
+    /// Lyrics-as-artwork stays on across CarPlay reconnects and app launches.
+    /// The override is still cleared on disconnect so the phone Lock Screen
+    /// keeps the real cover.
+    private var lyricsOnNowPlaying = UserDefaults.standard.bool(forKey: carPlayLyricsDefaultsKey)
+    private var lyricsCancellables = Set<AnyCancellable>()
+    private var lastLyricsArtworkToken: String?
+    /// Cover stays up for a beat at the start of each track before lyrics replace it.
+    private var lyricsRevealReady = false
+    private var lyricsHoldTask: Task<Void, Never>?
     /// True while Start Radio is waiting on the server for similar songs.
     private var isStartingRadio = false
 
@@ -149,6 +160,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         if alreadyConnected {
             presentNowPlayingIfAudioIsPlaying()
             drainPendingVoiceSearch()
+            if lyricsOnNowPlaying { startLyricsArtwork() }
             return
         }
 
@@ -157,6 +169,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             _ = try? await VerodromeKit.shared.ensureActiveLibrarySyncer()
             observePlayer()
             refreshNowPlayingButtons()
+            if lyricsOnNowPlaying { startLyricsArtwork() }
             VerodromeKit.shared.player?.syncPublishedState()
             resumePausedQueueOnConnect()
             presentNowPlayingIfQueueActive()
@@ -185,6 +198,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         CarPlayLog.notice("scene disconnected")
         CarPlayConnection.isActive = false
         CarPlayVoiceSearch.receiver = nil
+        stopLyricsArtwork(restoreCover: true)
         VerodromeKit.shared.player?.endIntervalHold()
         CarPlayArtworkWarmer.shared.stop()
         CPNowPlayingTemplate.shared.remove(self)
@@ -351,7 +365,11 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             .store(in: &cancellables)
     }
 
-    /// CarPlay shows at most five: like, add to playlist, radio, shuffle, repeat.
+    /// CarPlay shows at most five buttons, leading to trailing. Lyrics stays on the
+    /// row; when like, playlist, radio, and shuffle already fill four slots, it
+    /// takes the place repeat would have used.
+    private static let maximumNowPlayingButtons = 5
+
     private func refreshNowPlayingButtons() {
         let song = catalog.currentSong()
         let layout = NowPlayingButtonLayout(
@@ -362,7 +380,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             isStartingRadio: isStartingRadio,
             showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true,
             isShuffleOn: VerodromeKit.shared.player?.shuffleMode == .on,
-            repeatMode: VerodromeKit.shared.player?.repeatMode ?? .off
+            repeatMode: VerodromeKit.shared.player?.repeatMode ?? .off,
+            lyricsVisible: lyricsOnNowPlaying
         )
         guard layout != nowPlayingButtonLayout else { return }
         nowPlayingButtonLayout = layout
@@ -411,8 +430,125 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             self?.refreshNowPlayingButtons()
         }
         repeatButton.isSelected = layout.repeatMode != .off
-        buttons.append(repeatButton)
+        let lyrics = CPNowPlayingImageButton(image: CarPlayArtwork.barSymbol("text.quote", pointSize: 16)) { [weak self] _ in
+            self?.toggleNowPlayingLyrics()
+        }
+        lyrics.isSelected = layout.lyricsVisible
+        let remaining = Self.maximumNowPlayingButtons - buttons.count
+        if remaining >= 2 {
+            buttons.append(repeatButton)
+            buttons.append(lyrics)
+        } else if remaining == 1 {
+            buttons.append(lyrics)
+        }
         CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
+    }
+
+    private func toggleNowPlayingLyrics() {
+        lyricsOnNowPlaying.toggle()
+        UserDefaults.standard.set(lyricsOnNowPlaying, forKey: carPlayLyricsDefaultsKey)
+        nowPlayingButtonLayout = nil
+        refreshNowPlayingButtons()
+        if lyricsOnNowPlaying {
+            startLyricsArtwork()
+        } else {
+            stopLyricsArtwork(restoreCover: true)
+        }
+    }
+
+    private func startLyricsArtwork() {
+        guard lyricsOnNowPlaying, CarPlayConnection.isActive else { return }
+        lyricsCancellables.removeAll()
+        guard let player = VerodromeKit.shared.player else { return }
+        player.requestLyrics()
+        beginArtworkHold()
+
+        player.$currentItem
+            .map(\.?.id)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                VerodromeKit.shared.player?.requestLyrics()
+                self?.beginArtworkHold()
+            }
+            .store(in: &lyricsCancellables)
+
+        player.$lyrics
+            .combineLatest(player.$lyricsLoaded, player.$currentTime, player.$duration)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _, _, _ in
+                self?.publishLyricsArtwork()
+            }
+            .store(in: &lyricsCancellables)
+    }
+
+    private func beginArtworkHold() {
+        lyricsRevealReady = false
+        lastLyricsArtworkToken = nil
+        lyricsHoldTask?.cancel()
+        applyArtworkOverride(nil)
+        lyricsHoldTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            self.lyricsRevealReady = true
+            self.lastLyricsArtworkToken = nil
+            self.publishLyricsArtwork()
+        }
+    }
+
+    private func publishLyricsArtwork() {
+        guard lyricsOnNowPlaying, CarPlayConnection.isActive else { return }
+        let player = VerodromeKit.shared.player
+        let lyrics = player?.lyrics ?? ""
+        let loaded = player?.lyricsLoaded ?? false
+        let hasLyrics = !lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Cover while the hold is running, while we still have no text, or when
+        // the lookup finished empty — never a "no lyrics" placeholder.
+        if !lyricsRevealReady || !hasLyrics {
+            guard lastLyricsArtworkToken != "cover" else { return }
+            lastLyricsArtworkToken = "cover"
+            applyArtworkOverride(nil)
+            return
+        }
+        let elapsed = player?.currentTime ?? 0
+        let duration = player?.duration ?? 0
+        let token = CarPlayLyricsArtwork.token(
+            lyrics: lyrics,
+            loaded: loaded,
+            elapsed: elapsed,
+            duration: duration
+        )
+        guard token != lastLyricsArtworkToken else { return }
+        lastLyricsArtworkToken = token
+        let image = CarPlayLyricsArtwork.image(
+            lyrics: lyrics,
+            loaded: loaded,
+            elapsed: elapsed,
+            duration: duration
+        )
+        applyArtworkOverride(image)
+    }
+
+    private func stopLyricsArtwork(restoreCover: Bool) {
+        lyricsHoldTask?.cancel()
+        lyricsHoldTask = nil
+        lyricsRevealReady = false
+        lyricsCancellables.removeAll()
+        lastLyricsArtworkToken = nil
+        if restoreCover {
+            applyArtworkOverride(nil)
+        }
+    }
+
+    private func applyArtworkOverride(_ image: UIImage?) {
+        let player = VerodromeKit.shared.player
+        VerodromeKit.shared.nowPlayingHandler.setArtworkOverride(
+            image,
+            isPlaying: player?.isPlaying ?? false,
+            elapsed: player?.currentTime ?? 0,
+            rate: player?.sessionPlaybackRate ?? 1
+        )
     }
 
     private struct NowPlayingButtonLayout: Equatable {
@@ -424,6 +560,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         var showShuffle: Bool
         var isShuffleOn: Bool
         var repeatMode: RepeatMode
+        var lyricsVisible: Bool
     }
 
     /// The heart redraws from the `songMetadataRefreshed` that `setFavorite` posts
