@@ -294,6 +294,16 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                     self?.catalog.refreshQueueIfPresented()
                 }
                 .store(in: &cancellables)
+            // Repeat changed from the phone or the lock screen. Shuffle needs no sink of
+            // its own: toggling it bumps `queueGeneration`, below.
+            player.$reportedRepeatMode
+                .dropFirst()
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshNowPlayingButtons()
+                }
+                .store(in: &cancellables)
             player.$queueGeneration
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
@@ -350,7 +360,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             isFavorite: song?.isFavorite == true,
             inPlaylist: isCurrentSongInAnyPlaylist,
             isStartingRadio: isStartingRadio,
-            showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true
+            showShuffle: VerodromeKit.shared.player?.canShuffleQueue == true,
+            isShuffleOn: VerodromeKit.shared.player?.shuffleMode == .on,
+            repeatMode: VerodromeKit.shared.player?.repeatMode ?? .off
         )
         guard layout != nowPlayingButtonLayout else { return }
         nowPlayingButtonLayout = layout
@@ -380,18 +392,26 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             radio.isEnabled = !layout.isStartingRadio
             buttons.append(radio)
         }
+        // Shuffle and repeat are image buttons rather than CarPlay's own, which only
+        // draw the system glyphs. That makes their selected state ours to set: the row
+        // is rebuilt whenever a mode changes, like it is for the heart.
         if layout.showShuffle {
-            // Handler (not the no-arg initializer): CarPlay does not reliably send
-            // `changeShuffleModeCommand` for third-party audio apps. Selected state
-            // still comes from `currentShuffleType` — do not rebuild this row on tap.
-            buttons.append(CPNowPlayingShuffleButton { [weak self] _ in
+            let shuffle = CPNowPlayingImageButton(image: CarPlayArtwork.nowPlayingShuffleSymbol) { [weak self] _ in
                 VerodromeKit.shared.player?.toggleShuffle()
+                self?.refreshNowPlayingButtons()
                 self?.catalog.refreshQueueIfPresented()
-            })
+            }
+            shuffle.isSelected = layout.isShuffleOn
+            buttons.append(shuffle)
         }
-        buttons.append(CPNowPlayingRepeatButton { [weak self] _ in
+        let repeatButton = CPNowPlayingImageButton(
+            image: CarPlayArtwork.nowPlayingRepeatSymbol(showsOne: layout.repeatMode == .one)
+        ) { [weak self] _ in
             VerodromeKit.shared.player?.toggleRepeat()
-        })
+            self?.refreshNowPlayingButtons()
+        }
+        repeatButton.isSelected = layout.repeatMode != .off
+        buttons.append(repeatButton)
         CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
     }
 
@@ -402,6 +422,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         var inPlaylist: Bool
         var isStartingRadio: Bool
         var showShuffle: Bool
+        var isShuffleOn: Bool
+        var repeatMode: RepeatMode
     }
 
     /// The heart redraws from the `songMetadataRefreshed` that `setFavorite` posts

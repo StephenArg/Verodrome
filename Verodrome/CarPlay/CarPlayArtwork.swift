@@ -117,11 +117,44 @@ enum CarPlayArtwork {
         return image.withTintColor(color, renderingMode: .alwaysOriginal)
     }
 
-    /// Now Playing add-to-playlist control: plus when the song is in no lists,
-    /// a circle with a punched-out check when it is in at least one.
-    /// Template, not `isSelected` — CarPlay paints a gray plate behind selected buttons.
+    /// Now Playing add-to-playlist control: a ringed plus when the song is in no lists,
+    /// a solid disc with the check cut out when it is in at least one.
+    /// Two images, not `isSelected` — CarPlay paints a gray plate behind selected buttons.
     static func nowPlayingPlaylistSymbol(isInPlaylist: Bool) -> UIImage {
-        isInPlaylist ? playlistMembershipCheckSymbol() : barSymbol("plus")
+        nowPlayingGlyph(isInPlaylist ? .inPlaylist : .addToPlaylist)
+    }
+
+    /// Now Playing shuffle control. On and off are the same image: `isSelected` puts
+    /// the plate behind it.
+    static var nowPlayingShuffleSymbol: UIImage {
+        nowPlayingGlyph(.shuffle)
+    }
+
+    /// Now Playing repeat control: the loop for off and Repeat All (selected), the loop
+    /// with a "1" in it for Repeat One.
+    static func nowPlayingRepeatSymbol(showsOne: Bool) -> UIImage {
+        nowPlayingGlyph(showsOne ? .repeatOne : .repeatAll)
+    }
+
+    /// How much of the button image the glyph's grid spans. CarPlay fits the image to
+    /// the button's image area, so this ratio — not the canvas size — sets how large
+    /// the glyph draws. Measured: a full-canvas disc came out 39.5 px across on a
+    /// CarPlay screen where the reference glyphs were 31.9 px.
+    private static let nowPlayingGlyphSpan: CGFloat = 0.807
+
+    /// One of the custom Now Playing glyphs, centered in a square template image.
+    private static func nowPlayingGlyph(_ glyph: CarPlayNowPlayingGlyph, canvas: CGFloat = 48) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = 3
+        let span = canvas * nowPlayingGlyphSpan
+        let image = UIGraphicsImageRenderer(size: CGSize(width: canvas, height: canvas), format: format).image { ctx in
+            let cg = ctx.cgContext
+            cg.translateBy(x: (canvas - span) / 2, y: (canvas - span) / 2)
+            cg.scaleBy(x: span / CarPlayNowPlayingGlyph.gridSize, y: span / CarPlayNowPlayingGlyph.gridSize)
+            glyph.draw(in: cg)
+        }
+        return image.withRenderingMode(.alwaysTemplate)
     }
 
     /// Now Playing like control. Filled vs outline for the same `isSelected` reason.
@@ -147,32 +180,6 @@ enum CarPlayArtwork {
                 x: (canvas.width - glyph.size.width) / 2,
                 y: (canvas.height - glyph.size.height) / 2
             ))
-        }
-        return image.withRenderingMode(.alwaysTemplate)
-    }
-
-    /// Filled circle with the checkmark erased, so the Now Playing chrome shows through.
-    /// A template SF Symbol does not punch holes — draw the check as an opaque stroke.
-    private static func playlistMembershipCheckSymbol(size: CGFloat = 48) -> UIImage {
-        let canvas = CGSize(width: size, height: size)
-        let format = UIGraphicsImageRendererFormat()
-        format.opaque = false
-        format.scale = 3
-        let image = UIGraphicsImageRenderer(size: canvas, format: format).image { ctx in
-            let circle = CGRect(origin: .zero, size: canvas).insetBy(dx: size * 0.05, dy: size * 0.05)
-            UIColor.black.setFill()
-            UIBezierPath(ovalIn: circle).fill()
-
-            let cg = ctx.cgContext
-            cg.setBlendMode(.destinationOut)
-            cg.setStrokeColor(UIColor.black.cgColor)
-            cg.setLineCap(.round)
-            cg.setLineJoin(.round)
-            cg.setLineWidth(size * 0.13)
-            cg.move(to: CGPoint(x: size * 0.28, y: size * 0.52))
-            cg.addLine(to: CGPoint(x: size * 0.43, y: size * 0.67))
-            cg.addLine(to: CGPoint(x: size * 0.73, y: size * 0.33))
-            cg.strokePath()
         }
         return image.withRenderingMode(.alwaysTemplate)
     }

@@ -570,9 +570,12 @@ struct ShuffleControlIcon: View {
     /// Top-left tail stub of the under-line (before the weave gap).
     private static let glyphStub = "M.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .39 3.5z"
 
+    /// The whole glyph on its 16×16 grid. CarPlay's shuffle button draws from this too.
+    static let pathData = [glyphMain, glyphHook, glyphStub]
+
     var body: some View {
         SVGGlyphShape(
-            pathData: [Self.glyphMain, Self.glyphHook, Self.glyphStub],
+            pathData: Self.pathData,
             viewBox: CGRect(x: 0, y: 0, width: 16, height: 16)
         )
         .aspectRatio(1, contentMode: .fit)
